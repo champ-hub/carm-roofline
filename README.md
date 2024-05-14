@@ -29,8 +29,9 @@ For better results visualization, ResultsGUI.py can be ran to generate a web bro
     - plotly (GUI only)
     - diskcache (GUI only)
 - DynamoRIO (only tested with 10.0.19804) - for DBI application analysis (x86 and AARCH64)
-- Intel SDE (only tested with 9.33.0)  - for DBI application analysis (x86)
 - PAPI (only tested with 7.0.1) - for PMU application analysis
+- Optional:
+    - Intel SDE (only tested with 9.33.0)  - for DBI application analysis (x86)
 
 ## How to use (CLI)
 
