@@ -1,0 +1,19 @@
+COMPILER = gcc
+CFLAGS = -g -Wall -Wextra -Ofast -march=native
+CFLAGS += -pthread
+
+arch := $(shell arch)
+ifeq ($(arch), x86_64)
+	ASSEMBLY_FILE = Test/CoreClockCheckerx86.s
+else ifeq ($(arch),aarch64)
+	ASSEMBLY_FILE = Test/CoreClockCheckerARM.s
+else ifeq ($(arch),riscv64)
+	ASSEMBLY_FILE = Test/CoreClockCheckerRISCV.s
+	CFLAGS = -g -Wall -Wextra -Ofast -march=rv64g
+else
+	ASSEMBLY_FILE = Test/CoreClockChecker.s
+    $(error Unsupported architecture: $(arch))
+endif
+
+all:
+	$(COMPILER) $(CFLAGS) Test/main_test.c $(ASSEMBLY_FILE) -o bin/test -lm -Wno-unused-variable -Wno-unused-parameter
