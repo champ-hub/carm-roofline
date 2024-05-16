@@ -115,10 +115,10 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
                     VLEN = VLEN_Check
                 if (verbose > 2):
                     print("RISCV Vector with " + str(VLEN) + " elements (dp).")
+                if "riscvscalar" not in isa_set and isa_set[0] == "auto":
+                    isa_set.append("riscvscalar")
                 if "riscvvector" not in isa_set:
                     isa_set[0] = "riscvvector"
-                if "riscvscalar" not in isa_set:
-                    isa_set.append("riscvscalar")
             else:
                 print("WARNING: RISCV Vector Support Not Detected in the System")
                 isa_set[0] = "riscvscalar"
@@ -642,8 +642,15 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                 
                 if VLEN_aux > 1 and precision == "dp":
                     VLEN = VLEN_aux
+                    LMUL = 8
                 if VLEN_aux > 1 and precision == "sp":
                     VLEN = VLEN_aux * 2
+                    LMUL = 8
+                if not isa == "riscvvector":
+                    VLEN = 1
+                    LMUL = 1
+                if verbose > 2 and isa =="riscvvector":
+                    print("VLEN IS:", VLEN, "| LMUL IS:", LMUL)
 
                 Gbps = [0] * len(test_sizes)
                 InstCycle = [0] * len(test_sizes)
@@ -662,35 +669,41 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                 measure_freq = 1
                 out = result.stdout.decode('utf-8').split(',')
 
-                freq_aux = float(out[2])
-                freq = float(out[3])
+                freq_real = float(out[2])
+                if (isa != "neon" and isa != "armscalar" and isa != "riscvscalar" and isa != "riscvvector"):
+                    freq_nominal = float(out[3])
 
                 i=0
                 for size in test_sizes:
                     num_reps = int(size*1024/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
                     
 
-                    os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps))
+                    os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN))
                 
                     if(interleaved):
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq_aux), "-measure_freq", str(measure_freq), "--interleaved"], stdout=subprocess.PIPE)
+                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq_real), "-measure_freq", str(measure_freq), "--interleaved"], stdout=subprocess.PIPE)
                     else:
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq_aux), "-measure_freq", str(measure_freq)], stdout=subprocess.PIPE)
+                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq_real), "-measure_freq", str(measure_freq)], stdout=subprocess.PIPE)
 
                     out = result.stdout.decode('utf-8').split(',')
+                    inner_loop_reps = float(out[1])
+                    #freq_real = float(out[2])
                     print(size, "Kb")
                     if (isa != "neon" and isa != "armscalar" and isa != "riscvscalar" and isa != "riscvvector"):
-                        Gbps[i] = float(((threads*num_reps*(num_ld+num_st)*mem_inst_size[isa][precision]*float(freq_aux))*float(out[1]))/(float(out[0])*float(freq_aux/freq)))
-                        InstCycle[i] = threads*num_reps*(num_ld+num_st)*float(out[1])/(float(out[0])*float(freq_aux/freq))
+                        cycles = float(out[0])
+                        #freq_nominal = float(out[3])
+                        Gbps[i] = float((threads*num_reps*(num_ld+num_st)*mem_inst_size[isa][precision]*freq_real*inner_loop_reps)/(cycles*float(freq_real/freq_nominal)))
+                        InstCycle[i] = float((threads*num_reps*(num_ld+num_st)*inner_loop_reps)/(cycles*float(freq_real/freq_nominal)))
                     else:
-                        Gbps[i] = (float((threads*num_reps*(num_ld+num_st)*mem_inst_size[isa][precision]*float(out[1]))/(1000000000))/((float(out[0])/1000)))
-                        InstCycle[i] = (threads*num_reps*(num_ld+num_st)*float(out[1]))/((float(out[0])/1000)*freq_aux*1000000000)
+                        time_ms = float(out[0])
+                        Gbps[i] = (float((threads*num_reps*(num_ld+num_st)*mem_inst_size[isa][precision]*VLEN*LMUL*inner_loop_reps)/(1000000000))/((time_ms/1000)))
+                        InstCycle[i] = float((threads*num_reps*(num_ld+num_st)*LMUL*inner_loop_reps)/((time_ms/1000)*freq_real*1000000000))
                     i += 1
                 i = 0
                 if (verbose > 1):
-                    print("ISA:", isa,  "| Number of Threads:", threads, "Kb | Precision:", precision, "| Interleaved:", inter, "| Number of Loads:", num_ld, "| Number of Stores:", num_st, "| Memory Instruction Size:", mem_inst_size[isa][precision]*VLEN)
+                    print("ISA:", isa,  "| Number of Threads:", threads, " | Precision:", precision, "| Interleaved:", inter, "| Number of Loads:", num_ld, "| Number of Stores:", num_st, "| Memory Instruction Size:", mem_inst_size[isa][precision]*VLEN)
                     for size in test_sizes:
-                        print("Size:", size, "Kb | Gbps:", round(Gbps[i], 2), "| Instructions per Cycle:", round(InstCycle[i], 2))
+                        print("Size:", size, "Kb | Gbps:", custom_round(Gbps[i]), "| Instructions per Cycle:", custom_round(InstCycle[i]))
                         i += 1
 
                 if(os.path.isdir('Results') == False):
