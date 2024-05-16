@@ -431,7 +431,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                         test_size["DRAM"] = int(dram_bytes/(threads))
                         if int(test_size["DRAM"]) <= int(l3_size) and verbose > 0:
                             print("WARNING: DRAM test size per thread is not sufficient to guarantee best results, to guarantee best results consider changing the default test size.")
-                            print("By using --dram_bytes", int(l3_size)*int(threads)+10240, " or the flag --dram_auto, the minimum test size necessary for", threads, "threads is achieved.")
+                            print("By using --dram_bytes", int(l3_size)*int(threads)+10240, " or the flag --dram_auto, the minimum test size necessary for", threads, "threads is achieved, using the --dram_auto flag will automatically apply this adjustement..")
                 if verbose > 2:
                     print("DRAM Test Size per Thread:", test_size["DRAM"], "Kb | L3 Size:", l3_size, "Kb")
 
@@ -812,17 +812,28 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
         
                 os.system("make clean && make isa=" + isa)
                 if test_type == "mixedL1":
-                    num_reps = int(int(l1_size)*1024/(tl1*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
-                    test_size = (int(l1_size))/tl1
+                    if l1_size > 0:
+                        num_reps = int(int(l1_size)*1024/(tl1*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
+                        test_size = (int(l1_size))/tl1
+                    else:
+                        print("WARNING: No L1 Size Found, you can use the -l1 <l1_size> argument, or a configuration file to specify it.")
+                        return
                 elif test_type == "mixedL2":
-                    num_reps = int(1024*int(l2_size)/tl2)/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL)
-                    test_size = int(int(l2_size)/tl2)
+                    if l2_size > 0:
+                        num_reps = int(1024*int(l2_size)/tl2)/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL)
+                        test_size = int(int(l2_size)/tl2)
+                    else:
+                        print("WARNING: No L2 Size Found, you can use the -l2 <l2_size> argument, or a configuration file to specify it.")
+                        return
                 elif test_type == "mixedL3":
-                    num_reps = int(1024*(int(l2_size)*threads + (int(l3_size) - int(l2_size)*threads)/2)/(threads*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
-                    test_size = int((int(l2_size)*threads + (int(l3_size) - int(l2_size)*threads)/2)/threads)
+                    if l3_size > 0:
+                        num_reps = int(1024*(int(l2_size)*threads + (int(l3_size) - int(l2_size)*threads)/2)/(threads*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
+                        test_size = int((int(l2_size)*threads + (int(l3_size) - int(l2_size)*threads)/2)/threads)
+                    else:
+                        print("WARNING: No L3 Size Found, you can use the -l3 <l3_size> argument, or a configuration file to specify it.")
+                        return
                 elif test_type == "mixedDRAM":
                     if (dram_auto) and ((int(dram_bytes)/threads) < (int(l3_size)*2)):
-                        print("WE IN, DRAM:", dram_bytes/threads, "L3:", int(l3_size)*2)
                         num_reps = int((int(l3_size)*2)*1024/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
                         test_size = int((int(l3_size)*2))
                     else:
@@ -831,7 +842,7 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
 
                         if int(test_size) <= int(l3_size) and verbose > 0:
                             print("DRAM test size per thread is not sufficient to guarantee best results, to guarantee best results consider changing the default test size.")
-                            print("By using --dram_bytes", int(l3_size)*int(threads)+1024, "the minimum size necessary for", threads, "threads is achieved.")
+                            print("By using --dram_bytes", int(l3_size)*int(threads)+1024, "the minimum size necessary for", threads, "threads is achieved, using the --dram_auto flag will automatically apply this adjustement.")
                     if verbose > 2:
                         print("DRAM Test Size per Thread:", test_size, "Kb | L3 Size:", l3_size, "Kb")
                 
@@ -936,7 +947,7 @@ def main():
     if args.test in ["mixedL1", "mixedL2", "mixedL3", "mixedDRAM"]:
         run_mixed(name, freq, l1_size, l2_size, l3_size, args.inst, args.isa, args.precision, num_ld, num_st, num_fp, args.threads, args.interleaved, args.num_ops, args.dram_bytes, args.dram_auto, args.test, args.verbose, args.set_freq, args.measure_freq, args.vector_length, args.threads_per_l1,  args.threads_per_l2)
     elif args.test == 'MEM':
-        run_memory(name, freq, args.set_freq, l1_size, l2_size, l3_size, args.isa, args.precision, num_ld, num_st, args.threads, args.interleaved, args.verbose, args.measure_freq, args.vector_length, args.threads_per_l1,  args.threads_per_l2, args.plot)
+        run_memory(name, freq, args.set_freq, l1_size, l2_size, l3_size, args.isa, args.precision, num_ld, num_st, args.threads, args.interleaved, args.verbose, args.measure_freq, args.vector_length, args.threads_per_l1, args.plot)
     else:
         run_roofline(name, freq, l1_size, l2_size, l3_size, args.inst, args.isa, args.precision, num_ld, num_st, args.threads, args.interleaved, args.num_ops, args.dram_bytes, args.dram_auto, args.test, args.verbose, args.set_freq, args.measure_freq, args.vector_length, args.threads_per_l1,  args.threads_per_l2, args.plot)
 
