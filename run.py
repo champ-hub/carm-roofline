@@ -30,10 +30,9 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
         auto_args = autoconf(freq*1000000, set_freq)
         #If user defines no ISA in arguments, uses the best one from the probing file
         if (isa_set[0] == "auto"):
-
             #If avx512 is supported
             if auto_args[0] == "avx512":
-                isa_set[0] == auto_args[0]
+                isa_set[0] = auto_args[0]
                 #We can then use 32 registers for avx2
                 if auto_args[1] == "avx2":
                     isa_set.append("avx")
