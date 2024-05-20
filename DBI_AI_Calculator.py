@@ -490,11 +490,11 @@ def analyseDynamoRIOARM():
                                     fp_ops += count*int(match.group(1))*2
                                 else:
                                     fp_ops += count*int(match.group(1))
-                                print("Opcode: " + opcode + "FP Count: " + str(count) + " | Factor: " +str(int(match.group(1))) + " | Total: " + str(count*int(match.group(1))))
+                                #print("Opcode: " + opcode + "FP Count: " + str(count) + " | Factor: " +str(int(match.group(1))) + " | Total: " + str(count*int(match.group(1))))
                         else:
                             if match:
                                 integer_ops += count*int(match.group(1))
-                                print("Integer Count: " + str(count) + " | Factor: " +str(int(match.group(1))) + " | Total: " + str(count*int(match.group(1))))
+                                #print("Integer Count: " + str(count) + " | Factor: " +str(int(match.group(1))) + " | Total: " + str(count*int(match.group(1))))
                     else:
                         #If "|" is not present, check if the word "TOTAL" is in the rest of the line
                         if "TOTAL" in rest:
