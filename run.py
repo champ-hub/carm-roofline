@@ -363,6 +363,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
     #CPU Type Verification (x86 / ARM / RISCV)
     isa_set, l1_size, l2_size, l3_size, VLEN = check_hardware(isa_set, freq, set_freq, verbose, precision_set, l1_size, l2_size, l3_size, VLEN)
     VLEN_aux = VLEN
+    dram_bytes_aux = dram_bytes
 
     if inst == "fma":
         FP_factor = 2
@@ -388,7 +389,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                     print("------------------------------")
                     print("Now Testing:", threads, "Threads on", isa, "with", precision)
                     
-                    
+                dram_bytes = dram_bytes_aux
                 FP_factor = 1
                 if VLEN_aux > 1 and precision == "dp":
                     VLEN = VLEN_aux
@@ -422,17 +423,18 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                 else:
                     print("WARNING: No L3 Size Found, you can use the -l3 <l3_size> argument, or a configuration file to specify it.")
                 if (dram_auto and l3_size > 0 and dram_bytes/(threads) < (l3_size*2)):
-                    num_reps["DRAM"] = int((int(l3_size)+10)*1024/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
-                    test_size["DRAM"] = int((int(l3_size)+10))
+                    num_reps["DRAM"] = int((int(l3_size)*2)*1024/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
+                    test_size["DRAM"] = int((int(l3_size)*2))
+                    dram_bytes = int(l3_size)*2*threads
                 else:
                     if (dram_bytes > 0):
                         num_reps["DRAM"] = int(dram_bytes*1024/(threads*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
                         test_size["DRAM"] = int(dram_bytes/(threads))
                         if int(test_size["DRAM"]) <= int(l3_size) and verbose > 0:
                             print("WARNING: DRAM test size per thread is not sufficient to guarantee best results, to guarantee best results consider changing the default test size.")
-                            print("By using --dram_bytes", int(l3_size)*int(threads)+10240, " or the flag --dram_auto, the minimum test size necessary for", threads, "threads is achieved, using the --dram_auto flag will automatically apply this adjustement..")
+                            print("By using --dram_bytes", int(l3_size)*2*int(threads), "(", float((int(l3_size)*2*int(threads))/1048576), "Gb) the minimum test size necessary for", threads, "threads is achieved, using the --dram_auto flag will automatically apply this adjustement.")
                 if verbose > 2:
-                    print("DRAM Test Size per Thread:", test_size["DRAM"], "Kb | L3 Size:", l3_size, "Kb")
+                    print("DRAM Test Size per Thread:", test_size["DRAM"], "Kb | L3 Size:", l3_size, "Kb | Total DRAM Test Size:", float((test_size["DRAM"]*threads)/1048576), "Gb")
 
                 num_reps["FP"] = int(num_ops/(FP_factor*ops_fp[isa][precision]))
                 if inst != "fma":
@@ -630,14 +632,26 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
     if VLEN > 1:
         LMUL = 8
 
-    if verbose > 0:
+    if verbose == 1:
+        print("------------------------------")
         print("Running Benchmarks for the Following Threads Counts:", threads_set)
         print("On the Following ISA extensions: ", isa_set)
         print("Using the Following Precisions:", precision_set)
+        print("------------------------------")
+        
 
     for threads in threads_set:
         for isa in isa_set:
             for precision in precision_set:
+                if verbose > 1:
+                    print("------------------------------")
+                    print("Running Benchmarks for the Following Threads Counts:", threads_set)
+                    print("On the Following ISA extensions: ", isa_set)
+                    print("Using the Following Precisions:", precision_set)
+                    print("Now Testing:", threads, "Threads on", isa, "with", precision)
+                if verbose == 1:
+                    print("------------------------------")
+                    print("Now Testing:", threads, "Threads on", isa, "with", precision)
                 
                 if VLEN_aux > 1 and precision == "dp":
                     VLEN = VLEN_aux
@@ -805,22 +819,43 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
     VLEN_aux = VLEN
     if VLEN > 1:
         LMUL = 8
+    dram_bytes_aux = dram_bytes
     
     
     print("Experimental test type, results are not saved, use -v 2 to view output in the terminal.")
-    if verbose > 0:
+    if verbose == 1:
+        print("------------------------------")
         print("Running Benchmarks for the Following Threads Counts:", threads_set)
         print("On the Following ISA extensions: ", isa_set)
         print("Using the Following Precisions:", precision_set)
+        print("------------------------------")
+        
 
     for threads in threads_set:
         for isa in isa_set:
             for precision in precision_set:
-
+                if verbose > 1:
+                    print("------------------------------")
+                    print("Running Benchmarks for the Following Threads Counts:", threads_set)
+                    print("On the Following ISA extensions: ", isa_set)
+                    print("Using the Following Precisions:", precision_set)
+                    print("Now Testing:", threads, "Threads on", isa, "with", precision)
+                if verbose == 1:
+                    print("------------------------------")
+                    print("Now Testing:", threads, "Threads on", isa, "with", precision)
+                
+                dram_bytes = dram_bytes_aux
                 if VLEN_aux > 1 and precision == "dp":
                     VLEN = VLEN_aux
+                    LMUL = 8
                 if VLEN_aux > 1 and precision == "sp":
                     VLEN = VLEN_aux * 2
+                    LMUL = 8
+                if not isa == "riscvvector":
+                    VLEN = 1
+                    LMUL = 1
+                if verbose > 2 and isa =="riscvvector":
+                    print("VLEN IS:", VLEN, "| LMUL IS:", LMUL)
         
                 os.system("make clean && make isa=" + isa)
                 if test_type == "mixedL1":
@@ -848,15 +883,16 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                     if (dram_auto) and ((int(dram_bytes)/threads) < (int(l3_size)*2)):
                         num_reps = int((int(l3_size)*2)*1024/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
                         test_size = int((int(l3_size)*2))
+                        dram_bytes = int(l3_size)*2*threads
                     else:
                         num_reps = int(dram_bytes*1024/(threads*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
                         test_size = int(dram_bytes/(threads))
 
                         if int(test_size) <= int(l3_size) and verbose > 0:
-                            print("DRAM test size per thread is not sufficient to guarantee best results, to guarantee best results consider changing the default test size.")
-                            print("By using --dram_bytes", int(l3_size)*int(threads)+1024, "the minimum size necessary for", threads, "threads is achieved, using the --dram_auto flag will automatically apply this adjustement.")
-                    if verbose > 2:
-                        print("DRAM Test Size per Thread:", test_size, "Kb | L3 Size:", l3_size, "Kb")
+                            print("WARNING: DRAM test size per thread is not sufficient to guarantee best results, to guarantee best results consider changing the default test size.")
+                            print("By using --dram_bytes", int(l3_size)*2*int(threads), "(", float((int(l3_size)*2*int(threads))/1048576), "Gb) the minimum test size necessary for", threads, "threads is achieved, using the --dram_auto flag will automatically apply this adjustement.")
+                if verbose > 2:
+                    print("DRAM Test Size per Thread:", test_size, "Kb | L3 Size:", l3_size, "Kb | Total DRAM Test Size:", float((test_size*threads)/1048576), "Gb")
                 
                 
                 os.system("./Bench/Bench -test MIXED -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -num_FP " + str(num_fp) + " -op " + inst + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN))
