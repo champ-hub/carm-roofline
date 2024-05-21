@@ -432,9 +432,9 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                         test_size["DRAM"] = int(dram_bytes/(threads))
                         if int(test_size["DRAM"]) <= int(l3_size) and verbose > 0:
                             print("WARNING: DRAM test size per thread is not sufficient to guarantee best results, to guarantee best results consider changing the default test size.")
-                            print("By using --dram_bytes", int(l3_size)*2*int(threads), "(", float((int(l3_size)*2*int(threads))/1048576), "Gb) the minimum test size necessary for", threads, "threads is achieved, using the --dram_auto flag will automatically apply this adjustement.")
+                            print("By using --dram_bytes", int(l3_size)*2*int(threads), "(", custom_round(float((int(l3_size)*2*int(threads))/1048576)), "Gb) the minimum test size necessary for", threads, "threads is achieved, using the --dram_auto flag will automatically apply this adjustement.")
                 if verbose > 2:
-                    print("DRAM Test Size per Thread:", test_size["DRAM"], "Kb | L3 Size:", l3_size, "Kb | Total DRAM Test Size:", float((test_size["DRAM"]*threads)/1048576), "Gb")
+                    print("DRAM Test Size per Thread:", test_size["DRAM"], "Kb | L3 Size:", l3_size, "Kb | Total DRAM Test Size:", custom_round(float((test_size["DRAM"]*threads)/1048576)), "Gb")
 
                 num_reps["FP"] = int(num_ops/(FP_factor*ops_fp[isa][precision]))
                 if inst != "fma":
@@ -664,7 +664,9 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                     LMUL = 1
                 if verbose > 2 and isa =="riscvvector":
                     print("VLEN IS:", VLEN, "| LMUL IS:", LMUL)
-
+                if verbose > 0:
+                    print("------------------------------")
+                    
                 Gbps = [0] * len(test_sizes)
                 InstCycle = [0] * len(test_sizes)
 
@@ -890,11 +892,12 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
 
                         if int(test_size) <= int(l3_size) and verbose > 0:
                             print("WARNING: DRAM test size per thread is not sufficient to guarantee best results, to guarantee best results consider changing the default test size.")
-                            print("By using --dram_bytes", int(l3_size)*2*int(threads), "(", float((int(l3_size)*2*int(threads))/1048576), "Gb) the minimum test size necessary for", threads, "threads is achieved, using the --dram_auto flag will automatically apply this adjustement.")
-                if verbose > 2:
-                    print("DRAM Test Size per Thread:", test_size, "Kb | L3 Size:", l3_size, "Kb | Total DRAM Test Size:", float((test_size*threads)/1048576), "Gb")
+                            print("By using --dram_bytes", int(l3_size)*2*int(threads), "(", custom_round(float((int(l3_size)*2*int(threads))/1048576)), "Gb) the minimum test size necessary for", threads, "threads is achieved, using the --dram_auto flag will automatically apply this adjustement.")
+                    if verbose > 2:
+                        print("DRAM Test Size per Thread:", test_size, "Kb | L3 Size:", l3_size, "Kb | Total DRAM Test Size:", custom_round(float((test_size*threads)/1048576)), "Gb")
                 
-                
+                if verbose > 0:
+                    print("------------------------------")
                 os.system("./Bench/Bench -test MIXED -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -num_FP " + str(num_fp) + " -op " + inst + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN))
 
                 if(interleaved):
@@ -936,7 +939,7 @@ def main():
     parser.add_argument('--set_freq',  dest='set_freq', action='store_const', const=1, default=0, help='Set Processor frequency to indicated one (x86 only)')
     parser.add_argument('--name', default='unnamed', nargs='?', type = str, help='Name for results file (if not using config file)')
     parser.add_argument('-v', '--verbose', default=1, nargs='?', type = int, choices=[0, 1, 2, 3], help='Level of terminal output (0 -> No Output 1 -> Only ISA Errors and Test Details, 2 -> Intermediate Test Results, 3 -> Configuration Values Selected/Detected)')
-    parser.add_argument('--inst', default='add', nargs='?', choices=['add', 'mul', 'div'], help='FP Instruction (Default: add), FMA performance is measured by default too.')
+    parser.add_argument('--inst', default='add', nargs='?', choices=['add', 'mul', 'div', 'fma'], help='FP Instruction (Default: add), FMA performance is measured by default too.')
     parser.add_argument('-vl', '--vector_length',  default=1, nargs='?', type = int, help='Vector Length in elements for RVV configuration (Default: 1)')
     parser.add_argument('--isa', default=['auto'], nargs='+', choices=['avx512', 'avx2', 'sse', 'scalar', 'neon', 'armscalar', 'riscvscalar', 'riscvvector', 'auto'], help='set of ISAs to test, if auto will test all available ISAs (Default: auto)')
     parser.add_argument('-p', '--precision', default=['dp'], nargs='+', choices=['dp', 'sp'], help='Data Precision (Default: dp)')
