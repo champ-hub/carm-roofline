@@ -1,8 +1,12 @@
 import argparse
 import subprocess
 import os
-import matplotlib.pyplot as plt
-import numpy as np
+plot_numpy = 1
+try:
+    import matplotlib.pyplot as plt
+    import numpy as np
+except ImportError:
+    plot_numpy = None
 import datetime
 import time
 import math
@@ -379,9 +383,12 @@ if __name__ == "__main__":
     
     #Plot Roofline
     if args.drawroof:
-        print("Manual application plotting not implemented iet")
-        #date = ct.strftime('%Y-%m-%d_%H-%M-%S')
-        #plot_roofline_with_dot(args.executable_path, gflops, ai, args.choice, date)
-    
+        if not plot_numpy == None:
+            print("Manual application plotting not implemented iet, results can be viewed using the GUI")
+            #date = ct.strftime('%Y-%m-%d_%H-%M-%S')
+            #plot_roofline_with_dot(args.executable_path, gflops, ai, args.choice, date)
+        else:
+            print("No Matplotlib and/or Numpy found, in order to draw CARM graphs make sure to install them.")
+
     date = ct.strftime('%Y-%m-%d %H:%M:%S')
     update_csv(args.name, args.executable_path, gflops, ai, bandwidth, float(total_time_nsec / 1e9), args.app_name, date, args.isa, precision, thread_count)
