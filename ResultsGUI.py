@@ -1151,7 +1151,7 @@ def update_application_dropdown(selected_file):
     options = [{
     'label': f"{row['Name']} ({row['Method']}) - {row['Date']} ({' '.join(filter(None, [row['ISA'], row['Precision'], (str(row['Threads']) + ' Threads' if row['Threads'] else None)]))}{' |' if any([row['ISA'], row['Precision'], row['Threads']]) else ''} AI: {row['AI']} Gflops: {row['GFLOPS']})",
     'value': f"{row['Name']}_{row['Date']}_{row['ISA']}_{row['Precision']}_{row['Threads']}_{row['AI']}_{row['GFLOPS']}"
-} for index, row in df.iterrows()]
+} for index, row in df.iloc[::-1].iterrows()]
 
     dropdown = dcc.Dropdown(
         id='application-dropdown',
@@ -2026,7 +2026,9 @@ def analysis(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPI
     #Plot the selected application as a dot
     if selected_applications:
         for selected_application in selected_applications:
-            parts = selected_application.split('_')
+            print(selected_application)
+            #parts = selected_application.split('_')
+            parts = selected_application.rsplit('_', 6)
             if len(parts) >= 7:
                 name, date, isa, precision, threads, ai, gflops = parts[0], parts[1], parts[2], parts[3], parts[4], float(parts[5]), float(parts[6])
                 #Add trace for each application

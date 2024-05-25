@@ -43,9 +43,9 @@
 
 int long long num_reps_2;
 
-	void sleep0(){
-		sched_yield();
-	}
+void sleep0(){
+	sched_yield();
+}
 
 void set_process_priority_high(){
 	setpriority(PRIO_PROCESS, 0, PRIO_MIN);
@@ -97,7 +97,7 @@ int long long median(int n, int long long x[]){
 //x86 SECTION
 #elif !defined(ARM) && !defined(RISCV) && !defined(RISCVVECTOR)
 	static  inline void serialize(){
-		asm volatile ( "xorl %%eax, %%eax \n cpuid " : : : "%eax","%ebx","%ecx","%edx" );
+		asm volatile ( "lfence;" : : : );
 	}
 
 	static  inline long long read_tsc_start(){
@@ -110,7 +110,7 @@ int long long median(int n, int long long x[]){
 		"movq %%rax, %1;"
 		: "=r" (d), "=r" (a)
 		:
-		: "%rax", "%rbx","%rcx", "%rdx"
+		: "%rax", "%rdx"
 	);
 
 	return ((long long)d << 32 | a);
@@ -126,7 +126,7 @@ int long long median(int n, int long long x[]){
 			"lfence;"
 			: "=r" (d), "=r" (a)
 			:
-			: "%rax", "%rbx","%rcx", "%rdx"
+			: "%rax", "%rdx"
 		);
 
 		return ((long long)d << 32 | a);
@@ -211,7 +211,7 @@ void * benchmark_test(void *t_args){
 				test_var[i] = 1;
 			}
 		#endif
-		
+	//fprintf(stderr, "Size: %d Kb ", size_kb_rounded_up);
 	#endif
 	pthread_barrier_wait(&bar);
 
