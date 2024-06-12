@@ -209,7 +209,7 @@ def compile_c_file(c_file, PMU_or_DBI, PAPI_Path, compiler_flags=None):
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description="Inject instrumentation code into the ROI of provided source code, and produce injected executable.")
+    parser = argparse.ArgumentParser(description="Inject instrumentation code into the ROI of provided source code, optionally produce injected executable.")
     parser.add_argument('--PMU',  dest='pmu', action='store_const', const=1, default=0, help='Inject code for PMU measuring, intead of binary instrumentation.')
     parser.add_argument('--new_file',  dest='new_file', action='store_const', const=1, default=0, help='Create a new injected source file instead of injecting directly on the provided source file')
     parser.add_argument('--compile',  dest='compile', action='store_const', const=1, default=0, help='Automatically compile source file after injection')

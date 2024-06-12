@@ -366,7 +366,7 @@ if __name__ == "__main__":
     ai = float (total_fp / memory_bytes)
 
     gflops = float(total_fp / total_time_nsec)
-    bandwidth = float((memory_bytes * 8) / total_time_nsec)
+    bandwidth = float((memory_bytes) / total_time_nsec)
 
     print("\nTotal FLOP Count:", total_fp)
     print("SP FLOP Ratio: " + str(sp_ratio) + " DP FLOP Ration: " + str(dp_ratio))

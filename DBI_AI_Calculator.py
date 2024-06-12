@@ -161,9 +161,10 @@ x86_AVX512_int_operations = {
 ARM_FP_operations = {}
 ARM_INT_operations = {}
 
-x86_memory_operations0 = {}
+memory_operations = {}
 
 x86_not_supported = {}
+misc_operations = {}
 
 #Check if SDE is present
 def check_sde_exists(path_sde):
@@ -257,7 +258,7 @@ def runDynamoRIO(dynamo_path, roi, executable_path, additional_args):
     except subprocess.CalledProcessError as e:
         print("Error executing the command:", e)
     
-    os.remove("timing_results.txt")
+    #os.remove("timing_results.txt")
 
 #Run provided application for timming measurements
 def runApplication(roi, executable_path, additional_args):
@@ -304,7 +305,7 @@ def analyseSDE():
     total_bytes_read_regex = r"Total bytes read: (\d+)"
 
     try:
-        result = subprocess.run(['python3', "Intel_SDE_AiCalculator.py"], capture_output=True, text=True)
+        result = subprocess.run(['python3', "SDE_AI_Calculator.py"], capture_output=True, text=True)
         if result.returncode == 0:
             for line in result.stdout.splitlines():
                 print(line)
@@ -434,13 +435,13 @@ def analyseDynamoRIOx86():
                             description = None
                 # Store the count, opcode, and description in the dictionary
                 # Check if the opcode already exists in the dictionary
-                if opcode in x86_memory_operations0:
+                if opcode in memory_operations:
                     #Check if the entry with the same count and description already exists
-                        if (count, description) not in x86_memory_operations0[opcode]:
-                            x86_memory_operations0[opcode].append((count, description))
+                        if (count, description) not in memory_operations[opcode]:
+                            memory_operations[opcode].append((count, description))
                 else:
                     #If the opcode doesn't exist, create a new list with the entry
-                    x86_memory_operations0[opcode] = [(count, description)]
+                    memory_operations[opcode] = [(count, description)]
             #Others Section
             else:
                 parts = line.split(':')
@@ -450,7 +451,7 @@ def analyseDynamoRIOx86():
                     opcode = opcode.strip()
                     if count.isdigit():
                         count = int(count)
-                        x86_not_supported[opcode] = count
+                        misc_operations[opcode] = count
     return fp_ops, memory_bytes, integer_ops
 
 def analyseDynamoRIOARM():
@@ -568,13 +569,13 @@ def analyseDynamoRIOARM():
                 
                 #Store the count, opcode, and description in the dictionary
                 #Check if the opcode already exists in the dictionary
-                if opcode in x86_memory_operations0:
+                if opcode in memory_operations:
                     #Check if the entry with the same count and description already exists
-                        if (count, description) not in x86_memory_operations0[opcode]:
-                            x86_memory_operations0[opcode].append((count, description))
+                        if (count, description) not in memory_operations[opcode]:
+                            memory_operations[opcode].append((count, description))
                 else:
                     #If the opcode doesn't exist, create a new list with the entry
-                    x86_memory_operations0[opcode] = [(count, description)]
+                    memory_operations[opcode] = [(count, description)]
             else:
                 parts = line.split(':')
                 if len(parts) == 2:
@@ -585,13 +586,13 @@ def analyseDynamoRIOARM():
                     #Check if the count is an integer
                     if count.isdigit():
                         count = int(count)
-                        x86_not_supported[opcode] = count
+                        misc_operations[opcode] = count
     return fp_ops, memory_bytes, integer_ops
 
 def printDynamoRIOx86():
     global x
     print("Memory Operations:")
-    for opcode, entries in x86_memory_operations0.items():
+    for opcode, entries in memory_operations.items():
         total_entry_printed = False
         for count, description in entries:
             if description != "TOTAL":
@@ -727,6 +728,14 @@ def printDynamoRIOx86():
 
 
     #MISC OPERATIONS
+    misc_operation = sorted(misc_operations.items(), key=lambda item: item[1], reverse=False)
+    #Print misc opcodes with counts greater than 0
+    print("\Miscellaneous operations")
+    for opcode, data in sorted(misc_operations, key=lambda item: item[1], reverse=False):
+        if data > 0:
+            print(f"{data:12} : {opcode}")
+
+    #NOT SUPPORTED OPERATIONS
     x86_not_supported_sorted = sorted(x86_not_supported.items(), key=lambda item: item[1], reverse=False)
     #Print misc opcodes with counts greater than 0
     print("\nNot supported operations")
@@ -736,7 +745,7 @@ def printDynamoRIOx86():
 
 def printDynamoRIOARM():
     print("\nMemory Operations:\n")
-    for opcode, entries in x86_memory_operations0.items():
+    for opcode, entries in memory_operations.items():
         total_entry_printed = False
         for count, description in entries:
             if description != "TOTAL":
@@ -780,10 +789,10 @@ def printDynamoRIOARM():
                 total_entry_printed = True
 
     #MISC OPERATIONS
-    x86_not_supported_sorted = sorted(x86_not_supported.items(), key=lambda item: item[1], reverse=False)
+    misc_operations_sorted = sorted(misc_operations.items(), key=lambda item: item[1], reverse=False)
     #print not supported things
     print("\nNot supported operations:\n")
-    for opcode, data in sorted(x86_not_supported_sorted, key=lambda item: item[1], reverse=False):
+    for opcode, data in sorted(misc_operations_sorted, key=lambda item: item[1], reverse=False):
         if data > 0:
             print(f"{data:12} : {opcode}")
 
@@ -1076,7 +1085,7 @@ if __name__ == "__main__":
     gflops = flops / 1e9
 
     ai = float(fp_ops/memory_bytes)
-    bandwidth = float((memory_bytes * 8) / exec_time)
+    bandwidth = float((memory_bytes) / exec_time)
 
     print("\nTotal FP operations:", fp_ops)
     #print("Total integer operations:", integer_ops-fp_ops)
