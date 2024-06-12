@@ -91,6 +91,8 @@ def read_csv_file(file_path):
 
         header2 = next(reader)
         for row in reader:
+            if not row or not ''.join(row).strip():
+                continue
             data = {}
             data['Date'] = row[0]
             data['ISA'] = row[1]
@@ -2086,7 +2088,7 @@ def analysis(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPI
     paper_bgcolor='#e9ecef'
 )
 
-    return figure, {'display': 'block'}
+    return figure, {'display': 'block', 'width': '100%'}
 
 
 def construct_query(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPInst, Date):

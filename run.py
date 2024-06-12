@@ -360,7 +360,8 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
     FP_factor = 1
     time_ms = 0
     cycles = 0
-    freq_nominal = 0
+    freq_nominal = freq
+    freq_real = freq
 
     #CPU Type Verification (x86 / ARM / RISCV)
     isa_set, l1_size, l2_size, l3_size, VLEN = check_hardware(isa_set, freq, set_freq, verbose, precision_set, l1_size, l2_size, l3_size, VLEN)
@@ -393,7 +394,10 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                     print("Now Testing:", threads, "Threads on", isa, "with", precision)
                 
                 dram_bytes = dram_bytes_aux
-                FP_factor = 1
+                if inst == "fma":
+                    FP_factor = 2
+                else:
+                    FP_factor = 1
                 no_freq_measure = no_freq_measure_aux
                 if VLEN_aux > 1 and precision == "dp":
                     VLEN = VLEN_aux
@@ -660,6 +664,8 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
     else:
         inter = "No"
     LMUL = 1
+    freq_nominal = freq
+    freq_real = freq
 
     isa_set, l1_size, l2_size, l3_size, VLEN = check_hardware(isa_set, freq, set_freq, verbose, precision_set, l1_size, l2_size, l3_size, VLEN)
     
@@ -813,6 +819,7 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                         plt.axvline(x = l2_position, color = 'grey', lw = 3, label = 'L2 Cache Size')
                     if l3_size > 0:
                         plt.axvline(x = l3_position, color = 'k',linestyle='dashed', lw = 3, label = 'L3 Cache Size')
+
                     plt.legend(bbox_to_anchor = (1.0, 1), loc = 'best', fontsize=18)
                     ax2 = ax.twinx()
                     color = 'tab:red'
@@ -868,6 +875,8 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
     if VLEN > 1:
         LMUL = 8
     dram_bytes_aux = dram_bytes
+    freq_nominal = freq
+    freq_real = freq
     
     if verbose == 1:
         print("------------------------------")
@@ -1025,7 +1034,7 @@ def main():
     parser.add_argument('--only_st',  dest='only_st', action='store_const', const=1, default=0, help='Run only stores in mem test (ld_st_ratio is ignored)')
     parser.add_argument('config', nargs='?', help='Path for the system configuration file')
     parser.add_argument('-t', '--threads', default=[1], nargs='+', type = int, help='Set of number of threads for the micro-benchmarking, insert multiple thread valus by spacing them, no commas (Default: [1])')
-    parser.add_argument('-i', '--interleaved',  dest='interleaved', action='store_const', const=1, default=0, help='For thread binding when cores are interleaved between numa domains (Default: 0)')
+    parser.add_argument('-i', '--interleaved',  dest='interleaved', action='store_const', const=1, default=0, help='For thread binding when cores are interleaved between NUMA domains (Default: 0)')
     parser.add_argument('-ops', '--num_ops',  default=32768, nargs='?', type = int, help='Number of FP operations to be used in FP test (Default: 32768)')
     parser.add_argument('--dram_bytes',  default=524288, nargs='?', type = int, help='Size of the array for the DRAM test in KiB (Default: 524288 (512 MiB))')
     parser.add_argument('--dram_auto',  dest='dram_auto', action='store_const', const=1, default=0, help='Automatically calculate the DRAM test size needed to ensure data does not fit in L3, can require a lot of memory in some cases, make sure it fits in the DRAM of your system (Default: 0)')
