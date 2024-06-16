@@ -173,7 +173,7 @@ def compile_c_file(c_file, PMU_or_DBI, PAPI_Path, compiler_flags=None):
     compiler_flags = compiler_flags or []
     filename, file_extension = os.path.splitext(c_file)
     compiled_executable = filename
-    if PMU_or_DBI == "DBI":
+    if PMU_or_DBI == ["dbi"]:
         try:
             command = [compiler, *compiler_flags, c_file, "-o", compiled_executable]
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -186,7 +186,7 @@ def compile_c_file(c_file, PMU_or_DBI, PAPI_Path, compiler_flags=None):
         except Exception as e:
             return str(e)
         
-    elif PMU_or_DBI == "PMU":
+    elif PMU_or_DBI == ["pmu"]:
         if CPU_Type == "x86_64":
             PAPI_src = os.path.join(PAPI_Path, "src")
             PAPI_lib = os.path.join(PAPI_Path, "src/libpapi.a")
@@ -219,12 +219,12 @@ if __name__ == "__main__":
     parser.add_argument("comp_args", nargs="...", help="Additional arguments for the compiler")
 
     args = parser.parse_args()
-    PMU_or_DBI = "DBI"
+    PMU_or_DBI = ["dbi"]
 
     if (args.pmu):
-        PMU_or_DBI = "PMU"
+        PMU_or_DBI = ["pmu"]
     else:
-        PMU_or_DBI = "DBI"
+        PMU_or_DBI = ["dbi"]
 
     CPU_Type = platform.machine()
     if CPU_Type != "x86_64" and CPU_Type != "aarch64":
