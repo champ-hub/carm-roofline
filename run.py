@@ -18,6 +18,7 @@ import sys
 import DBI_AI_Calculator
 
 riscv_vector_compiler_path = "gcc"
+#riscv_vector_compiler_path = "/home/inesc/llvm-EPI-0.7-development-toolchain-native/bin/clang"
 
 #Mapping between ISA and memory transfer size
 mem_inst_size = {"avx512": {"sp": 64, "dp": 64}, "avx": {"sp": 32, "dp": 32}, "avx2": {"sp": 32, "dp": 32}, "sse": {"sp": 16, "dp": 16}, "scalar": {"sp": 4, "dp": 8}, "neon": {"sp": 16, "dp": 16}, "armscalar": {"sp": 4, "dp": 8}, "riscvscalar": {"sp": 4, "dp": 8}, "riscvvector": {"sp": 4, "dp": 8}}
@@ -108,6 +109,7 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
         if (isa_set[0] == "auto" or "riscvvector" in isa_set):
             subprocess.run([riscv_vector_compiler_path, "-o", "./config/auto_config/RISCV_Vector", "./config/auto_config/RISCV_Vector.c", "-march=rv64gcv0p7"])
             
+            #subprocess.run([riscv_vector_compiler_path, "-o", "./config/auto_config/RISCV_Vector", "./config/auto_config/RISCV_Vector.c", "-march=rv64gcv0p7", "-menable-experimental-extensions"])
             result = subprocess.run(["./config/auto_config/RISCV_Vector", "dp"], stdout=subprocess.PIPE)
             VLEN_Check = int(result.stdout.decode('utf-8'))
             os.remove("./config/auto_config/RISCV_Vector")
@@ -401,7 +403,10 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                 no_freq_measure = no_freq_measure_aux
                 if VLEN_aux > 1 and precision == "dp":
                     VLEN = VLEN_aux
-                    LMUL = 8
+                    if not test_type == "FP":
+                        LMUL = 8
+                    else:
+                        LMUL = 1
                 if VLEN_aux > 1 and precision == "sp":
                     VLEN = VLEN_aux * 2
                     LMUL = 8

@@ -728,18 +728,18 @@ def printDynamoRIOx86():
 
 
     #MISC OPERATIONS
-    misc_operation = sorted(misc_operations.items(), key=lambda item: item[1], reverse=False)
+    sorted_ops = sorted(misc_operations.items(), key=lambda item: item[1], reverse=False)
     #Print misc opcodes with counts greater than 0
     print("\Miscellaneous operations")
-    for opcode, data in sorted(misc_operations, key=lambda item: item[1], reverse=False):
+    for opcode, data in sorted(sorted_ops, key=lambda item: item[1], reverse=False):
         if data > 0:
             print(f"{data:12} : {opcode}")
 
     #NOT SUPPORTED OPERATIONS
-    x86_not_supported_sorted = sorted(x86_not_supported.items(), key=lambda item: item[1], reverse=False)
+    sorted_ops = sorted(x86_not_supported.items(), key=lambda item: item[1], reverse=False)
     #Print misc opcodes with counts greater than 0
     print("\nNot supported operations")
-    for opcode, data in sorted(x86_not_supported_sorted, key=lambda item: item[1], reverse=False):
+    for opcode, data in sorted(sorted_ops, key=lambda item: item[1], reverse=False):
         if data > 0:
             print(f"{data:12} : {opcode}")
 
