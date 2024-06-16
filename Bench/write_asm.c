@@ -4,7 +4,7 @@
 //																					WRITE FP TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void write_asm_fp (int long long fp, char * op, int flops, char * registr, char * assembly_op_flops_1, char * assembly_op_flops_2, char * precision){
+void write_asm_fp (int long long fp, char * op, int flops, char * registr, char * assembly_op_flops_1, char * assembly_op_flops_2, char * precision, int Vlen, int LMUL){
 	
 	int i, j;
 	FILE * file,*file_header;
@@ -17,8 +17,12 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 	//Specific test data
 	#if defined(ASCALAR) || defined(NEON)
 		fprintf(file_header,"#define ARM 1\n");
-	#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+	#elif defined(RISCVSCALAR)
 		fprintf(file_header,"#define RISCV 1\n");
+	#elif defined(RVV07) || defined(RVV1)
+		fprintf(file_header,"#define RISCVVECTOR 1\n");
+		fprintf(file_header,"#define VLEN %d\n", Vlen);
+		fprintf(file_header,"#define VLMUL %d\n", LMUL);
 	#endif
 	if(strcmp(op,"div") == 0){
 		fprintf(file_header,"#define DIV 1\n");
@@ -37,7 +41,9 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 
 	fprintf(file_header,"#define FP_INST %lld\n",fp);
 	
-	iter = flops_math(fp); //Calculate necessary iterations
+	iter = flops_math(fp, LMUL); //Calculate necessary iterations
+
+	fprintf(stderr, "FP: %lld | iter: %lld | extra: %lld\n", fp, iter, fp%iter);
 	
 	//Creating Test Function
 	if(strcmp(op,"div") == 0){
@@ -48,22 +54,22 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 	
 	fprintf(file,"\t__asm__ __volatile__ (\n");
 	//RISCV VECTOR SECTION
-	#if defined(RISCVVECTOR)
+	#if defined(RVV07) || defined(RVV1)
 		if(strcmp(precision, "dp") == 0){
-			long long int test_len = 2;
-			fprintf(file,"\t\t\"li t4, %lld\\n\\t\"\n", test_len);
-			fprintf(file,"\t\t\"vsetvli t3, t4, e64, m1\\n\\t\"\n");
+			int Real_Vlen = ((Vlen * 64 * LMUL) / 64);
+			fprintf(file,"\t\t\"li t4, %d\\n\\t\"\n", Real_Vlen);
+			fprintf(file,"\t\t\"vsetvli t0, t4, e64, m%d\\n\\t\"\n", LMUL);
 		}
 		else{
-			long long int test_len = 4;
-			fprintf(file,"\t\t\"li t4, %lld\\n\\t\"\n", test_len);
-			fprintf(file,"\t\t\"vsetvli t3, t4, e32, m1\\n\\t\"\n");
+			int Real_Vlen = ((Vlen * 32 * LMUL) / 32);
+			fprintf(file,"\t\t\"li t4, %d\\n\\t\"\n", Real_Vlen);
+			fprintf(file,"\t\t\"vsetvli t0, t4, e32, m%d\\n\\t\"\n", LMUL);
 		}
 	#endif
 	
 	
 	//x86 SECTION
-	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 		fprintf(file,"\t\t\"movq %%0, %%%%r8\\n\\t\\t\"\n");
 		if(strcmp(op,"div") == 0){
 			fprintf(file,"\t\t\"movq %%1, %%%%rax\\n\\t\\t\"\n");
@@ -79,14 +85,14 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 		fprintf(file,"\t\t\"mov w0, %%w0\\n\\t\"\n");
 		fprintf(file,"\t\t\"Loop2_%%=:\\n\\t\"\n");
 	//RISCV SECTION
-	#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+	#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 		fprintf(file,"\t\t\"ld t0, %%0\\n\\t\"\n");
 		fprintf(file,"\t\t\"Loop2_%%=:\\n\\t\"\n");
 	#endif
 
 	if(iter > 1){
 		//x86 SECTION
-		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 			fprintf(file,"\t\t\"movl $%lld, %%%%edi\\n\\t\\t\"\n",iter);
 			fprintf(file,"\t\t\"Loop1_%%=:\\n\\t\\t\"\n");
 		//ARM SECTION
@@ -94,17 +100,17 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 			fprintf(file,"\t\t\"mov w1, %lld\\n\\t\"\n",iter);
 			fprintf(file,"\t\t\"Loop1_%%=:\\n\\t\"\n");
 		//RISCV SECTION
-		#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+		#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 			fprintf(file,"\t\t\"li t1, %lld\\n\\t\"\n", iter);
 			fprintf(file,"\t\t\"Loop1_%%=:\\n\\t\"\n");
 		#endif
 
-		for(i = 0; i < BASE_LOOP_SIZE; i++){
+		for(i = 0; i < BASE_LOOP_SIZE; i+=LMUL){
 			if(i % NUM_REGISTER == 0){
 				j = 0;
 			}
 			//x86 AVX or SCALAR SECTION
-			#if defined(AVX) || defined(AVX512) || defined(AVX2) || (!defined(SSE) && !defined(NEON) && !defined(ASCALAR) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR))
+			#if defined(AVX) || defined(AVX512) || defined(AVX2) || (!defined(SSE) && !defined(NEON) && !defined(ASCALAR) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1))
 				if(strcmp(op,"div") == 0){
 					fprintf(file,"\t\t\"%s %%%%%s0, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr, registr, j, registr, j);
 				}else if(strcmp(op,"mad") == 0){
@@ -121,7 +127,7 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 					fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr, j, registr, j, registr, j);
 				}
 			//x86 SSE SECTION
-			#elif !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+			#elif !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 				if(strcmp(op,"div") == 0){
 					fprintf(file,"\t\t\"%s %%%%%s0, %%%%%s%d;\"\n", assembly_op_flops_1, registr, registr, j);
 				}else if(strcmp(op,"mad") == 0){
@@ -158,14 +164,15 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 				else{
 					fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr, j, registr, j, registr, j);
 				}
-			#elif defined(RISCVVECTOR)
+			#elif defined(RVV07) || defined(RVV1)
 				fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr, j, registr, j, registr, j);
+				j+=(LMUL-1);
 			#endif
 			j++;
-			fp -= iter;
+			fp -= iter*LMUL;
 		}
 		//x86 SECTION
-		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 			fprintf(file,"\t\t\"subl $1, %%%%edi\\n\\t\\t\"\n");
 			fprintf(file,"\t\t\"jnz Loop1_%%=\\n\\t\\t\"\n");
 		//ARM SECTION
@@ -173,7 +180,7 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 			fprintf(file,"\t\t\"sub w1, w1, 1\\n\\t\"\n");
 			fprintf(file,"\t\t\"cbnz w1, Loop1_%%=\\n\\t\"\n");
 		//RISCV SECTION
-		#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+		#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 			fprintf(file,"\t\t\"addi t1, t1, -1\\n\\t\"\n");
 			fprintf(file,"\t\t\"bgtz t1, Loop1_%%=\\n\\t\"\n");
 		#endif
@@ -181,12 +188,12 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 	
 
 	
-	for(i = 0; i < fp; i++){
+	for(i = 0; i < fp; i+=LMUL){
 		if(i % 16 == 0){
 			j = 0;
 		}
 		//x86 AVX or SCALAR SECTION
-		#if defined (AVX512) || defined (AVX) || defined (AVX2) || (!defined(NEON) && !defined(ASCALAR) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR))
+		#if defined (AVX512) || defined (AVX) || defined (AVX2) || (!defined(NEON) && !defined(ASCALAR) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1))
 			if(strcmp(op,"div") == 0){
 				fprintf(file,"\t\t\"%s %%%%%s0, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr, registr, j, registr, j);
 			}else if(strcmp(op,"mad") == 0){
@@ -203,7 +210,7 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 				fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr, j, registr, j, registr, j);
 			}	
 		//x86 SSE SECTION
-		#elif !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+		#elif !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 			if(strcmp(op,"div") == 0){
 				fprintf(file,"\t\t\"%s %%%%%s0, %%%%%s%d;\"\n", assembly_op_flops_1, registr, registr, j);
 			}else if(strcmp(op,"mad") == 0){
@@ -239,15 +246,16 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 			else{
 				fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr, j, registr, j, registr, j);
 			}
-		#elif defined(RISCVVECTOR)
+		#elif defined(RVV07) || defined(RVV1)
 			fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr, j, registr, j, registr, j);
+			j+=(LMUL-1);
 		#endif
 		j++;
 	}
 	
 	
 	//x86 SECTION
-	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 		fprintf(file,"\t\t\"sub $1, %%%%r8\\n\\t\\t\"\n");
 		fprintf(file,"\t\t\"jnz Loop2_%%=\\n\\t\\t\"\n");
 	//ARM SECTION
@@ -255,14 +263,14 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 		fprintf(file,"\t\t\"sub w0, w0, 1\\n\\t\"\n");
 		fprintf(file,"\t\t\"cbnz w0, Loop2_%%=\\n\\t\"\n");
 	//RISCV SECTION
-	#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+	#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 		fprintf(file,"\t\t\"addi t0, t0, -1\\n\\t\"\n");
 		fprintf(file,"\t\t\"bgtz t0, Loop2_%%=\\n\\t\"\n");
 	#endif
 	
 	//End Test Function
 	//x86 SECTION
-	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 	if(strcmp(op,"div") == 0){
 		fprintf(file,"\t\t:\n\t\t:\"r\"(num_rep_max),\"r\" (test_var)\n\t\t:\"%%rax\",\"%%rdi\","COBLERED"\n\t);\n");
 	}else{
@@ -271,7 +279,7 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 	//ARM SECTION
 	#elif defined(ASCALAR) || defined(NEON)
 		fprintf(file,"\t\t:\n\t\t:\"r\"(num_rep_max)\n\t\t:"COBLERED"\n\t);\n");
-	#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+	#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 			fprintf(file,"\t\t:\n\t\t:\"m\"(num_rep_max)\n\t\t:"COBLERED"\n\t);\n");
 	#endif
 	
@@ -287,7 +295,7 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 //																					WRITE MEM TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int num_st, char * registr, char * assembly_op, char * assembly_op_2, char * precision, int Vlen){
+void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int num_st, char * registr, char * assembly_op, char * assembly_op_2, char * precision, int Vlen, int LMUL){
 	
 	int offset = 0;
 	int aux = num_rep;
@@ -299,7 +307,18 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 	file_header =  fopen("Test/test_params.h", "w");
 	file = file_header;
 
-	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align, Vlen); //Calculate number of iterations
+	fprintf(stderr,"\nVLEN: %d | LMUL: %d\n", Vlen, LMUL);
+
+	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align, Vlen, LMUL); //Calculate number of iterations
+	int extra_iter = (num_rep-iter*num_aux);
+
+	if (extra_iter < LMUL){
+		extra_iter = LMUL - extra_iter;
+	}else{
+		extra_iter = (num_rep-iter*num_aux)%(LMUL);
+	}
+
+	fprintf(stderr, "\n MEM Iterations: %lld | NUM AUX: %d, | NUM REP: %lld | REAL NUM REP: %lld | Expected missing: %lld | Expected extra: %d\n", iter, num_aux, num_rep, iter*num_aux, num_rep-iter*num_aux, extra_iter);
 	
 	//ARM SECTION
 	#if defined(ASCALAR) || defined(NEON)
@@ -310,15 +329,16 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 	//RISCV SECTION
 	#elif defined(RISCVSCALAR)
 		fprintf(file_header,"#define RISCV 1\n");
-	#elif defined(RISCVVECTOR)
+	#elif defined(RVV07) || defined(RVV1)
 		fprintf(file_header,"#define RISCVVECTOR 1\n");
 		fprintf(file_header,"#define VLEN %d\n", Vlen);
+		fprintf(file_header,"#define VLMUL %d\n", LMUL);
 	#endif
 	fprintf(file_header,"#define MEM 1\n");	
 	fprintf(file_header,"#define NUM_LD %d\n",num_ld);
 	fprintf(file_header,"#define NUM_ST %d\n",num_st);
 	fprintf(file_header,"#define OPS %d\n",ops);
-	fprintf(file_header,"#define NUM_REP %lld\n",num_rep);
+	fprintf(file_header,"#define NUM_REP %lld\n",num_rep+extra_iter);
 	if(strcmp(precision, "dp") == 0){
 			fprintf(file_header,"#define PRECISION double\n");
 	}else{
@@ -328,7 +348,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 	fprintf(file_header,"#define FP_INST 1\n\n");
 	
 	//x86 SECTION
-	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 	//Create Test Function
 	fprintf(file,"static inline __attribute__((always_inline)) void test_function(PRECISION * test_var, int long long num_reps_t){\n");	
 	fprintf(file,"\t__asm__ __volatile__ (\n");
@@ -348,23 +368,23 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 		fprintf(file,"\t\t\"Loop2_%%=:\\n\\t\"\n");
 		fprintf(file,"\t\t\"mov x3, %%1\\n\\t\\t\"\n");
 	//RISCV SECTION
-	#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+	#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 		fprintf(file,"static inline __attribute__((always_inline)) void test_function(PRECISION * test_var, int long long num_reps_t){\n");
 		fprintf(file,"\t__asm__ __volatile__ (\n");
-		#if defined(RISCVVECTOR)
+		#if defined(RVV07) || defined(RVV1)
 			if(strcmp(precision, "dp") == 0){
-				int Real_Vlen = ((Vlen * 64 * 8) / 64);
+				int Real_Vlen = ((Vlen * 64 * LMUL) / 64);
 				int bump = Real_Vlen * 8;
 				fprintf(file,"\t\t\"li t3, %d\\n\\t\"\n", bump);
 				fprintf(file,"\t\t\"li t4, %d\\n\\t\"\n", Real_Vlen);
-				fprintf(file,"\t\t\"vsetvli t0, t4, e64, m8\\n\\t\"\n");
+				fprintf(file,"\t\t\"vsetvli t0, t4, e64, m%d\\n\\t\"\n", LMUL);
 			}
 			else{
-				int Real_Vlen = ((Vlen * 32 * 8) / 32);
+				int Real_Vlen = ((Vlen * 32 * LMUL) / 32);
 				int bump = Real_Vlen * 4;
 				fprintf(file,"\t\t\"li t3, %d\\n\\t\"\n", bump);
 				fprintf(file,"\t\t\"li t4, %d\\n\\t\"\n", Real_Vlen);
-				fprintf(file,"\t\t\"vsetvli t0, t4, e32, m8\\n\\t\"\n");
+				fprintf(file,"\t\t\"vsetvli t0, t4, e32, m%d\\n\\t\"\n", LMUL);
 			}
 		#endif
 		fprintf(file,"\t\t\"ld t0, %%0\\n\\t\"\n");
@@ -374,7 +394,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 
 	if(iter > 1){
 		//x86 SECTION
-		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 			fprintf(file,"\t\t\"movq $%lld, %%%%rdi\\n\\t\\t\"\n",iter);
 			fprintf(file,"\t\t\"Loop1_%%=:\\n\\t\\t\"\n");
 		//ARM SECTION
@@ -387,18 +407,18 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 			
 			fprintf(file,"\t\t\"Loop1_%%=:\\n\\t\"\n");
 		//RISCV SECTION
-		#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+		#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 			fprintf(file,"\t\t\"li t1, %lld\\n\\t\"\n", iter);
 			fprintf(file,"\t\t\"Loop1_%%=:\\n\\t\"\n");
 		#endif
 		
-		for(i = 0; i < num_aux; i++){
+		for(i = 0; i < num_aux; i+=LMUL){
 				for(k = 0;k < num_ld;k++){
 					if(j  >= NUM_REGISTER){
 						j = 0;
 					}
 					//x86 SECTION
-					#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+					#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 						fprintf(file,"\t\t\"%s %d(%%%%rax), %%%%%s%d\\n\\t\\t\"\n", assembly_op, offset, registr,j);
 					//ARM SECTION
 					#elif defined(ASCALAR) || defined(NEON)
@@ -406,10 +426,10 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 					//RISCV SECTION
 					#elif defined(RISCVSCALAR)
 						fprintf(file,"\t\t\"%s %s%d, %d(t2)\\n\\t\\t\"\n", assembly_op, registr, j, offset);
-					#elif defined(RISCVVECTOR)
+					#elif defined(RVV07) || defined(RVV1)
 						fprintf(file,"\t\t\"%s %s%d, (t2)\\n\\t\\t\"\n", assembly_op, registr, j);
 						fprintf(file,"\t\t\"add t2, t2, t3\\n\\t\\t\"\n");
-						j+=7;
+						j+=(LMUL-1);
 					#endif
 					j++;
 					offset += align;
@@ -419,7 +439,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 						j = 0;
 					}
 					//x86 SECTION
-					#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+					#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 						fprintf(file,"\t\t\"%s %%%%%s%d, %d(%%%%rax)\\n\\t\\t\"\n", assembly_op_2, registr, j, offset);
 					//ARM SECTION
 					#elif defined(ASCALAR) || defined(NEON)
@@ -427,18 +447,18 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 					//RISCV SECTION
 					#elif defined(RISCVSCALAR)
 						fprintf(file,"\t\t\"%s %s%d, %d(t2)\\n\\t\\t\"\n", assembly_op_2, registr, j, offset);
-					#elif defined(RISCVVECTOR)
+					#elif defined(RVV07) || defined(RVV1)
 						fprintf(file,"\t\t\"%s %s%d, (t2)\\n\\t\\t\"\n", assembly_op_2, registr, j);
 						fprintf(file,"\t\t\"add t2, t2, t3\\n\\t\\t\"\n");
-						j+=7;
+						j+=(LMUL-1);
 					#endif
 					j++;
 					offset += align;
 				}
-				aux -= iter;
+				aux -= iter*LMUL;
 		}	
 		//x86 SECTION
-		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 			fprintf(file,"\t\t\"addq $%d, %%%%rax\\n\\t\\t\"\n",offset);
 			fprintf(file,"\t\t\"subq $1, %%%%rdi\\n\\t\\t\"\n");
 			fprintf(file,"\t\t\"jnz Loop1_%%=\\n\\t\\t\"\n");
@@ -448,7 +468,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 			fprintf(file,"\t\t\"sub w1, w1, 1\\n\\t\"\n");
 			fprintf(file,"\t\t\"cbnz w1, Loop1_%%=\\n\\t\"\n");
 		//RISCV SECTION
-		#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+		#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 			#if defined(RISCVSCALAR)
 			fprintf(file,"\t\t\"addi t2, t2, %d\\n\\t\"\n",offset);
 			#endif
@@ -459,14 +479,15 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 	
 	num_rep = aux;
 	offset = 0;
+	fprintf(stderr,"\nMissing NUM REP: %lld\n", num_rep);
 	
-	for(i = 0; i < num_rep; i++){
+	for(i = 0; i < num_rep; i+=LMUL){
 		for(k = 0;k < num_ld;k++){
 			if(j  >= NUM_REGISTER){
 				j = 0;
 			}
 			//x86 SECTION
-			#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+			#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 				fprintf(file,"\t\t\"%s %d(%%%%rax), %%%%%s%d\\n\\t\\t\"\n", assembly_op, offset, registr,j);
 			//ARM SECTION
 			#elif defined(ASCALAR) || defined(NEON)
@@ -474,10 +495,10 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 			//RISCV SECTION
 			#elif defined(RISCVSCALAR)
 				fprintf(file,"\t\t\"%s %s%d, %d(t2)\\n\\t\\t\"\n", assembly_op, registr, j, offset);
-			#elif defined(RISCVVECTOR)
+			#elif defined(RVV07) || defined(RVV1)
 				fprintf(file,"\t\t\"%s %s%d, (t2)\\n\\t\\t\"\n", assembly_op, registr, j);
 				fprintf(file,"\t\t\"add t2, t2, t3\\n\\t\\t\"\n");
-				j+=7;
+				j+=(LMUL-1);
 			#endif
 			j++;
 			offset += align;
@@ -488,7 +509,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 				j = 0;
 			}
 			//x86 SECTION
-			#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+			#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 				fprintf(file,"\t\t\"%s %%%%%s%d, %d(%%%%rax)\\n\\t\\t\"\n", assembly_op_2, registr, j, offset);
 			//ARM SECTION
 			#elif defined(ASCALAR) || defined(NEON)
@@ -496,16 +517,19 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 			//RISCV SECTION
 			#elif defined(RISCVSCALAR)
 				fprintf(file,"\t\t\"%s %s%d, %d(t2)\\n\\t\\t\"\n", assembly_op_2, registr, j, offset);
-			#elif defined(RISCVVECTOR)
+			#elif defined(RVV07) || defined(RVV1)
 				fprintf(file,"\t\t\"%s %s%d, (t2)\\n\\t\\t\"\n", assembly_op_2, registr, j);
 				fprintf(file,"\t\t\"add t2, t2, t3\\n\\t\\t\"\n");
-				j+=7;
+				j+=(LMUL-1);
 			#endif
 			j++;
 			offset += align;
 		}
 	}
-	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+
+	fprintf(stderr,"\nEXTRA INSTRUCTIONS: %lld\n", i-num_rep);
+
+	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 		fprintf(file,"\t\t\"subq $1, %%%%r8\\n\\t\\t\"\n");
 		fprintf(file,"\t\t\"jnz Loop2_%%=\\n\\t\\t\"\n");
 	//ARM SECTION
@@ -513,7 +537,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 		fprintf(file,"\t\t\"sub w0, w0, 1\\n\\t\"\n");
 		fprintf(file,"\t\t\"cbnz w0, Loop2_%%=\\n\\t\"\n");
 	//RISCV SECTION
-	#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+	#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 		fprintf(file,"\t\t\"addi t0, t0, -1\\n\\t\"\n");
 		fprintf(file,"\t\t\"bgtz t0, Loop2_%%=\\n\\t\"\n");
 	#endif
@@ -521,7 +545,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 	
 	//End Test Function
 	//x86 SECTION
-	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 		fprintf(file,"\t\t:\n\t\t:\"r\"(num_reps_t),\"r\" (test_var)\n\t\t:\"%%rax\",\"%%rdi\",\"%%r8\","COBLERED"\n\t);\n");
 	//ARM SECTION
 	#elif defined(ASCALAR) || defined(NEON)
@@ -531,7 +555,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 			fprintf(file,"\t\t:\n\t\t:\"r\"(num_reps_t),\"r\" (test_var)\n\t\t:\"x3\","COBLERED"\n\t);\n");
 		}
 	//RISCV SECTION
-	#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+	#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 		fprintf(file,"\t\t:\n\t\t:\"m\"(num_reps_t),\"m\" (test_var)\n\t\t:\"t0\",\"t1\",\"t2\",\"t3\",\"t4\","COBLERED"\n\t);\n");
 	#endif
 	fprintf(file,"}\n\n");
@@ -544,7 +568,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 //																					WRITE MIXED TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int num_ld, int num_st, int num_fp, char * registr, char * registr_flops, char * assembly_op, char * assembly_op_2, char * assembly_op_flops_1, char * assembly_op_flops_2, char * precision, int Vlen){
+void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int num_ld, int num_st, int num_fp, char * registr, char * registr_flops, char * assembly_op, char * assembly_op_2, char * assembly_op_flops_1, char * assembly_op_flops_2, char * precision, int Vlen, int LMUL){
 	
 	int offset = 0;
 	int aux = num_rep;
@@ -556,8 +580,20 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 	file_header =  fopen("Test/test_params.h", "w");
 	file = file_header;
 
-	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align, Vlen); //Calculate number of iterations
+	fprintf(stderr,"\nVLEN: %d | LMUL: %d\n", Vlen, LMUL);
+
+	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align, Vlen, LMUL); //Calculate number of iterations
+	int extra_iter = (num_rep-iter*num_aux);
+
+	if (extra_iter < LMUL){
+		extra_iter = LMUL - extra_iter;
+	}else{
+		extra_iter = (num_rep-iter*num_aux)%(LMUL);
+	}
 	
+	fprintf(stderr, "\n MEM Iterations: %lld | NUM AUX: %d, | NUM REP: %lld | REAL NUM REP: %lld | Expected missing: %lld | Expected extra: %d\n", iter, num_aux, num_rep, iter*num_aux, num_rep-iter*num_aux, extra_iter);
+
+
 	//ARM SECTION
 	#if defined(ASCALAR) || defined(NEON)
 		fprintf(file_header,"#define ARM 1\n");
@@ -567,16 +603,17 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 	//RISCV SECTION
 	#elif defined(RISCVSCALAR)
 		fprintf(file_header,"#define RISCV 1\n");
-	#elif defined(RISCVVECTOR)
+	#elif defined(RVV07) || defined(RVV1)
 		fprintf(file_header,"#define RISCVVECTOR 1\n");
 		fprintf(file_header,"#define VLEN %d\n", Vlen);
+		fprintf(file_header,"#define VLMUL %d\n", LMUL);
 	#endif
 	fprintf(file_header,"#define MIXED 1\n");	
 	fprintf(file_header,"#define NUM_LD %d\n",num_ld);
 	fprintf(file_header,"#define NUM_ST %d\n",num_st);
 	fprintf(file_header,"#define NUM_FP %d\n",num_fp);
 	fprintf(file_header,"#define OPS %d\n",ops);
-	fprintf(file_header,"#define NUM_REP %lld\n",num_rep);
+	fprintf(file_header,"#define NUM_REP %lld\n",num_rep+extra_iter);
 	if(strcmp(precision, "dp") == 0){
 			fprintf(file_header,"#define PRECISION double\n");
 	}else{
@@ -586,7 +623,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 	fprintf(file_header,"#define FP_INST 1\n\n");
 	
 	//x86 SECTION
-	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 	//Create Test Function
 	fprintf(file,"static inline __attribute__((always_inline)) void test_function(PRECISION * test_var, int long long num_reps_t){\n");
 	
@@ -608,23 +645,23 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 		fprintf(file,"\t\t\"Loop2_%%=:\\n\\t\"\n");
 		fprintf(file,"\t\t\"mov x3, %%1\\n\\t\\t\"\n");
 	//RISCV SECTION
-	#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+	#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 		fprintf(file,"static inline __attribute__((always_inline)) void test_function(PRECISION * test_var, int long long num_reps_t){\n");
 		fprintf(file,"\t__asm__ __volatile__ (\n");
-		#if defined(RISCVVECTOR)
+		#if defined(RVV07) || defined(RVV1)
 			if(strcmp(precision, "dp") == 0){
-				int Real_Vlen = ((Vlen * 64 * 8) / 64);
+				int Real_Vlen = ((Vlen * 64 * LMUL) / 64);
 				int bump = Real_Vlen * 8;
 				fprintf(file,"\t\t\"li t3, %d\\n\\t\"\n", bump);
 				fprintf(file,"\t\t\"li t4, %d\\n\\t\"\n", Real_Vlen);
-				fprintf(file,"\t\t\"vsetvli t0, t4, e64, m8\\n\\t\"\n");
+				fprintf(file,"\t\t\"vsetvli t0, t4, e64, m%d\\n\\t\"\n", LMUL);
 			}
 			else{
-				int Real_Vlen = ((Vlen * 32 * 8) / 32);
+				int Real_Vlen = ((Vlen * 32 * LMUL) / 32);
 				int bump = Real_Vlen * 4;
 				fprintf(file,"\t\t\"li t3, %d\\n\\t\"\n", bump);
 				fprintf(file,"\t\t\"li t4, %d\\n\\t\"\n", Real_Vlen);
-				fprintf(file,"\t\t\"vsetvli t0, t4, e32, m8\\n\\t\"\n");
+				fprintf(file,"\t\t\"vsetvli t0, t4, e32, m%d\\n\\t\"\n", LMUL);
 			}
 		#endif
 		fprintf(file,"\t\t\"ld t0, %%0\\n\\t\"\n");
@@ -634,7 +671,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 
 	if(iter > 1){
 		//x86 SECTION
-		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 			fprintf(file,"\t\t\"movq $%lld, %%%%rdi\\n\\t\\t\"\n",iter);
 			fprintf(file,"\t\t\"Loop1_%%=:\\n\\t\\t\"\n");
 		//ARM SECTION
@@ -647,18 +684,18 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 			
 			fprintf(file,"\t\t\"Loop1_%%=:\\n\\t\"\n");
 		//RISCV SECTION
-		#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+		#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 			fprintf(file,"\t\t\"li t1, %lld\\n\\t\"\n", iter);
 			fprintf(file,"\t\t\"Loop1_%%=:\\n\\t\"\n");
 		#endif
 		
-		for(i = 0; i < num_aux; i++){
+		for(i = 0; i < num_aux; i+=LMUL){
 			for(k = 0;k < num_ld;k++){
 				if(j  >= NUM_REGISTER){
 					j = 0;
 				}
 				//x86 SECTION
-				#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+				#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 					fprintf(file,"\t\t\"%s %d(%%%%rax), %%%%%s%d\\n\\t\\t\"\n", assembly_op, offset, registr,j);
 				//ARM SECTION
 				#elif defined(ASCALAR) || defined(NEON)
@@ -666,10 +703,10 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 				//RISCV SECTION
 				#elif defined(RISCVSCALAR)
 					fprintf(file,"\t\t\"%s %s%d, %d(t2)\\n\\t\\t\"\n", assembly_op, registr, j, offset);
-				#elif defined(RISCVVECTOR)
+				#elif defined(RVV07) || defined(RVV1)
 						fprintf(file,"\t\t\"%s %s%d, (t2)\\n\\t\\t\"\n", assembly_op, registr, j);
 						fprintf(file,"\t\t\"add t2, t2, t3\\n\\t\\t\"\n");
-						j+=7;
+						j+=(LMUL-1);
 				#endif
 				j++;
 				offset += align;
@@ -680,7 +717,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 					j = 0;
 				}
 				//x86 AVX or SCALAR SECTION
-				#if defined(AVX) || defined(AVX512) || defined(AVX2) || (!defined(SSE) && !defined(NEON) && !defined(ASCALAR) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR))
+				#if defined(AVX) || defined(AVX512) || defined(AVX2) || (!defined(SSE) && !defined(NEON) && !defined(ASCALAR) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1))
 					if(strcmp(op,"div") == 0){
 						fprintf(file,"\t\t\"%s %%%%%s0, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr_flops, registr_flops, j, registr_flops, j);
 					}else if(strcmp(op,"mad") == 0){
@@ -697,7 +734,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 						fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
 					}
 				//x86 SSE SECTION
-				#elif !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+				#elif !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 					if(strcmp(op,"div") == 0){
 						fprintf(file,"\t\t\"%s %%%%%s0, %%%%%s%d;\"\n", assembly_op_flops_1, registr_flops, registr_flops, j);
 					}else if(strcmp(op,"mad") == 0){
@@ -734,9 +771,9 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 					else{
 						fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
 					}
-				#elif defined(RISCVVECTOR)
+				#elif defined(RVV07) || defined(RVV1)
 					fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr, j, registr, j, registr, j);
-					j+=7;
+					j+=(LMUL-1);
 				#endif
 				j++;
 			}
@@ -745,7 +782,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 					j = 0;
 				}
 				//x86 SECTION
-				#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+				#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 					fprintf(file,"\t\t\"%s %%%%%s%d, %d(%%%%rax)\\n\\t\\t\"\n", assembly_op_2, registr, j, offset);
 				//ARM SECTION
 				#elif defined(ASCALAR) || defined(NEON)
@@ -753,18 +790,18 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 				//RISCV SECTION
 				#elif defined(RISCVSCALAR)
 					fprintf(file,"\t\t\"%s %s%d, %d(t2)\\n\\t\\t\"\n", assembly_op_2, registr, j, offset);
-				#elif defined(RISCVVECTOR)
+				#elif defined(RVV07) || defined(RVV1)
 						fprintf(file,"\t\t\"%s %s%d, (t2)\\n\\t\\t\"\n", assembly_op_2, registr, j);
 						fprintf(file,"\t\t\"add t2, t2, t3\\n\\t\\t\"\n");
-						j+=7;
+						j+=(LMUL-1);
 				#endif
 				j++;
 				offset += align;
 			}
-			aux -= iter;
+			aux -= iter*LMUL;
 		}	
 		//x86 SECTION
-		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 			fprintf(file,"\t\t\"addq $%d, %%%%rax\\n\\t\\t\"\n",offset);
 			fprintf(file,"\t\t\"subq $1, %%%%rdi\\n\\t\\t\"\n");
 			fprintf(file,"\t\t\"jnz Loop1_%%=\\n\\t\\t\"\n");
@@ -774,7 +811,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 			fprintf(file,"\t\t\"sub w1, w1, 1\\n\\t\"\n");
 			fprintf(file,"\t\t\"cbnz w1, Loop1_%%=\\n\\t\"\n");
 		//RISCV SECTION
-		#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+		#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 			#if defined(RISCVSCALAR)
 			fprintf(file,"\t\t\"addi t2, t2, %d\\n\\t\"\n",offset);
 			#endif
@@ -785,14 +822,15 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 	
 	num_rep = aux;
 	offset = 0;
+	fprintf(stderr,"\nMissing NUM REP: %lld\n", num_rep);
 	
-	for(i = 0; i < num_rep; i++){
+	for(i = 0; i < num_rep; i+=LMUL){
 		for(k = 0;k < num_ld;k++){
 			if(j  >= NUM_REGISTER){
 				j = 0;
 			}
 			//x86 SECTION
-			#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+			#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 				fprintf(file,"\t\t\"%s %d(%%%%rax), %%%%%s%d\\n\\t\\t\"\n", assembly_op, offset, registr,j);
 			//ARM SECTION
 			#elif defined(ASCALAR) || defined(NEON)
@@ -800,10 +838,10 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 			//RISCV SECTION
 			#elif defined(RISCVSCALAR)
 				fprintf(file,"\t\t\"%s %s%d, %d(t2)\\n\\t\\t\"\n", assembly_op, registr, j, offset);
-			#elif defined(RISCVVECTOR)
+			#elif defined(RVV07) || defined(RVV1)
 				fprintf(file,"\t\t\"%s %s%d, (t2)\\n\\t\\t\"\n", assembly_op, registr, j);
 				fprintf(file,"\t\t\"add t2, t2, t3\\n\\t\\t\"\n");
-				j+=7;
+				j+=(LMUL-1);
 			#endif
 			j++;
 			offset += align;
@@ -814,7 +852,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 				j = 0;
 			}
 			//x86 AVX or SCALAR SECTION
-			#if defined(AVX) || defined(AVX512) || defined(AVX2) || (!defined(SSE) && !defined(NEON) && !defined(ASCALAR) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR))
+			#if defined(AVX) || defined(AVX512) || defined(AVX2) || (!defined(SSE) && !defined(NEON) && !defined(ASCALAR) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1))
 				if(strcmp(op,"div") == 0){
 					fprintf(file,"\t\t\"%s %%%%%s0, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr_flops, registr_flops, j, registr_flops, j);
 				}else if(strcmp(op,"mad") == 0){
@@ -831,7 +869,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 					fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
 				}
 			//x86 SSE SECTION
-			#elif !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+			#elif !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 				if(strcmp(op,"div") == 0){
 					fprintf(file,"\t\t\"%s %%%%%s0, %%%%%s%d;\"\n", assembly_op_flops_1, registr_flops, registr_flops, j);
 				}else if(strcmp(op,"mad") == 0){
@@ -868,9 +906,9 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 				else{
 					fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
 				}
-			#elif defined(RISCVVECTOR)
+			#elif defined(RVV07) || defined(RVV1)
 				fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr, j, registr, j, registr, j);
-				j+=7;
+				j+=(LMUL-1);
 			#endif
 			j++;
 		}
@@ -879,7 +917,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 				j = 0;
 			}
 			//x86 SECTION
-			#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+			#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 				fprintf(file,"\t\t\"%s %%%%%s%d, %d(%%%%rax)\\n\\t\\t\"\n", assembly_op_2, registr, j, offset);
 			//ARM SECTION
 			#elif defined(ASCALAR) || defined(NEON)
@@ -887,16 +925,17 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 			//RISCV SECTION
 			#elif defined(RISCVSCALAR)
 				fprintf(file,"\t\t\"%s %s%d, %d(t2)\\n\\t\\t\"\n", assembly_op_2, registr, j, offset);
-			#elif defined(RISCVVECTOR)
+			#elif defined(RVV07) || defined(RVV1)
 				fprintf(file,"\t\t\"%s %s%d, (t2)\\n\\t\\t\"\n", assembly_op_2, registr, j);
 				fprintf(file,"\t\t\"add t2, t2, t3\\n\\t\\t\"\n");
-				j+=7;
+				j+=(LMUL-1);
 			#endif
 			j++;
 			offset += align;
 		}
 	}
-	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+	fprintf(stderr,"\nEXTRA INSTRUCTIONS: %lld\n", i-num_rep);
+	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 		fprintf(file,"\t\t\"subq $1, %%%%r8\\n\\t\\t\"\n");
 		fprintf(file,"\t\t\"jnz Loop2_%%=\\n\\t\\t\"\n");
 	//ARM SECTION
@@ -904,7 +943,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 		fprintf(file,"\t\t\"sub w0, w0, 1\\n\\t\"\n");
 		fprintf(file,"\t\t\"cbnz w0, Loop2_%%=\\n\\t\"\n");
 	//RISCV SECTION
-	#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+	#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 		fprintf(file,"\t\t\"addi t0, t0, -1\\n\\t\"\n");
 		fprintf(file,"\t\t\"bgtz t0, Loop2_%%=\\n\\t\"\n");
 	#endif
@@ -912,7 +951,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 	
 	//End Test Function
 	//x86 SECTION
-	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RISCVVECTOR)
+	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 		fprintf(file,"\t\t:\n\t\t:\"r\"(num_reps_t),\"r\" (test_var)\n\t\t:\"%%rax\",\"%%rdi\",\"%%r8\","COBLERED"\n\t);\n");
 	//ARM SECTION
 	#elif defined(ASCALAR) || defined(NEON)
@@ -922,7 +961,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 			fprintf(file,"\t\t:\n\t\t:\"r\"(num_reps_t),\"r\" (test_var)\n\t\t:\"x3\","COBLERED"\n\t);\n");
 		}
 	//RISCV SECTION
-	#elif defined(RISCVSCALAR) || defined(RISCVVECTOR)
+	#elif defined(RISCVSCALAR) || defined(RVV07) || defined(RVV1)
 		fprintf(file,"\t\t:\n\t\t:\"m\"(num_reps_t),\"m\" (test_var)\n\t\t:"COBLERED"\n\t);\n");
 	#endif
 	fprintf(file,"}\n\n");

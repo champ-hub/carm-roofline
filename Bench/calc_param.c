@@ -1,21 +1,22 @@
 #include "config_test.h"
 
 
-int long long flops_math(int long long fp){
+int long long flops_math(int long long fp, int LMUL){
 	int long long iter;
 	
 	iter = 1;
-	if(fp > BASE_LOOP_SIZE){
-		iter = (int long long) floor((float)fp/BASE_LOOP_SIZE);
+	//double actual_fp = (double)fp/LMUL;
+	if(fp > (int)BASE_LOOP_SIZE/LMUL){
+		iter = (int long long) floor((double)fp/BASE_LOOP_SIZE);
 	}
 	
 	return iter;
 }
 
-int long long mem_math (int long long num_rep, int num_ld, int num_st, int * num_aux, int align, int Vlen){
+int long long mem_math (int long long num_rep, int num_ld, int num_st, int * num_aux, int align, int Vlen, int LMUL){
 	int long long iter;
 	iter = 1;
-	(*num_aux) = 1;
+	(*num_aux) = 1*LMUL;
 	#if defined(ASCALAR) || defined(NEON)
 		if(num_rep*(num_ld+num_st) > BASE_LOOP_SIZE){
 			while((*num_aux)*(num_ld+num_st) < BASE_LOOP_SIZE){
@@ -40,16 +41,21 @@ int long long mem_math (int long long num_rep, int num_ld, int num_st, int * num
 			}
 			iter = (int long long) floor((float)num_rep/(*num_aux));
 		}
-	#elif defined(RISCVVECTOR)
+	#elif defined(RVV07) || defined(RVV1)
+		fprintf(stderr, "\nNUM AUX EVOLUTION: ");
 		if(num_rep*(num_ld+num_st) > BASE_LOOP_SIZE){
 		while((*num_aux)*(num_ld+num_st) < BASE_LOOP_SIZE){
-				(*num_aux) ++;
+			fprintf(stderr, "%d ", *num_aux);
+				(*num_aux) += LMUL;
+				
 		}
 		iter = (int long long) floor((float)num_rep/(*num_aux));
 	}
 	#else
+		fprintf(stderr, "\nNUM AUX EVOLUTION: ");
 		if(num_rep*(num_ld+num_st) > BASE_LOOP_SIZE){
 			while((*num_aux)*(num_ld+num_st) < BASE_LOOP_SIZE){
+				fprintf(stderr, "%d ", *num_aux);
 				(*num_aux) ++;
 			}
 			iter = (int long long) floor((float)num_rep/(*num_aux));
@@ -58,6 +64,7 @@ int long long mem_math (int long long num_rep, int num_ld, int num_st, int * num
 	if(iter == 0){
 		iter = 1;
 	}
+	fprintf(stderr, "\n");
 	return iter;
 }
 

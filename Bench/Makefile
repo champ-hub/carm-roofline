@@ -15,8 +15,10 @@ else ifeq ($(isa),armscalar)
 	FLAGS += -DASCALAR
 else ifeq ($(isa),riscvscalar)
 	FLAGS += -DRISCVSCALAR
-else ifeq ($(isa),riscvvector)
-	FLAGS += -DRISCVVECTOR
+else ifeq ($(isa),rvv0.7)
+	FLAGS += -DRVV07
+else ifeq ($(isa),rvv1.0)
+	FLAGS += -DRVV1
 else
 	FLAGS += -DSCALAR
 endif
