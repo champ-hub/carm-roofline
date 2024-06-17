@@ -198,6 +198,7 @@ void * benchmark_test(void *t_args){
 			//int LMUL = 8;
 			double size_kb = (double)(NUM_REP*OPS*(NUM_LD+NUM_ST)*sizeof(PRECISION)*VLEN*VLMUL/1024.0);
 			int size_kb_rounded_up = (int)ceil(size_kb);
+			fprintf(stderr,"Size: %f Rounded Size: %d\n", size_kb, size_kb_rounded_up);
 			PRECISION * test_var = (PRECISION*)malloc(size_kb_rounded_up*1024);
 			for(i=0; i< NUM_REP*OPS*(NUM_LD+NUM_ST)*VLEN*VLMUL; i++){
 				test_var[i] = 1;
