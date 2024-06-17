@@ -311,14 +311,17 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 
 	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align, Vlen, LMUL); //Calculate number of iterations
 	int extra_iter = (num_rep-iter*num_aux);
+	int	missing_iter = 0;
 
-	if (extra_iter < LMUL){
-		extra_iter = LMUL - extra_iter;
-	}else{
-		extra_iter = (num_rep-iter*num_aux)%(LMUL);
+	if (extra_iter > 0){
+		//if (extra_iter < LMUL){
+			//extra_iter = LMUL - extra_iter;
+		//}else{
+		missing_iter = LMUL - (extra_iter)%(LMUL);
+		//}
 	}
-
-	fprintf(stderr, "\n MEM Iterations: %lld | NUM AUX: %d, | NUM REP: %lld | REAL NUM REP: %lld | Expected missing: %lld | Expected extra: %d\n", iter, num_aux, num_rep, iter*num_aux, num_rep-iter*num_aux, extra_iter);
+	
+	fprintf(stderr, "\n MEM Iterations: %lld | NUM AUX: %d | NUM REP: %lld | REAL NUM REP: %lld | Expected extra: %lld | Expected missing: %d\n", iter, num_aux, num_rep, iter*num_aux, extra_iter, missing_iter);
 	
 	//ARM SECTION
 	#if defined(ASCALAR) || defined(NEON)
@@ -338,7 +341,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 	fprintf(file_header,"#define NUM_LD %d\n",num_ld);
 	fprintf(file_header,"#define NUM_ST %d\n",num_st);
 	fprintf(file_header,"#define OPS %d\n",ops);
-	fprintf(file_header,"#define NUM_REP %lld\n",num_rep+extra_iter);
+	fprintf(file_header,"#define NUM_REP %lld\n",num_rep+missing_iter);
 	if(strcmp(precision, "dp") == 0){
 			fprintf(file_header,"#define PRECISION double\n");
 	}else{
@@ -479,7 +482,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 	
 	num_rep = aux;
 	offset = 0;
-	fprintf(stderr,"\nMissing NUM REP: %lld\n", num_rep);
+	fprintf(stderr,"\nExtra NUM REP: %lld\n", num_rep);
 	
 	for(i = 0; i < num_rep; i+=LMUL){
 		for(k = 0;k < num_ld;k++){
@@ -527,7 +530,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 		}
 	}
 
-	fprintf(stderr,"\nEXTRA INSTRUCTIONS: %lld\n", i-num_rep);
+	fprintf(stderr,"\nMissing INSTRUCTIONS: %lld\n", i-num_rep);
 
 	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 		fprintf(file,"\t\t\"subq $1, %%%%r8\\n\\t\\t\"\n");
@@ -584,14 +587,19 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 
 	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align, Vlen, LMUL); //Calculate number of iterations
 	int extra_iter = (num_rep-iter*num_aux);
+	int	missing_iter = 0;
 
-	if (extra_iter < LMUL){
-		extra_iter = LMUL - extra_iter;
-	}else{
-		extra_iter = (num_rep-iter*num_aux)%(LMUL);
+	if (extra_iter > 0){
+		//if (extra_iter < LMUL){
+			//extra_iter = LMUL - extra_iter;
+		//}else{
+		missing_iter = LMUL - (extra_iter)%(LMUL);
+		//}
 	}
+
+	int half_point = (num_fp + 1) / 2;
 	
-	fprintf(stderr, "\n MEM Iterations: %lld | NUM AUX: %d, | NUM REP: %lld | REAL NUM REP: %lld | Expected missing: %lld | Expected extra: %d\n", iter, num_aux, num_rep, iter*num_aux, num_rep-iter*num_aux, extra_iter);
+	fprintf(stderr, "\n MEM Iterations: %lld | NUM AUX: %d | NUM REP: %lld | REAL NUM REP: %lld | Expected extra: %lld | Expected missing: %d\n", iter, num_aux, num_rep, iter*num_aux, extra_iter, missing_iter);
 
 
 	//ARM SECTION
@@ -613,7 +621,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 	fprintf(file_header,"#define NUM_ST %d\n",num_st);
 	fprintf(file_header,"#define NUM_FP %d\n",num_fp);
 	fprintf(file_header,"#define OPS %d\n",ops);
-	fprintf(file_header,"#define NUM_REP %lld\n",num_rep+extra_iter);
+	fprintf(file_header,"#define NUM_REP %lld\n",num_rep+missing_iter);
 	if(strcmp(precision, "dp") == 0){
 			fprintf(file_header,"#define PRECISION double\n");
 	}else{
@@ -690,6 +698,72 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 		#endif
 		
 		for(i = 0; i < num_aux; i+=LMUL){
+			for (k = 0; k < half_point; k++){
+				if(j  >= NUM_REGISTER){
+					j = 0;
+				}
+				//x86 AVX or SCALAR SECTION
+				#if defined(AVX) || defined(AVX512) || defined(AVX2) || (!defined(SSE) && !defined(NEON) && !defined(ASCALAR) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1))
+					if(strcmp(op,"div") == 0){
+						fprintf(file,"\t\t\"%s %%%%%s0, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr_flops, registr_flops, j, registr_flops, j);
+					}else if(strcmp(op,"mad") == 0){
+						if(j  >= NUM_REGISTER){
+							j = 0;
+						}
+						fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
+						j++;
+						if(j  >= NUM_REGISTER){
+							j = 0;
+						}
+						fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_2, registr_flops, j, registr_flops, j, registr_flops, j);
+					}else{	
+						fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
+					}
+				//x86 SSE SECTION
+				#elif !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
+					if(strcmp(op,"div") == 0){
+						fprintf(file,"\t\t\"%s %%%%%s0, %%%%%s%d;\"\n", assembly_op_flops_1, registr_flops, registr_flops, j);
+					}else if(strcmp(op,"mad") == 0){
+						if(j  >= NUM_REGISTER){
+							j = 0;
+						}
+						fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d;\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j);
+						j++;
+						if(j  >= NUM_REGISTER){
+							j = 0;
+						}
+						fprintf(file,"\t\t\"%s %%%%%st%d, %%%%%s%d;\"\n", assembly_op_flops_2, registr_flops, j, registr_flops, j);
+					}else if(strcmp(op,"fma") == 0){
+						fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
+					}else{
+						fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d;\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j);
+					}
+				//ARM SCALAR SECTION
+				#elif defined(ASCALAR)
+					if(strcmp(op,"fma") == 0){
+						fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j, registr_flops, j);
+					}
+					else{
+						fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
+					}
+				//ARM NEON SECTION
+				#elif defined(NEON)
+						fprintf(file,"\t\t\"%s V%d%s, V%d%s, V%d%s\\n\\t\"\n", assembly_op_flops_1, j, registr_flops, j, registr_flops, j, registr_flops);
+				//RISCV SECTION
+				#elif defined(RISCVSCALAR)
+					if(strcmp(op,"fma") == 0){
+						fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j, registr_flops, j);
+					}
+					else{
+						fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
+					}
+				#elif defined(RVV07) || defined(RVV1)
+					fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr, j, registr, j, registr, j);
+					j+=(LMUL-1);
+				#endif
+				j++;
+			}
+
 			for(k = 0;k < num_ld;k++){
 				if(j  >= NUM_REGISTER){
 					j = 0;
@@ -712,7 +786,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 				offset += align;
 			}
 			
-			for (k = 0; k < num_fp; k++){
+			for (k = half_point; k < num_fp; k++){
 				if(j  >= NUM_REGISTER){
 					j = 0;
 				}
@@ -822,9 +896,74 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 	
 	num_rep = aux;
 	offset = 0;
-	fprintf(stderr,"\nMissing NUM REP: %lld\n", num_rep);
+	fprintf(stderr,"\nExtra NUM REP: %lld\n", num_rep);
 	
 	for(i = 0; i < num_rep; i+=LMUL){
+		for (k = 0; k < half_point; k++){
+				if(j  >= NUM_REGISTER){
+					j = 0;
+				}
+				//x86 AVX or SCALAR SECTION
+				#if defined(AVX) || defined(AVX512) || defined(AVX2) || (!defined(SSE) && !defined(NEON) && !defined(ASCALAR) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1))
+					if(strcmp(op,"div") == 0){
+						fprintf(file,"\t\t\"%s %%%%%s0, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr_flops, registr_flops, j, registr_flops, j);
+					}else if(strcmp(op,"mad") == 0){
+						if(j  >= NUM_REGISTER){
+							j = 0;
+						}
+						fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
+						j++;
+						if(j  >= NUM_REGISTER){
+							j = 0;
+						}
+						fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_2, registr_flops, j, registr_flops, j, registr_flops, j);
+					}else{	
+						fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
+					}
+				//x86 SSE SECTION
+				#elif !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
+					if(strcmp(op,"div") == 0){
+						fprintf(file,"\t\t\"%s %%%%%s0, %%%%%s%d;\"\n", assembly_op_flops_1, registr_flops, registr_flops, j);
+					}else if(strcmp(op,"mad") == 0){
+						if(j  >= NUM_REGISTER){
+							j = 0;
+						}
+						fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d;\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j);
+						j++;
+						if(j  >= NUM_REGISTER){
+							j = 0;
+						}
+						fprintf(file,"\t\t\"%s %%%%%st%d, %%%%%s%d;\"\n", assembly_op_flops_2, registr_flops, j, registr_flops, j);
+					}else if(strcmp(op,"fma") == 0){
+						fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d, %%%%%s%d\\n\\t\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
+					}else{
+						fprintf(file,"\t\t\"%s %%%%%s%d, %%%%%s%d;\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j);
+					}
+				//ARM SCALAR SECTION
+				#elif defined(ASCALAR)
+					if(strcmp(op,"fma") == 0){
+						fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j, registr_flops, j);
+					}
+					else{
+						fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
+					}
+				//ARM NEON SECTION
+				#elif defined(NEON)
+						fprintf(file,"\t\t\"%s V%d%s, V%d%s, V%d%s\\n\\t\"\n", assembly_op_flops_1, j, registr_flops, j, registr_flops, j, registr_flops);
+				//RISCV SECTION
+				#elif defined(RISCVSCALAR)
+					if(strcmp(op,"fma") == 0){
+						fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j, registr_flops, j);
+					}
+					else{
+						fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr_flops, j, registr_flops, j, registr_flops, j);
+					}
+				#elif defined(RVV07) || defined(RVV1)
+					fprintf(file,"\t\t\"%s %s%d, %s%d, %s%d\\n\\t\"\n", assembly_op_flops_1, registr, j, registr, j, registr, j);
+					j+=(LMUL-1);
+				#endif
+				j++;
+			}
 		for(k = 0;k < num_ld;k++){
 			if(j  >= NUM_REGISTER){
 				j = 0;
@@ -847,7 +986,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 			offset += align;
 			
 		}
-		for (k = 0; k < num_fp; k++){
+		for (k = half_point; k < num_fp; k++){
 			if(j  >= NUM_REGISTER){
 				j = 0;
 			}
@@ -934,7 +1073,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 			offset += align;
 		}
 	}
-	fprintf(stderr,"\nEXTRA INSTRUCTIONS: %lld\n", i-num_rep);
+	fprintf(stderr,"\nMissing INSTRUCTIONS: %lld\n", i-num_rep);
 	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 		fprintf(file,"\t\t\"subq $1, %%%%r8\\n\\t\\t\"\n");
 		fprintf(file,"\t\t\"jnz Loop2_%%=\\n\\t\\t\"\n");

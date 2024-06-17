@@ -974,7 +974,7 @@ def plot_roofline_with_dot(executable_path, exec_flops, exec_ai, choice, roi, da
         plt.savefig('Results/Applications/' + executable_name + "_" + title["name"] + '_DBI_roofline_analysis_' + date + '_' + str(title["isa"]) + "_" + str(title["precision"]) + "_" + str(title["threads"]) + "_Threads_" + str(title["load"]) + "Load_" + str(title["store"]) + "Store_" + title["inst"] + '.svg')
 
 
-def update_csv(machine, executable_path, exec_flops, exec_ai, bandwidth, time, name, date, isa, precision, threads, method):
+def update_csv(machine, executable_path, exec_flops, exec_ai, bandwidth, time, name, date, isa, precision, threads, method, VLEN, LMUL):
 
     csv_path = f"./Results/Applications/{machine}_Applications.csv"
 
@@ -985,6 +985,9 @@ def update_csv(machine, executable_path, exec_flops, exec_ai, bandwidth, time, n
         os.mkdir('Results')
     if(os.path.isdir('Results/Applications') == False):
         os.mkdir('Results/Applications')
+    
+    if (isa in ["rvv0.7", "rvv1.0"]):
+        isa = str(isa) + "_vl" + str(VLEN) + "_lmul" + str(LMUL)
 
     results = [
         date,

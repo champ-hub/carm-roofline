@@ -1054,7 +1054,12 @@ def update_additional_dropdowns(selected_file):
             
         options = [{'label': value, 'value': value} for value in unique_values]
 
-        width = '275px' if field == "Date" else '170px'
+        if field == "Date":
+            width = '275px'
+        elif field == "ISA":
+            width = '230px'
+        else: 
+            width = '161px'
 
         dropdown_style = {'display': 'inline-block', 'width': width, 'margin': '5px'}
         dropdown = html.Div([
@@ -1102,7 +1107,12 @@ def update_additional_dropdowns2(selected_file):
         else:
             unique_values = sorted(df[field.replace(" ", "")].unique())  
         options = [{'label': value, 'value': value} for value in unique_values]
-        width = '275px' if field == "Date" else '170px'
+        if field == "Date":
+            width = '275px'
+        elif field == "ISA":
+            width = '230px'
+        else: 
+            width = '161px'
 
         dropdown_style = {'display': 'inline-block', 'width': width, 'margin': '5px'}
         dropdown = html.Div([

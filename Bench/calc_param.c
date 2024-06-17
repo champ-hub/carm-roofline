@@ -30,10 +30,12 @@ int long long mem_math (int long long num_rep, int num_ld, int num_st, int * num
 			iter = (int long long) floor((float)num_rep/(*num_aux));
 		}
 	#elif defined(RISCVSCALAR)
+		fprintf(stderr, "\nNUM AUX EVOLUTION: ");
 		if(num_rep*(num_ld+num_st) > BASE_LOOP_SIZE){
 			while((*num_aux)*(num_ld+num_st) < BASE_LOOP_SIZE){
 				//To avoid going over the 2048 limit on RISCV Assembly
 				if (((*num_aux)*(num_ld+num_st)*align) < (2048 - (num_ld+num_st)*align)){
+					fprintf(stderr, "%d ", *num_aux);
 					(*num_aux) ++;
 				}else{
 					break;
