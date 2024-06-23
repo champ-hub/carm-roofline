@@ -43,7 +43,7 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 	
 	iter = flops_math(fp, LMUL); //Calculate necessary iterations
 
-	fprintf(stderr, "FP: %lld | iter: %lld | extra: %lld\n", fp, iter, fp%iter);
+	//fprintf(stderr, "FP: %lld | iter: %lld | extra: %lld\n", fp, iter, fp%iter);
 	
 	//Creating Test Function
 	if(strcmp(op,"div") == 0){
@@ -105,8 +105,11 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 			fprintf(file,"\t\t\"Loop1_%%=:\\n\\t\"\n");
 		#endif
 
-		for(i = 0; i < BASE_LOOP_SIZE; i+=LMUL){
-			if(i % NUM_REGISTER == 0){
+		for(i = 0; i < BASE_LOOP_SIZE; i+=1){
+			/*if(i % NUM_REGISTER == 0){
+				j = 0;
+			}*/
+			if(j  >= NUM_REGISTER){
 				j = 0;
 			}
 			//x86 AVX or SCALAR SECTION
@@ -169,7 +172,7 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 				j+=(LMUL-1);
 			#endif
 			j++;
-			fp -= iter*LMUL;
+			fp -= iter;//*LMUL;
 		}
 		//x86 SECTION
 		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
@@ -188,8 +191,11 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 	
 
 	
-	for(i = 0; i < fp; i+=LMUL){
-		if(i % 16 == 0){
+	for(i = 0; i < fp; i+=1){
+		/*if(i % 16 == 0){
+			j = 0;
+		}*/
+		if(j  >= NUM_REGISTER){
 			j = 0;
 		}
 		//x86 AVX or SCALAR SECTION
@@ -301,19 +307,19 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 	int aux = num_rep;
 	int i, j = 0, k;
 	FILE * file, * file_header;
-	int num_aux;
+	int num_aux = 0;
 	int long long iter;
 	
 	file_header =  fopen("Test/test_params.h", "w");
 	file = file_header;
 
-	fprintf(stderr,"\nVLEN: %d | LMUL: %d\n", Vlen, LMUL);
+	//fprintf(stderr,"\nVLEN: %d | LMUL: %d\n", Vlen, LMUL);
 
 	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align, Vlen, LMUL); //Calculate number of iterations
 	int extra_iter = (num_rep-iter*num_aux);
 	int	missing_iter = 0;
 
-	if (extra_iter > 0){
+	if (extra_iter > 0 && (extra_iter)%(LMUL) > 0){
 		//if (extra_iter < LMUL){
 			//extra_iter = LMUL - extra_iter;
 		//}else{
@@ -321,7 +327,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 		//}
 	}
 	
-	fprintf(stderr, "\n MEM Iterations: %lld | NUM AUX: %d | NUM REP: %lld | REAL NUM REP: %lld | Expected extra: %lld | Expected missing: %d\n", iter, num_aux, num_rep, iter*num_aux, extra_iter, missing_iter);
+	//fprintf(stderr, "\n MEM Iterations: %lld | NUM AUX: %d | NUM REP: %lld | REAL NUM REP: %lld | Expected extra: %d | Expected missing: %d\n", iter, num_aux, num_rep, iter*num_aux, extra_iter, missing_iter);
 	
 	//ARM SECTION
 	#if defined(ASCALAR) || defined(NEON)
@@ -341,7 +347,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 	fprintf(file_header,"#define NUM_LD %d\n",num_ld);
 	fprintf(file_header,"#define NUM_ST %d\n",num_st);
 	fprintf(file_header,"#define OPS %d\n",ops);
-	fprintf(file_header,"#define NUM_REP %lld\n",num_rep+missing_iter);
+	fprintf(file_header,"#define NUM_REP %lld\n",num_rep);//+missing_iter);
 	if(strcmp(precision, "dp") == 0){
 			fprintf(file_header,"#define PRECISION double\n");
 	}else{
@@ -415,7 +421,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 			fprintf(file,"\t\t\"Loop1_%%=:\\n\\t\"\n");
 		#endif
 		
-		for(i = 0; i < num_aux; i+=LMUL){
+		for(i = 0; i < num_aux; i++){
 				for(k = 0;k < num_ld;k++){
 					if(j  >= NUM_REGISTER){
 						j = 0;
@@ -458,7 +464,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 					j++;
 					offset += align;
 				}
-				aux -= iter*LMUL;
+				aux -= iter;//*LMUL;
 		}	
 		//x86 SECTION
 		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
@@ -482,9 +488,9 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 	
 	num_rep = aux;
 	offset = 0;
-	fprintf(stderr,"\nExtra NUM REP: %lld\n", num_rep);
+	//fprintf(stderr,"\nExtra NUM REP: %lld\n", num_rep);
 	
-	for(i = 0; i < num_rep; i+=LMUL){
+	for(i = 0; i < num_rep; i++){
 		for(k = 0;k < num_ld;k++){
 			if(j  >= NUM_REGISTER){
 				j = 0;
@@ -530,7 +536,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 		}
 	}
 
-	fprintf(stderr,"\nMissing INSTRUCTIONS: %lld\n", i-num_rep);
+	//fprintf(stderr,"\nMissing INSTRUCTIONS: %lld\n", i-num_rep);
 
 	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 		fprintf(file,"\t\t\"subq $1, %%%%r8\\n\\t\\t\"\n");
@@ -583,23 +589,23 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 	file_header =  fopen("Test/test_params.h", "w");
 	file = file_header;
 
-	fprintf(stderr,"\nVLEN: %d | LMUL: %d\n", Vlen, LMUL);
+	//fprintf(stderr,"\nVLEN: %d | LMUL: %d\n", Vlen, LMUL);
 
 	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align, Vlen, LMUL); //Calculate number of iterations
-	int extra_iter = (num_rep-iter*num_aux);
-	int	missing_iter = 0;
+	//int extra_iter = (num_rep-iter*num_aux);
+	//int	missing_iter = 0;
 
-	if (extra_iter > 0){
+	//if (extra_iter > 0){
 		//if (extra_iter < LMUL){
 			//extra_iter = LMUL - extra_iter;
 		//}else{
-		missing_iter = LMUL - (extra_iter)%(LMUL);
+		//missing_iter = LMUL - (extra_iter)%(LMUL);
 		//}
-	}
+	//}
 
 	int half_point = (num_fp + 1) / 2;
 	
-	fprintf(stderr, "\n MEM Iterations: %lld | NUM AUX: %d | NUM REP: %lld | REAL NUM REP: %lld | Expected extra: %lld | Expected missing: %d\n", iter, num_aux, num_rep, iter*num_aux, extra_iter, missing_iter);
+	//fprintf(stderr, "\n MEM Iterations: %lld | NUM AUX: %d | NUM REP: %lld | REAL NUM REP: %lld | Expected extra: %d | Expected missing: %d\n", iter, num_aux, num_rep, iter*num_aux, extra_iter, missing_iter);
 
 
 	//ARM SECTION
@@ -621,7 +627,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 	fprintf(file_header,"#define NUM_ST %d\n",num_st);
 	fprintf(file_header,"#define NUM_FP %d\n",num_fp);
 	fprintf(file_header,"#define OPS %d\n",ops);
-	fprintf(file_header,"#define NUM_REP %lld\n",num_rep+missing_iter);
+	fprintf(file_header,"#define NUM_REP %lld\n",num_rep);//+missing_iter);
 	if(strcmp(precision, "dp") == 0){
 			fprintf(file_header,"#define PRECISION double\n");
 	}else{
@@ -697,11 +703,13 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 			fprintf(file,"\t\t\"Loop1_%%=:\\n\\t\"\n");
 		#endif
 		
-		for(i = 0; i < num_aux; i+=LMUL){
-			for (k = 0; k < half_point; k++){
+		for(i = 0; i < num_aux; i+=1){
+			//for (k = 0; k < half_point; k++){
+			for (k = 0; k < num_fp+num_ld+num_st; k++){
 				if(j  >= NUM_REGISTER){
 					j = 0;
 				}
+				if (k < half_point){
 				//x86 AVX or SCALAR SECTION
 				#if defined(AVX) || defined(AVX512) || defined(AVX2) || (!defined(SSE) && !defined(NEON) && !defined(ASCALAR) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1))
 					if(strcmp(op,"div") == 0){
@@ -764,10 +772,11 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 				j++;
 			}
 
-			for(k = 0;k < num_ld;k++){
+			//for(k = 0;k < num_ld;k++){
 				if(j  >= NUM_REGISTER){
 					j = 0;
 				}
+				if (k < num_ld){
 				//x86 SECTION
 				#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 					fprintf(file,"\t\t\"%s %d(%%%%rax), %%%%%s%d\\n\\t\\t\"\n", assembly_op, offset, registr,j);
@@ -786,10 +795,11 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 				offset += align;
 			}
 			
-			for (k = half_point; k < num_fp; k++){
+			//for (k = half_point; k < num_fp; k++){
 				if(j  >= NUM_REGISTER){
 					j = 0;
 				}
+				if (k < (num_fp - half_point)){
 				//x86 AVX or SCALAR SECTION
 				#if defined(AVX) || defined(AVX512) || defined(AVX2) || (!defined(SSE) && !defined(NEON) && !defined(ASCALAR) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1))
 					if(strcmp(op,"div") == 0){
@@ -851,10 +861,11 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 				#endif
 				j++;
 			}
-			for(k = 0;k < num_st;k++){
+			//for(k = 0;k < num_st;k++){
 				if(j  >= NUM_REGISTER){
 					j = 0;
 				}
+				if (k < num_st){
 				//x86 SECTION
 				#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 					fprintf(file,"\t\t\"%s %%%%%s%d, %d(%%%%rax)\\n\\t\\t\"\n", assembly_op_2, registr, j, offset);
@@ -872,7 +883,8 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 				j++;
 				offset += align;
 			}
-			aux -= iter*LMUL;
+			}
+			aux -= iter;//*LMUL;
 		}	
 		//x86 SECTION
 		#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
@@ -896,10 +908,12 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 	
 	num_rep = aux;
 	offset = 0;
-	fprintf(stderr,"\nExtra NUM REP: %lld\n", num_rep);
+	//fprintf(stderr,"\nExtra NUM REP: %lld\n", num_rep);
 	
-	for(i = 0; i < num_rep; i+=LMUL){
-		for (k = 0; k < half_point; k++){
+	for(i = 0; i < num_rep; i+=1){
+		//for (k = 0; k < half_point; k++){
+		for (k = 0; k < num_fp+num_ld+num_st; k++){
+			if (k < half_point){
 				if(j  >= NUM_REGISTER){
 					j = 0;
 				}
@@ -964,10 +978,11 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 				#endif
 				j++;
 			}
-		for(k = 0;k < num_ld;k++){
+		//for(k = 0;k < num_ld;k++){
 			if(j  >= NUM_REGISTER){
 				j = 0;
 			}
+			if (k < num_ld){
 			//x86 SECTION
 			#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 				fprintf(file,"\t\t\"%s %d(%%%%rax), %%%%%s%d\\n\\t\\t\"\n", assembly_op, offset, registr,j);
@@ -986,10 +1001,11 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 			offset += align;
 			
 		}
-		for (k = half_point; k < num_fp; k++){
+		//for (k = half_point; k < num_fp; k++){
 			if(j  >= NUM_REGISTER){
 				j = 0;
 			}
+			if (k < (num_fp - half_point)){
 			//x86 AVX or SCALAR SECTION
 			#if defined(AVX) || defined(AVX512) || defined(AVX2) || (!defined(SSE) && !defined(NEON) && !defined(ASCALAR) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1))
 				if(strcmp(op,"div") == 0){
@@ -1051,10 +1067,11 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 			#endif
 			j++;
 		}
-		for(k = 0;k < num_st;k++){
+		//for(k = 0;k < num_st;k++){
 			if(j  >= NUM_REGISTER){
 				j = 0;
 			}
+			if (k < num_st){
 			//x86 SECTION
 			#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 				fprintf(file,"\t\t\"%s %%%%%s%d, %d(%%%%rax)\\n\\t\\t\"\n", assembly_op_2, registr, j, offset);
@@ -1073,7 +1090,8 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 			offset += align;
 		}
 	}
-	fprintf(stderr,"\nMissing INSTRUCTIONS: %lld\n", i-num_rep);
+	}
+	//fprintf(stderr,"\nMissing INSTRUCTIONS: %lld\n", i-num_rep);
 	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 		fprintf(file,"\t\t\"subq $1, %%%%r8\\n\\t\\t\"\n");
 		fprintf(file,"\t\t\"jnz Loop2_%%=\\n\\t\\t\"\n");
