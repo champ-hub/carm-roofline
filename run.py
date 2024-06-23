@@ -521,12 +521,12 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                 if inst != "fma":
                     num_reps["FP_FMA"] = int(num_ops/(2*ops_fp[isa][precision]*LMUL*VLEN))
 
-                print("NUM REP L1: " + str(num_reps["L1"]))
-                print("NUM REP L2: " + str(num_reps["L2"]))
-                print("NUM REP L3: " + str(num_reps["L3"]))
-                print("NUM REP DRAM: " + str(num_reps["DRAM"]))
-                print("NUM OPS FP: " + str(num_reps["FP"]))
-                print("NUM OPS FP FMA: " + str(num_reps["FP_FMA"]))
+                #print("NUM REP L1: " + str(num_reps["L1"]))
+                #print("NUM REP L2: " + str(num_reps["L2"]))
+                #print("NUM REP L3: " + str(num_reps["L3"]))
+                #print("NUM REP DRAM: " + str(num_reps["DRAM"]))
+                #print("NUM OPS FP: " + str(num_reps["FP"]))
+                #print("NUM OPS FP FMA: " + str(num_reps["FP_FMA"]))
 
                 if verbose > 0:
                     print("------------------------------")
@@ -792,6 +792,10 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                 os.system("make clean && make isa=" + isa)
 
                 num_reps = int(int(l1_size)*1024/(tl1*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
+                #if num_reps > LMUL:
+                        #while num_reps%LMUL > 0:
+                            #print("Leftover: ", num_reps%LMUL)
+                            #num_reps = num_reps - 1
 
                 os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
                 
@@ -812,6 +816,10 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                 i=0
                 for size in test_sizes:
                     num_reps = int(size*1024/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
+                    #if num_reps > LMUL:
+                        #while num_reps%LMUL > 0:
+                            #print("Leftover: ", num_reps%LMUL)
+                            #num_reps = num_reps - 1
                     
 
                     os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
@@ -1097,7 +1105,7 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                 #    test_details = test_type + "_" + str(num_fp) + "FP_" + str(num_ld) + "LD_" + str(num_st) + "ST_" + inst + "_" + VLEN + "VLEN_" + LMUL + "LMUL"
                 #else:
                 test_details = test_type + "_" + str(num_fp) + "FP_" + str(num_ld) + "LD_" + str(num_st) + "ST_" + inst
-                DBI_AI_Calculator.update_csv(name, "/home/mixed", gflops, ai, bandwidth, time_ms, test_details, date, isa, precision, threads, "MIX")
+                DBI_AI_Calculator.update_csv(name, "/home/mixed", gflops, ai, bandwidth, time_ms, test_details, date, isa, precision, threads, "MIX", VLEN, LMUL)
 
 def main():
     parser = argparse.ArgumentParser(description='Script to run micro-benchmarks to construct Cache-Aware Roofline Model')

@@ -2137,14 +2137,15 @@ def plot_roofline(values, name_suffix):
     linestyles = ['solid', 'solid', 'dash', 'dot']
 
     for cache_level, color, linestyle in zip(cache_levels, colors, linestyles):
-        y_values = run.carm_eq(ai, values[cache_levels.index(cache_level)], values[5])
-        trace = go.Scatter(
-            x=ai, y=y_values,
-            mode='lines',
-            line=dict(color=color, dash=linestyle),
-            name=f'{cache_level}'
-        )
-        traces.append(trace)
+        if values[cache_levels.index(cache_level)] > 0:
+            y_values = run.carm_eq(ai, values[cache_levels.index(cache_level)], values[5])
+            trace = go.Scatter(
+                x=ai, y=y_values,
+                mode='lines',
+                line=dict(color=color, dash=linestyle),
+                name=f'{cache_level}'
+            )
+            traces.append(trace)
 
     for i in range(4):
         if values[i]:
