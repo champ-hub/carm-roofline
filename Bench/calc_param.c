@@ -55,10 +55,8 @@ int long long mem_math (int long long num_rep, int num_ld, int num_st, int * num
 		iter = (int long long) floor((float)num_rep/(*num_aux));
 	}
 	#else
-		fprintf(stderr, "\nNUM AUX EVOLUTION: ");
 		if(num_rep*(num_ld+num_st) > BASE_LOOP_SIZE){
 			while((*num_aux)*(num_ld+num_st) < BASE_LOOP_SIZE){
-				fprintf(stderr, "%d ", *num_aux);
 				(*num_aux) ++;
 			}
 			iter = (int long long) floor((float)num_rep/(*num_aux));
