@@ -1,5 +1,4 @@
 COMPILER = gcc
-#COMPILER = /home/inesc/llvm-EPI-0.7-development-toolchain-native/bin/clang
 CFLAGS = -g -Wall -Wextra -Ofast -march=native
 CFLAGS += -pthread
 

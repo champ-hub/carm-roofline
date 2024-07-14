@@ -195,10 +195,8 @@ void * benchmark_test(void *t_args){
 				test_var[i] = 1;
 			}
 		#elif defined(RISCVVECTOR)
-			//int LMUL = 8;
 			double size_kb = (double)(NUM_REP*OPS*(NUM_LD+NUM_ST)*sizeof(PRECISION)*VLEN*VLMUL/1024.0);
 			int size_kb_rounded_up = (int)ceil(size_kb);
-			fprintf(stderr,"Size: %f Rounded Size: %d\n", size_kb, size_kb_rounded_up);
 			PRECISION * test_var = (PRECISION*)malloc(size_kb_rounded_up*1024);
 			for(i=0; i< NUM_REP*OPS*(NUM_LD+NUM_ST)*VLEN*VLMUL; i++){
 				test_var[i] = 1;
@@ -547,7 +545,7 @@ int main(int argc, char*argv[]){
     if(interleaved){
 		//In case of a NUMA environment that requires manual assignment:
 		//You can use this structure to help define custom thread binding for NUMA environments
-		int numa_node_cpus_manual_assign[64] = {
+		/*int numa_node_cpus_manual_assign[64] = {
 			0,   // Thread 0 goes to core 0
 			8,   // Thread 1 goes to core 8
 			32,  // Thread 2 goes to core 32
@@ -579,7 +577,7 @@ int main(int argc, char*argv[]){
 				exit(-1);
 			}
 			
-		}
+		}*/
 
 		//In case of a NUMA environment organized in blocks uncomment this code section
 		//Example 1: Node 1 -> 0-31 | Node 2 -> 32-63 | Node 3 -> 64-95 | Node 4 -> 96-127
@@ -615,7 +613,7 @@ int main(int argc, char*argv[]){
 
 		}*/
 		//In case of a NUMA environment organized with interleaved cores on 2 nodes (Default)
-        /*for(i = 0; i < num_threads; i++){
+        for(i = 0; i < num_threads; i++){
             t_args[i].tid = i;
             t_args[i].freq = freq_real;
             CPU_ZERO(&cpus);
@@ -632,7 +630,7 @@ int main(int argc, char*argv[]){
                 printf("ERROR; return code from pthread_create() is %d\n", rc);
                 exit(-1);
             }
-        }*/
+        }
     }else{
         for(i = 0; i < num_threads; i++){
             t_args[i].tid = i;
