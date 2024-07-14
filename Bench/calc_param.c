@@ -1,11 +1,10 @@
 #include "config_test.h"
 
 
-int long long flops_math(int long long fp, int LMUL){
+int long long flops_math(int long long fp){
 	int long long iter;
 	
 	iter = 1;
-	//double actual_fp = (double)fp/LMUL;
 	if(fp > (int)BASE_LOOP_SIZE){
 		iter = (int long long) floor((double)fp/BASE_LOOP_SIZE);
 	}
@@ -13,10 +12,10 @@ int long long flops_math(int long long fp, int LMUL){
 	return iter;
 }
 
-int long long mem_math (int long long num_rep, int num_ld, int num_st, int * num_aux, int align, int Vlen, int LMUL){
+int long long mem_math (int long long num_rep, int num_ld, int num_st, int * num_aux, int align){
 	int long long iter;
 	iter = 1;
-	(*num_aux) = 1;//*LMUL;
+	(*num_aux) = 1;
 	#if defined(ASCALAR) || defined(NEON)
 		if(num_rep*(num_ld+num_st) > BASE_LOOP_SIZE){
 			while((*num_aux)*(num_ld+num_st) < BASE_LOOP_SIZE){
@@ -30,12 +29,10 @@ int long long mem_math (int long long num_rep, int num_ld, int num_st, int * num
 			iter = (int long long) floor((float)num_rep/(*num_aux));
 		}
 	#elif defined(RISCVSCALAR)
-		fprintf(stderr, "\nNUM AUX EVOLUTION: ");
 		if(num_rep*(num_ld+num_st) > BASE_LOOP_SIZE){
 			while((*num_aux)*(num_ld+num_st) < BASE_LOOP_SIZE){
 				//To avoid going over the 2048 limit on RISCV Assembly
 				if (((*num_aux)*(num_ld+num_st)*align) < (2048 - (num_ld+num_st)*align)){
-					fprintf(stderr, "%d ", *num_aux);
 					(*num_aux) ++;
 				}else{
 					break;
@@ -44,11 +41,8 @@ int long long mem_math (int long long num_rep, int num_ld, int num_st, int * num
 			iter = (int long long) floor((float)num_rep/(*num_aux));
 		}
 	#elif defined(RVV07) || defined(RVV1)
-		fprintf(stderr, "\nNUM AUX EVOLUTION: ");
 		if(num_rep*(num_ld+num_st) > BASE_LOOP_SIZE){
 		while((*num_aux)*(num_ld+num_st) < BASE_LOOP_SIZE){
-			fprintf(stderr, "%d ", *num_aux);
-				//(*num_aux) += LMUL;
 				(*num_aux) += 1;
 				
 		}
@@ -65,7 +59,6 @@ int long long mem_math (int long long num_rep, int num_ld, int num_st, int * num
 	if(iter == 0){
 		iter = 1;
 	}
-	fprintf(stderr, "\n");
 	return iter;
 }
 

@@ -41,9 +41,7 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 
 	fprintf(file_header,"#define FP_INST %lld\n",fp);
 	
-	iter = flops_math(fp, LMUL); //Calculate necessary iterations
-
-	//fprintf(stderr, "FP: %lld | iter: %lld | extra: %lld\n", fp, iter, fp%iter);
+	iter = flops_math(fp); //Calculate necessary iterations
 	
 	//Creating Test Function
 	if(strcmp(op,"div") == 0){
@@ -313,7 +311,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 	file_header =  fopen("Test/test_params.h", "w");
 	file = file_header;
 
-	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align, Vlen, LMUL); //Calculate number of iterations
+	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align); //Calculate number of iterations
 
 	//ARM SECTION
 	#if defined(ASCALAR) || defined(NEON)
@@ -474,8 +472,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 	
 	num_rep = aux;
 	offset = 0;
-	//fprintf(stderr,"\nExtra NUM REP: %lld\n", num_rep);
-	
+
 	for(i = 0; i < num_rep; i++){
 		for(k = 0;k < num_ld;k++){
 			if(j  >= NUM_REGISTER){
@@ -521,8 +518,6 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 			offset += align;
 		}
 	}
-
-	//fprintf(stderr,"\nMissing INSTRUCTIONS: %lld\n", i-num_rep);
 
 	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 		fprintf(file,"\t\t\"subq $1, %%%%r8\\n\\t\\t\"\n");
@@ -575,9 +570,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 	file_header =  fopen("Test/test_params.h", "w");
 	file = file_header;
 
-	//fprintf(stderr,"\nVLEN: %d | LMUL: %d\n", Vlen, LMUL);
-
-	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align, Vlen, LMUL); //Calculate number of iterations
+	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align); //Calculate number of iterations
 
 	int half_point = (num_fp + 1) / 2;
 
@@ -881,7 +874,6 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 	
 	num_rep = aux;
 	offset = 0;
-	//fprintf(stderr,"\nExtra NUM REP: %lld\n", num_rep);
 	
 	for(i = 0; i < num_rep; i+=1){
 		//for (k = 0; k < half_point; k++){
@@ -1064,7 +1056,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 		}
 	}
 	}
-	//fprintf(stderr,"\nMissing INSTRUCTIONS: %lld\n", i-num_rep);
+	
 	#if !defined(ASCALAR) && !defined(NEON) && !defined(RISCVSCALAR) && !defined(RVV07) && !defined(RVV1)
 		fprintf(file,"\t\t\"subq $1, %%%%r8\\n\\t\\t\"\n");
 		fprintf(file,"\t\t\"jnz Loop2_%%=\\n\\t\\t\"\n");

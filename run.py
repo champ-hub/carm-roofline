@@ -18,7 +18,6 @@ import sys
 import DBI_AI_Calculator
 
 riscv_vector_compiler_path = "gcc"
-#riscv_vector_compiler_path = "/home/inesc/llvm-EPI-0.7-development-toolchain-native/bin/clang"
 
 #Mapping between ISA and memory transfer size
 mem_inst_size = {"avx512": {"sp": 64, "dp": 64}, "avx": {"sp": 32, "dp": 32}, "avx2": {"sp": 32, "dp": 32}, "sse": {"sp": 16, "dp": 16}, "scalar": {"sp": 4, "dp": 8}, "neon": {"sp": 16, "dp": 16}, "armscalar": {"sp": 4, "dp": 8}, "riscvscalar": {"sp": 4, "dp": 8}, "rvv0.7": {"sp": 4, "dp": 8}, "rvv1.0": {"sp": 4, "dp": 8}}
@@ -426,7 +425,6 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
     test_size = {}
     data = {}
     data_cycles = {}
-    #LMUL = 1
     FP_factor = 1
     time_ms = 0
     cycles = 0
@@ -520,13 +518,6 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                 num_reps["FP"] = int(num_ops/(FP_factor*ops_fp[isa][precision]*LMUL*VLEN))
                 if inst != "fma":
                     num_reps["FP_FMA"] = int(num_ops/(2*ops_fp[isa][precision]*LMUL*VLEN))
-
-                #print("NUM REP L1: " + str(num_reps["L1"]))
-                #print("NUM REP L2: " + str(num_reps["L2"]))
-                #print("NUM REP L3: " + str(num_reps["L3"]))
-                #print("NUM REP DRAM: " + str(num_reps["DRAM"]))
-                #print("NUM OPS FP: " + str(num_reps["FP"]))
-                #print("NUM OPS FP FMA: " + str(num_reps["FP_FMA"]))
 
                 if verbose > 0:
                     print("------------------------------")
@@ -792,10 +783,6 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                 os.system("make clean && make isa=" + isa)
 
                 num_reps = int(int(l1_size)*1024/(tl1*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
-                #if num_reps > LMUL:
-                        #while num_reps%LMUL > 0:
-                            #print("Leftover: ", num_reps%LMUL)
-                            #num_reps = num_reps - 1
 
                 os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
                 
@@ -816,11 +803,6 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                 i=0
                 for size in test_sizes:
                     num_reps = int(size*1024/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
-                    #if num_reps > LMUL:
-                        #while num_reps%LMUL > 0:
-                            #print("Leftover: ", num_reps%LMUL)
-                            #num_reps = num_reps - 1
-                    
 
                     os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
                 
@@ -936,13 +918,13 @@ def update_memory_csv(Gbps, InstCycle, date, name, l1_size, l2_size, l3_size, is
 
     #Check if the file exists
     if os.path.exists(csv_path):
-        mode = 'a'  #Append mode
+        mode = 'a'
     else:
-        mode = 'w'  #Write mode
+        mode = 'w'
 
     with open(csv_path, mode, newline='') as csvfile:
         writer = csv.writer(csvfile)
-        if mode == 'w':  # Ifwriting mode, write header
+        if mode == 'w':  #If writing mode, write header
             writer.writerow(secondary_headers)
             writer.writerow(primary_headers)
         #Write the results to CSV
@@ -1101,9 +1083,6 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                 
                 ct = datetime.datetime.now()
                 date = ct.strftime('%Y-%m-%d %H:%M:%S')
-                #if isa == "rvv0.7" or isa == "rvv1.0":
-                #    test_details = test_type + "_" + str(num_fp) + "FP_" + str(num_ld) + "LD_" + str(num_st) + "ST_" + inst + "_" + VLEN + "VLEN_" + LMUL + "LMUL"
-                #else:
                 test_details = test_type + "_" + str(num_fp) + "FP_" + str(num_ld) + "LD_" + str(num_st) + "ST_" + inst
                 DBI_AI_Calculator.update_csv(name, "/home/mixed", gflops, ai, bandwidth, time_ms, test_details, date, isa, precision, threads, "MIX", VLEN, LMUL)
 
