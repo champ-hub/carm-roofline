@@ -244,9 +244,9 @@ def runSDE(sde_path, roi, executable_path, additional_args):
 def runDynamoRIO(dynamo_path, roi, executable_path, additional_args):
     #Construct the command with the provided paths and additional arguments
     if roi:
-        command = f"{dynamo_path}/bin64/drrun -c /build/bin/libopcoder.so -roi -- {executable_path}"
+        command = f"{dynamo_path}/bin64/drrun -c ./build/bin/libopcoder.so -roi -- {executable_path}"
     else:
-        command = f"{dynamo_path}/bin64/drrun -c /build/bin/libopcoder.so -- {executable_path}"
+        command = f"{dynamo_path}/bin64/drrun -c ./build/bin/libopcoder.so -- {executable_path}"
 
     # Add additional arguments to the command
     command += " " + " ".join(additional_args)
@@ -730,7 +730,7 @@ def printDynamoRIOx86():
     #MISC OPERATIONS
     sorted_ops = sorted(misc_operations.items(), key=lambda item: item[1], reverse=False)
     #Print misc opcodes with counts greater than 0
-    print("\Miscellaneous operations")
+    print("\nMiscellaneous operations")
     for opcode, data in sorted(sorted_ops, key=lambda item: item[1], reverse=False):
         if data > 0:
             print(f"{data:12} : {opcode}")
@@ -1112,4 +1112,4 @@ if __name__ == "__main__":
     date = ct.strftime('%Y-%m-%d %H:%M:%S')
     
 
-    update_csv(args.name, args.executable_path, gflops, ai, bandwidth, time_taken_seconds, args.app_name, date, args.isa, args.precision, args.threads, method)
+    update_csv(args.name, args.executable_path, gflops, ai, bandwidth, time_taken_seconds, args.app_name, date, args.isa, args.precision, args.threads, method, 1, 1)

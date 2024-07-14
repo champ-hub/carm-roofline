@@ -77,7 +77,7 @@ enum {
 
 int MemoryMapping[9] = {0, 1, 2, 4, 8, 16, 32, 64, 128};
 
-bool countopcodes = false;
+bool countopcodes = true;
 
 char messagesMem[9][64] = {
         "Total",
@@ -167,9 +167,12 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-roi") == 0) {
             roi_enabled = true;
-            countopcodes = true;
+            countopcodes = false;
             fprintf(stderr, "Region of Interest Enabled\n");
             break;/* Optionally, you can break here if -roi doesn't take any additional arguments */
+        }
+        else{
+            fprintf(stderr, "Region of Interest Disabled\n");
         }
     }
 
@@ -619,7 +622,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst
                 }
 
                 if (countopcodes == true){
-                    if (strstr(disas_instr, "dead") != NULL){
+                    if (strstr(disas_instr, "dead") != NULL && roi_enabled){
                         countopcodes = false;
                     }
                     size = instr_memory_reference_size(ins);

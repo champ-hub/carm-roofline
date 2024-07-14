@@ -1024,7 +1024,7 @@ def execute_script1(n, name, l1_size, l2_size, l3_size, thread_set, interleaved,
     plot = 0
     
     try:
-        run.run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, thread_set, interleaved, num_ops, int(dram_bytes), dram_auto, test_type, verbose, set_freq, measure_freq, VLEN, tl1, tl2, plot)
+        run.run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, thread_set, interleaved, num_ops, int(dram_bytes), dram_auto, test_type, verbose, set_freq, measure_freq, VLEN, tl1, tl2, plot, 1)
     except Exception as e:
         print("Task was interrupted:", e)
     return no_update
@@ -1162,7 +1162,7 @@ def update_application_dropdown(selected_file):
  
     options = [{
     'label': f"{row['Name']} ({row['Method']}) - {row['Date']} ({' '.join(filter(None, [row['ISA'], row['Precision'], (str(row['Threads']) + ' Threads' if row['Threads'] else None)]))}{' |' if any([row['ISA'], row['Precision'], row['Threads']]) else ''} AI: {row['AI']} Gflops: {row['GFLOPS']})",
-    'value': f"{row['Name']}_{row['Date']}_{row['ISA']}_{row['Precision']}_{row['Threads']}_{row['AI']}_{row['GFLOPS']}"
+    'value': f"{row['Name']}  {row['Method']}  {row['Date']}  {row['ISA']}  {row['Precision']}  {row['Threads']}  {row['AI']}  {row['GFLOPS']}  {index}"
 } for index, row in df.iloc[::-1].iterrows()]
 
     dropdown = dcc.Dropdown(
@@ -2038,19 +2038,32 @@ def analysis(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPI
     #Plot the selected application as a dot
     if selected_applications:
         for selected_application in selected_applications:
-            print(selected_application)
-            #parts = selected_application.split('_')
-            parts = selected_application.rsplit('_', 6)
-            if len(parts) >= 7:
-                name, date, isa, precision, threads, ai, gflops = parts[0], parts[1], parts[2], parts[3], parts[4], float(parts[5]), float(parts[6])
+            parts = selected_application.rsplit('  ', 8)
+            if len(parts) >= 8:
+                name, method, date, isa, precision, threads, ai, gflops, index_start = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], float(parts[6]), float(parts[7]), int(parts[8])
                 #Add trace for each application
                 figure.add_trace(go.Scatter(
-                    x=[ai], 
-                    y=[gflops], 
-                    mode='markers', 
-                    name=f'{name} ({date})', 
-                    marker=dict(size=10)
-                ))
+                        x=[ai], 
+                        y=[gflops], 
+                        mode='markers', 
+                        name=f'{name} ({date})', 
+                        marker=dict(size=10)
+                    ))
+                if method == "Paraver_TimeStamp":
+                    application_file_path = selected_file.replace("Roofline", "Applications")
+                    #Read the CSV file and extract data
+                    data_list = read_application_csv_file(application_file_path)
+                    df_app = pd.DataFrame(data_list)
+                    for index, row in df_app.iloc[index_start+1:].iterrows():
+                        if row["Method"] == method:
+                            if row["Date"] == date:
+                                figure.add_trace(go.Scatter(
+                                    x=[row["AI"]], 
+                                    y=[row["GFLOPS"]], 
+                                    mode='markers', 
+                                    name=f'{row["Name"]}', 
+                                    marker=dict(size=10)
+                                ))
 
     figure.update_layout(
     title={

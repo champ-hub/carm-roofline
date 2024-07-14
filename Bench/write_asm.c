@@ -313,22 +313,8 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 	file_header =  fopen("Test/test_params.h", "w");
 	file = file_header;
 
-	//fprintf(stderr,"\nVLEN: %d | LMUL: %d\n", Vlen, LMUL);
-
 	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align, Vlen, LMUL); //Calculate number of iterations
-	int extra_iter = (num_rep-iter*num_aux);
-	int	missing_iter = 0;
 
-	if (extra_iter > 0 && (extra_iter)%(LMUL) > 0){
-		//if (extra_iter < LMUL){
-			//extra_iter = LMUL - extra_iter;
-		//}else{
-		missing_iter = LMUL - (extra_iter)%(LMUL);
-		//}
-	}
-	
-	//fprintf(stderr, "\n MEM Iterations: %lld | NUM AUX: %d | NUM REP: %lld | REAL NUM REP: %lld | Expected extra: %d | Expected missing: %d\n", iter, num_aux, num_rep, iter*num_aux, extra_iter, missing_iter);
-	
 	//ARM SECTION
 	#if defined(ASCALAR) || defined(NEON)
 		fprintf(file_header,"#define ARM 1\n");
@@ -592,21 +578,8 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 	//fprintf(stderr,"\nVLEN: %d | LMUL: %d\n", Vlen, LMUL);
 
 	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align, Vlen, LMUL); //Calculate number of iterations
-	//int extra_iter = (num_rep-iter*num_aux);
-	//int	missing_iter = 0;
-
-	//if (extra_iter > 0){
-		//if (extra_iter < LMUL){
-			//extra_iter = LMUL - extra_iter;
-		//}else{
-		//missing_iter = LMUL - (extra_iter)%(LMUL);
-		//}
-	//}
 
 	int half_point = (num_fp + 1) / 2;
-	
-	//fprintf(stderr, "\n MEM Iterations: %lld | NUM AUX: %d | NUM REP: %lld | REAL NUM REP: %lld | Expected extra: %d | Expected missing: %d\n", iter, num_aux, num_rep, iter*num_aux, extra_iter, missing_iter);
-
 
 	//ARM SECTION
 	#if defined(ASCALAR) || defined(NEON)

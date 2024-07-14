@@ -52,7 +52,6 @@ def inject_code(input_file, PMUDBI, create_file):
     else:
         injected_file = input_file
     for PMU_or_DBI in PMUDBI:
-        print(PMU_or_DBI)
         roi_start = False
         roi_end = False
 
@@ -117,7 +116,7 @@ fclose(timing_results_file);
                     #Add time.h at the end of the #include section
                     includes_index = next((i for i, line in enumerate(lines) if not line.startswith('#include')), len(lines))
                     
-                    lines.insert(includes_index, injected_declaration_code)
+                    #lines.insert(includes_index, injected_declaration_code)
                     lines.insert(includes_index, '\n//Injected Time Dependency\n#include <time.h>\n')
                 else:
                     includes_index = next((i for i, line in enumerate(lines) if not line.startswith('#include')), len(lines))
