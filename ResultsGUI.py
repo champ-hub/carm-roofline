@@ -747,12 +747,16 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
                 ai = float(fp_ops/memory_bytes)
                 bandwidth = float((memory_bytes * 8) / exec_time)
 
-                print("\nTotal FP operations:", fp_ops)
+                print("\n---------DBI RESULTS-----------")
+                print("Total FP operations:", fp_ops)
                 print("Total memory bytes:", memory_bytes)
                 print("Total integer operations:", integer_ops)
+
                 print("\nExecution time (seconds):", time_taken_seconds)
-                print("GFLOPS:", gflops)
+                print("GFLOP/s:", gflops)
+                print("Bandwidth (GB/s): " + str(bandwidth))
                 print("Arithmetic Intensity:", ai)
+                print("------------------------------\n")
 
                 ct = datetime.datetime.now()
                 date = ct.strftime('%Y-%m-%d %H:%M:%S')
@@ -782,17 +786,18 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
                 gflops = float(total_fp / total_time_nsec)
                 bandwidth = float((memory_bytes * 8) / total_time_nsec)
 
-                print("\nTotal FLOP Count:", total_fp)
+                print("\n---------PMU RESULTS-----------")
+                print("Total FP Operations:", total_fp)
+                print("Total Memory Bytes:", memory_bytes)
+                #print("Simple AI:", float(total_fp / total_mem))
                 print("SP FLOP Ratio: " + str(sp_ratio) + " DP FLOP Ration: " + str(dp_ratio))
-                print("Calculated Total Memory Bytes:", memory_bytes)
-                print("Simple AI:", float(total_fp / total_mem))
-                print("Complete AI:", ai)
                 print("Threads Used:", thread_count)
 
-
-                print("Execution Time (seconds):" + str(float(total_time_nsec / 1e9)))
-                print("GFLOPS: " + str(gflops))
-                print("Bandwidth (Gbps): " + str(bandwidth))
+                print("\nExecution Time (seconds):" + str(float(total_time_nsec / 1e9)))
+                print("GFLOP/s: " + str(gflops))
+                print("Bandwidth (GB/s): " + str(bandwidth))
+                print("Arithmetic Intensity:", ai)
+                print("------------------------------\n")
 
                 ct = datetime.datetime.now()
 
@@ -2177,4 +2182,4 @@ def plot_roofline(values, name_suffix):
     return traces
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)
