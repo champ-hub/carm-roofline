@@ -230,7 +230,8 @@ def runSDE(sde_path, roi, executable_path, additional_args):
         command = f"{sde_path}/sde64 -iform -mix -dyn_mask_profile -- {executable_path}"
 
     #Add additional arguments to the command
-    command += " " + " ".join(additional_args)
+    if additional_args != None:
+        command += " " + " ".join(additional_args)
     command_args = command.split()
     print("Running Provided Application For Opcode Data")
     
@@ -249,7 +250,8 @@ def runDynamoRIO(dynamo_path, roi, executable_path, additional_args):
         command = f"{dynamo_path}/bin64/drrun -c ./build/bin/libopcoder.so -- {executable_path}"
 
     # Add additional arguments to the command
-    command += " " + " ".join(additional_args)
+    if additional_args != None:
+        command += " " + " ".join(additional_args)
     command_args = command.split()
     print("Running Provided Application For Opcode Data")
 
@@ -264,7 +266,8 @@ def runDynamoRIO(dynamo_path, roi, executable_path, additional_args):
 def runApplication(roi, executable_path, additional_args):
 
     #Add additional arguments to the command
-    executable_path += " " + " ".join(additional_args)
+    if additional_args != None:
+        executable_path += " " + " ".join(additional_args)
 
     print("Running Provided Application For Timming Data")
     if roi:

@@ -21,7 +21,6 @@ from dash import Input, Output, State, html, dcc, no_update, DiskcacheManager, c
 import run
 import PMU_AI_Calculator
 import DBI_AI_Calculator
-import CodeInject
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
@@ -215,7 +214,7 @@ sidebar = dbc.Offcanvas(
             ])
         ], className="mb-3", style={'backgroundColor': '#6c757d'}),
         dbc.Button("Run Application Analysis", id="app-analysis-button", className="mb-2", style={'width': '100%'}),
-        dbc.Button("Run Application ROI Code Injection", id="app-inject-button", className="mb-2", style={'width': '100%'}),
+        #dbc.Button("Run Application ROI Code Injection", id="app-inject-button", className="mb-2", style={'width': '100%', 'display': 'none'}),
         dbc.Button("Stop Benchmark/Analysis", id="cancel-button", className="mb-2", style={'width': '100%'}),
     ], style={'backgroundColor': '#1a1a1a'}),
     id="offcanvas",
@@ -703,10 +702,8 @@ def handle_submit(n_clicks, checklist_values, machine_name, file_path, exec_argu
     cancel=[Input("cancel-button", "n_clicks")]
 )
 def execute_profiling(file_path_status, library_path_status, machine_name, file_path, arguments, checklist_values, profile_modal_open, library_modal_open):
-
     if "Processing complete" in file_path_status and "Library path saved" in library_path_status:
         parts = file_path_status.split()
-
 
         file_path = parts[2]
         checklist_values = parts[3]
@@ -715,7 +712,10 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
         #Joining the rest as execution arguments if any
         exec_arguments = ' '.join(parts[5:]) if len(parts) > 5 else None
         try:
-            exec_arguments_list = exec_arguments.split()
+            if exec_arguments != None:
+                exec_arguments_list = exec_arguments.split()
+            else:
+                exec_arguments_list = None
             if str(checklist_values) == str(['dbi']) or str(checklist_values) == str(['dbi_roi']):
                 method = "DR"
                 Dyno_path = read_library_path("DYNO")
@@ -892,7 +892,7 @@ def update_button_status(pmu_dbi_values, file_path):
         return False
     return True
 
-
+"""
 @app.callback(
     Output("modal-inject", "is_open"),
     [Input("app-inject-button", "n_clicks"),
@@ -916,7 +916,7 @@ def toggle_modal_inject(open_clicks, close_clicks, submit_clicks, file_path_vali
         return not is_open
 
     return is_open
-
+"""
 
 @app.callback(
     [Output("file-path-valid", "children"),
@@ -934,10 +934,10 @@ def check_file_path(n_clicks, pmu_dbi, new_file, file_path):
 
     if not os.path.isfile(file_path) or (not file_path.endswith('.c') and not file_path.endswith('.cpp')):
         return False, "The specified file was not found or is not a C/C++ source file."
-    injected = CodeInject.inject_code(file_path, pmu_dbi, new_file)
+    #injected = CodeInject.inject_code(file_path, pmu_dbi, new_file)
 
-    if not injected:
-        return False, "Region of Interest Flags not Found."
+    #if not injected:
+        #return False, "Region of Interest Flags not Found."
     return True, ""
 
 
@@ -2177,4 +2177,4 @@ def plot_roofline(values, name_suffix):
     return traces
 
 if __name__ == '__main__':
-    app.run_server(debug=False)
+    app.run_server(debug=True)
