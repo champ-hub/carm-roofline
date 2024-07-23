@@ -4,7 +4,11 @@ CFLAGS += -pthread
 
 arch := $(shell arch)
 ifeq ($(arch), x86_64)
-	ASSEMBLY_FILE = Test/CoreClockCheckerx86.s
+	ifeq ($(isa),avx512)
+		ASSEMBLY_FILE = Test/CoreClockCheckerx86_AVX512.s
+	else
+		ASSEMBLY_FILE = Test/CoreClockCheckerx86.s
+	endif
 else ifeq ($(arch),aarch64)
 	ASSEMBLY_FILE = Test/CoreClockCheckerARM.s
 else ifeq ($(arch),riscv64)
