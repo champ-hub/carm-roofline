@@ -91,10 +91,10 @@ where
 A simple run can be executed with the command
 
 ```
-python run.py <path_config_file>
+python run.py
 ```
 
-which by default runs the micro-benchmarks necessary to obtain CARM data, for all available ISAs and double-precision variables. The FP instruction used is the ADD and FMA (32768 operations) and the memory benchmarks contain 2 loads per each store, with the DRAM test using an array with size 512MiB and 1 thread.
+which by default runs the micro-benchmarks necessary to obtain CARM data, for all available ISAs and double-precision variables. The FP instructions used are the ADD and FMA instructions (32768 operations) and the memory benchmarks contain 2 loads per each store, with the DRAM test using an array with size 512MiB and 1 thread.
 
 
 For additional information regarding the input arguments, run the command:
@@ -127,16 +127,21 @@ To profile an application using **Dynamic Binary Instrumentation**, DBI_AI_Calcu
  - --precision <data_precision> Data Precision used by the application (optional only for naming facilitation);
  - <additional_args> Arguments for the executable that will be analyzed. (This should be your last argument)
 
-Note that both the PMU analysis and the DBI with ROI analysis require the previous injection of the source code with Region of Interest specific code, to facilitate this proccess you can run CodeInject.py with the following arguments:
+Note that both the PMU analysis and the DBI with ROI analysis require the previous injection of the source code with Region of Interest specific code, to facilitate this proccess you can include the dbi_carm_roi.h header file in your application directory and use the API functions to enable the DBI based ROI analysis.
 
- - <source_path> Path to the source code file. (.c ou .cpp only)
- - <papi_path> Path to your local PAPI installation (only needed if using automatic compilation)
- - [--PMU] Inject code for PMU (PAPI) ROI instrumentation, instead of the DBI default.
- - [--new_file] Inject code in a new source file instead of altering the provided one. (Default: 0)
- - [--compile] Enable automatic compilation of the injected source code. (Default: 0)
- - <comp_args> Compiler arguments for automatic compilation. (This should be your last argument)
+```
+CARM_roi_begin();
+CARM_roi_end();
+```
 
-Note that the automatic compilation is intended for simple single source file applications and can be prone to errors, in such case manual compilation is advised, which in case of PMU analysis requires linking the PAPI library during compilation, this can usually be done following one of these methods:
+For PMU analysis via PAPI, the PAPI high level API must be used to define the region of interest via the  functions.
+
+```
+PAPI_hl_region_begin("");
+PAPI_hl_region_end("");
+```
+
+In case of PMU analysis the PAPI library must be linked during compilation, this can usually be done following one of these methods:
 
 ```
 Method 1:
@@ -144,52 +149,6 @@ gcc -<Compiler flags> -I/Path/To/Papi/src <source_file.c> -o <executable_file> /
 
 Method 2:
 gcc -<Compiler flags> -I/${PAPI_DIR}/include -L/${PAPI_DIR}/lib  <source_file.c> -o <executable_file> -lpapi
-```
-
-Finaly the automatic code injection requires the presence of the Region of Interest flags in the source code file, these are:
-```
-//CARM ROI START
-//CARM ROI END
-```
-In case you want to skip the automatic code injection, you can manually inject the necessary ROI instrumentation code in place of the flags.
-For DBI analysis:
-```
-//Dependencies
-#include <stdlib.h>
-#include time.h
-
-//CARM ROI START
-struct timespec t_start_roi, t_end_roi;
-clock_gettime(CLOCK_MONOTONIC, &t_start_roi);
-__SSC_MARK(0xFACE);
-
-//CARM ROI END
-__SSC_MARK(0xDEAD);
-clock_gettime(CLOCK_MONOTONIC, &t_end_roi);
-double timing_duration = ((t_end_roi.tv_sec + ((double) t_end_roi.tv_nsec / 1000000000)) - (t_start_roi.tv_sec + ((double) t_start_roi.tv_nsec / 1000000000)));
-FILE *timing_results_file = fopen("timing_results.txt", "w");
-fprintf(timing_results_file, "Time Taken:\t%0.9lf seconds\\n", timing_duration);
-fclose(timing_results_file);
-```
-For PMU analysis:
-```
-//Dependencies
-#include <stdlib.h>
-#include <papi.h>
-
-//CARM ROI START
-int retval = PAPI_hl_region_begin("roi");
-    if ( retval != PAPI_OK ){
-        printf("HL begin error\n");
-        exit(0);
-    }
-
-//CARM ROI END
-retval = PAPI_hl_region_end("roi");
-    if ( retval != PAPI_OK ){
-        printf("HL end error\n");
-        exit(0);
-    }
 ```
 
 The profiling results are automatically stored in a csv assocaited with the provided machine name, these results can then be viewed using the GUI, make sure to match the machine name used in the profiling with the machine name used in the CARM benchmarks execution.
@@ -199,24 +158,6 @@ The profiling results are automatically stored in a csv assocaited with the prov
 The tool can also be used via the GUI, by running **ResultsGui.py**, and then opening the provided link in the browser, the CARM benchmarks can be executed by opening the sidebar and entering your desired configuration values and clicking the "Run CARM Benchmarks" button, the "Stop Benchmark/Analysis" button can be used to stop execution at any time. After benchmark execution is finished, refreshing the page should be suficient to view the new results in the GUI. The tool output during benchmarking will be visible in the terminal where the ResultsGui.py script was launched from. Note that only the roofline test type is available in the GUI.
 
 From the GUI you can also execute other functions of the tool, like the application profiling using either DBI or PMUs, this can be done by clicking the "Run Application Analysis" button, then selecting what kind of analysis method is desired (DBI, DBI with ROI, PMU with ROI), and providing the file path to the target application executable along with any arguments that it may take. Note that for Region of Interest analysis, the source code must be previously injected with instrumentation code, specific to the DBI method or the PMU method.
-
-In order to inject the ROI instrumentation code, you can click the "Run Application ROI Code Injection" button, then selecting what kind of analysis method you will later use to profile the application, and then by providing the path to your source code file (.c or .cpp only), the necessary Region of Interest source code will be injected (this code can be injected in a copy of the source file if desired). Note that you must have the Region of Interest flags present in your code, these are:
-
-```
-//CARM ROI START
-//CARM ROI END
-```
-
-After injecting the source code, you must compile it, in the case of the PMU option, the PAPI library must be linked during compilation to allow correct compilation, usually done in one of these 2 ways:
-
-```
-Method 1:
-gcc -<Compiler flags> -I/Path/To/Papi/src <source_file.c> -o <executable_file> /Path/To/Papi/src/libpapi.a
-
-Method 2:
-gcc -<Compiler flags> -I/${PAPI_DIR}/include -L/${PAPI_DIR}/lib  <source_file.c> -o <executable_file> -lpapi
-```
-
 
 ## In papers and reports, please refer to this tool as follows
 
