@@ -281,7 +281,7 @@ def plot_roofline(name, data, date, isa, precision, threads, num_ld, num_st, ins
         plt.title(name + ' CARM: ' + str(isa) + " " + str(precision) + " " + str(threads) + " Threads " + str(num_ld) + " Load " + str(num_st) + " Store " + inst + " Interleaved", fontsize=18)
     else:
         plt.title(name + ' CARM: ' + str(isa) + " " + str(precision) + " " + str(threads) + " Threads " + str(num_ld) + " Load " + str(num_st) + " Store " + inst, fontsize=18)
-    plt.ylabel('Performance [GFLOPS/s]', fontsize=18)
+    plt.ylabel('Performance [GFLOP/s]', fontsize=18)
     plt.xlabel('Arithmetic Intensity [flops/bytes]', fontsize=18)
     plt.setp(ax.get_xticklabels(), fontsize=18)
     plt.setp(ax.get_yticklabels(), fontsize=18)
@@ -406,10 +406,10 @@ def print_results(isa, test_type, test_data, data_cycles, num_reps, test_size, i
 
     if test_type not in ["FP", "FP_FMA"]:
         print("Bytes per Cycle:", data_cycles*mem_inst_size[isa][precision]*VLEN)
-        print("Bandwidth (Gbps):", test_data)
+        print("Bandwidth (GB/s):", test_data)
     else:
         print("Flops per Cycle:", data_cycles*ops_fp[isa][precision]*FP_factor*VLEN)
-        print("GFLOPS:", test_data)
+        print("GFLOP/s:", test_data)
     if isa not in ["neon", "armscalar", "riscvscalar", "rvv0.7", "rvv1.0"]:
         print("Max Recorded Frequency (GHz):", freq_real, "| Nominal Frequency (GHz):", freq_nominal, "| Actual Frequency to Nominal Frequency Ratio:", float(freq_real/freq_nominal))
     else:
@@ -1052,8 +1052,8 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                         print ("Instructions Per Cycle:", threads*num_reps*(num_ld+num_st+num_fp)*inner_loop_reps/(cycles*float(freq_real/freq_nominal)))
                         print ("FP Instructions Per Cycle:", threads*num_reps*(num_fp)*inner_loop_reps/(cycles*float(freq_real/freq_nominal)))
                         print ("Memory Instructions per Cycle:", threads*num_reps*(num_ld+num_st)*inner_loop_reps/(cycles*float(freq_real/freq_nominal)))
-                        print ("Bandwidth (Gbps):", bandwidth)
-                        print ("GFLOPS::", gflops)
+                        print ("Bandwidth (GB/s):", bandwidth)
+                        print ("GFLOP/s:", gflops)
                         print ("Total Flops:", int(num_fp*FP_factor*ops_fp[isa][precision]*num_reps*inner_loop_reps))
                         print ("Total Bytes:", int(((num_ld+num_st)*mem_inst_size[isa][precision])*num_reps*inner_loop_reps))
                         print ("Arithmetic Intensity:", ai)
@@ -1071,8 +1071,8 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                         print ("Instructions Per Cycle:", (threads*num_reps*(num_ld+num_st+num_fp)*inner_loop_reps)/((time_ms/1000)*freq_real*1000000000))
                         print ("FP Instructions Per Cycle:", (threads*num_reps*(num_fp)*inner_loop_reps)/((time_ms/1000)*freq_real*1000000000))
                         print ("Memory Instructions Per Cycle:", (threads*num_reps*(num_ld+num_st)*inner_loop_reps)/((time_ms/1000)*freq_real*1000000000))
-                        print ("Bandwidth (Gbps):", bandwidth)
-                        print ("GFLOPS::", gflops)
+                        print ("Bandwidth (GB/s):", bandwidth)
+                        print ("GFLOP/s:", gflops)
                         print ("Total Flops:", int(num_fp*FP_factor*ops_fp[isa][precision]*num_reps*inner_loop_reps*VLEN))
                         print ("Total Bytes:", int(((num_ld+num_st)*mem_inst_size[isa][precision])*num_reps*inner_loop_reps*VLEN))
                         print ("Arithmetic Intensity:", ai)
