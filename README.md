@@ -6,6 +6,8 @@ The tool can also perform application analysis using either performance counters
 
 For better results visualization, ResultsGUI.py can be ran to generate a web browser based user interface for result visualization, results from other machines can be imported for visualization on any machine via the GUI, by moving the necessary result csv files to the results folder of the machine running the GUI.
 
+The tool is currently under active development, new features will be added in the future which might not always be immediatly documented and bugs are to be excpected. All feedback regarding bugs and feature requests is welcome.
+
 ## Requirements
 - gcc (>= 4.9 for AVX512 tests and only tested with gcc 9.3)
 - python (only tested with python 3.8.8)

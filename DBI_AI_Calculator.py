@@ -1039,14 +1039,15 @@ if __name__ == "__main__":
     parser.add_argument('--sde',  dest='sde', action='store_const', const=1, default=0, help='Measure using Intel SDE, instead of DynamoRIO.')
     parser.add_argument('-dr', '--drawroof',  dest='drawroof', action='store_const', const=1, default=0, help='Plot application in a chosen roofline chart localy (work in progress).')
     parser.add_argument('-c', '--choice', default=0, nargs='?', type = int, help='Automatically choose a roofline chart for the application opcode analysis, --drawroof is required for this (Default: 0).')
-    parser.add_argument("executable_path", help="Path to the executable provided by the user")
-    
-    parser.add_argument("additional_args", nargs="...", help="Additional arguments for the user's application.")
     parser.add_argument('-n','--name', default='unnamed', nargs='?', type = str, help='Name for the machine running the app. (Default: unnamed)')
     parser.add_argument('-an','--app_name', default='', nargs='?', type = str, help='Name for the app.')
     parser.add_argument('--isa', default='', nargs='?', choices=['avx512', 'avx', 'avx2', 'sse', 'scalar', 'neon', 'armscalar', 'riscvscalar', 'riscvvector', ''], help='Main ISA used by the application, if not sure leave blank (optional only for naming facilitation).')
     parser.add_argument('-t', '--threads', default='0', nargs='?', type = int, help='Number of threads used by the application (optional only for naming facilitation).')
     parser.add_argument('-p', '--precision', default='', nargs='?', choices=['dp', 'sp'], help='Data Precision used by the application (optional only for naming facilitation).')
+    parser.add_argument("executable_path", help="Path to the executable provided by the user")
+    
+    parser.add_argument("additional_args", nargs="...", help="Additional arguments for the user's application.")
+   
 
     args = parser.parse_args()
 

@@ -8,7 +8,7 @@
 #if defined(__x86_64__) || defined(_M_X64)
     #define __SSC_MARK(tag) __asm__ __volatile__("movl %0, %%ebx; .byte 0x64, 0x67, 0x90 "::"i"(tag) : "%ebx")
 #elif defined(__aarch64__) || defined(_M_ARM64)
-    #define __SSC_MARK(tag) __asm__ __volatile__("movl %0, %%ebx; .byte 0x64, 0x67, 0x90 "::"i"(tag) : "%ebx")
+    #define __SSC_MARK(tag) __asm__ __volatile__("mov x9, %0; .inst 0x9b03e03f"::"i"(tag) : "%x9")
 #endif
 #endif
 struct timespec t_start, t_end;
