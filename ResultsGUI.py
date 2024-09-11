@@ -762,7 +762,7 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
                 date = ct.strftime('%Y-%m-%d %H:%M:%S')
     
 
-                DBI_AI_Calculator.update_csv(machine_name, file_path, gflops, ai, bandwidth, time_taken_seconds, "", date, None, None, None, method)
+                DBI_AI_Calculator.update_csv(machine_name, file_path, gflops, ai, bandwidth, time_taken_seconds, "", date, None, None, None, method, 1, 1)
             if str(checklist_values) == str(['pmu_roi']):
                 total_time_nsec, total_mem, total_sp, total_dp, thread_count = PMU_AI_Calculator.runPAPI(file_path, exec_arguments_list)
                 total_fp = total_sp + total_dp
@@ -1029,7 +1029,7 @@ def execute_script1(n, name, l1_size, l2_size, l3_size, thread_set, interleaved,
     plot = 0
     
     try:
-        run.run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, thread_set, interleaved, num_ops, int(dram_bytes), dram_auto, test_type, verbose, set_freq, measure_freq, VLEN, tl1, tl2, plot, 1)
+        run.run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, thread_set, interleaved, num_ops, int(dram_bytes), dram_auto, test_type, verbose, set_freq, measure_freq, VLEN, tl1, tl2, plot, 1, "./Results")
     except Exception as e:
         print("Task was interrupted:", e)
     return no_update
@@ -2096,6 +2096,7 @@ def analysis(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPI
         'type': 'log',
         'dtick': '0.30102999566',
         'range': [np.log(0.25), np.log(25)],
+        #'range': [np.log(0.5), np.log(12.5)],
         'title_standoff': 0,
         'automargin': True
     },
@@ -2104,19 +2105,22 @@ def analysis(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPI
         'orientation': 'h',
         'x': 0.5,
         'y': -0.1,
+        #'y': -0.15,
         'xanchor': 'center',
         'yanchor': 'top'
     },
     font={'size': 18},
     showlegend=True,
     height=675,
+    #height=720,
     width=1900,
+    #width=950,
     margin=dict(t=60, l=80, b=20, r=40),
     plot_bgcolor='#e9ecef',
     paper_bgcolor='#e9ecef'
 )
 
-    return figure, {'display': 'block', 'width': '100%'}
+    return figure, {'display': 'block'}#, 'width': '100%', 'height' : '100%'}
 
 
 def construct_query(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPInst, Date):

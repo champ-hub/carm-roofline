@@ -321,9 +321,9 @@ def custom_round(value, digits=4):
         total_digits = digits + leading_zeros
         return round(value, total_digits)
     
-def update_csv(name, test_type, data, data_cycles, date, isa, precision, threads, num_ld, num_st, inst, interleaved, l1_size, l2_size, l3_size, dram_bytes, VLEN, LMUL):
+def update_csv(name, test_type, data, data_cycles, date, isa, precision, threads, num_ld, num_st, inst, interleaved, l1_size, l2_size, l3_size, dram_bytes, VLEN, LMUL, out_path):
 
-    csv_path = f"./Results/Roofline/{name}_{test_type.replace(' ', '_')}.csv"
+    csv_path = f"{out_path}/Roofline/{name}_{test_type.replace(' ', '_')}.csv"
     if (isa in ["rvv0.7", "rvv1.0"]):
         isa = str(isa) + "_vl" + str(VLEN) + "_lmul" + str(LMUL) 
     results = [
@@ -419,7 +419,7 @@ def print_results(isa, test_type, test_data, data_cycles, num_reps, test_size, i
     print("------------------------------")
 
 #Run Roofline tests
-def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, threads_set, interleaved, num_ops, dram_bytes, dram_auto, test_type, verbose, set_freq, no_freq_measure, VLEN, tl1, tl2, plot, LMUL):
+def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, threads_set, interleaved, num_ops, dram_bytes, dram_auto, test_type, verbose, set_freq, no_freq_measure, VLEN, tl1, tl2, plot, LMUL, out_path):
     
     num_reps = {}
     test_size = {}
@@ -715,18 +715,24 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
 
                 #Save Results if a full Roofline test is done
                 if (test_type == 'roofline'):
-                    if(os.path.isdir('Results') == False):
-                        os.mkdir('Results')
-                    if(os.path.isdir('Results/Roofline') == False):
-                        os.mkdir('Results/Roofline')
-                
+                    if (out_path == './Results'):
+                        if(os.path.isdir('Results') == False):
+                            os.mkdir('Results')
+                        if(os.path.isdir('Results/Roofline') == False):
+                            os.mkdir('Results/Roofline')
+                    else:
+                        if(os.path.isdir(out_path)):
+                            if(os.path.isdir(out_path + "/Roofline") == False):
+                                os.mkdir(out_path + "/Roofline")
+                        else:
+                            print("ERROR: Provided output path does not exist")
                     ct = datetime.datetime.now()
                     if plot:
                         date = ct.strftime('%Y-%m-%d_%H-%M-%S')
-                        plot_roofline(name, data, date, isa, precision, threads, num_ld, num_st, inst, interleaved)
+                        plot_roofline(name, data, date, isa, precision, threads, num_ld, num_st, inst, interleaved, out_path)
                     
                     date = ct.strftime('%Y-%m-%d %H:%M:%S')
-                    update_csv(name, "Roofline", data, data_cycles, date, isa, precision, threads, num_ld, num_st, inst, interleaved, l1_size, l2_size, l3_size, dram_bytes, VLEN, LMUL)
+                    update_csv(name, "Roofline", data, data_cycles, date, isa, precision, threads, num_ld, num_st, inst, interleaved, l1_size, l2_size, l3_size, dram_bytes, VLEN, LMUL, out_path)
 
 #Run Memory Bandwidth tests
 def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precision_set, num_ld, num_st, threads_set, interleaved, verbose, no_freq_measure, VLEN, tl1, plot, LMUL):
@@ -1117,6 +1123,8 @@ def main():
     parser.add_argument('-l2', '--l2_size',  default=0, nargs='?', type = int, help='L2 size per core')
     parser.add_argument('-l3', '--l3_size',  default=0, nargs='?', type = int, help='L3 total size')
 
+    parser.add_argument('-out', '--output', nargs='?', default='./Results', help='Path to a folder to save roofline results to (Default: ./Results | Only applies to roofline results)')
+
     args = parser.parse_args()
     if (args.verbose == 3):
         print(args)
@@ -1164,7 +1172,7 @@ def main():
     elif args.test == 'MEM':
         run_memory(name, freq, args.set_freq, l1_size, l2_size, l3_size, isa_set, args.precision, num_ld, num_st, args.threads, args.interleaved, args.verbose, args.no_freq_measure, args.vector_length, args.threads_per_l1, args.plot, args.vector_lmul)
     else:
-        run_roofline(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, args.precision, num_ld, num_st, args.threads, args.interleaved, args.num_ops, args.dram_bytes, args.dram_auto, args.test, args.verbose, args.set_freq, args.no_freq_measure, args.vector_length, args.threads_per_l1,  args.threads_per_l2, args.plot, args.vector_lmul)
+        run_roofline(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, args.precision, num_ld, num_st, args.threads, args.interleaved, args.num_ops, args.dram_bytes, args.dram_auto, args.test, args.verbose, args.set_freq, args.no_freq_measure, args.vector_length, args.threads_per_l1,  args.threads_per_l2, args.plot, args.vector_lmul, args.output)
 
 if __name__ == "__main__":
     main()
