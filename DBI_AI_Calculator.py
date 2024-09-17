@@ -25,14 +25,21 @@ x86_Scalar_fp_operations = {
     "vaddsd": {"count": 0, "string": "Scalar (1x 64 bit)", "factor": 1},
     "addsd": {"count": 0, "string": "Scalar (1x 64 bit)", "factor": 1},
     "vsubsd": {"count": 0, "string": "Scalar (1x 64 bit)", "factor": 1},
+    "subsd": {"count": 0, "string": "Scalar (1x 64 bit)", "factor": 1},
     "vfmadd132sd": {"count": 0, "string": "Scalar (2x 64 bit)", "factor": 2},
     "vfmadd231sd": {"count": 0, "string": "Scalar (2x 64 bit)", "factor": 2},
+    "vfmadd213sd": {"count": 0, "string": "Scalar (2x 64 bit)", "factor": 2},
     "vdivss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
+    "divss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
     "vaddss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
+    "addss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
     "vsubss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
+    "subss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},  
     "vmulss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
+    "mulss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
     "vfmadd132ss": {"count": 0, "string": "Scalar (2x 32 bit)", "factor": 2},
     "vfmadd231ss": {"count": 0, "string": "Scalar (2x 32 bit)", "factor": 2},
+    "vfmadd213ss": {"count": 0, "string": "Scalar (2x 32 bit)", "factor": 2},
 }
 
 x86_SSE_fp_operations = {

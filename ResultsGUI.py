@@ -719,7 +719,9 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
             if str(checklist_values) == str(['dbi']) or str(checklist_values) == str(['dbi_roi']):
                 method = "DR"
                 Dyno_path = read_library_path("DYNO")
+                DBI_AI_Calculator.check_client_exists(Dyno_path)
                 if str(checklist_values) == str(['dbi']):
+                    
                     exec_time = DBI_AI_Calculator.runApplication(0, file_path, exec_arguments_list)
                     
                     DBI_AI_Calculator.runDynamoRIO(Dyno_path, 0, file_path, exec_arguments_list)
