@@ -2086,7 +2086,7 @@ def analysis(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPI
         }
     },
     xaxis={
-        'title': 'AI (Arithmetic Intensity)',
+        'title': 'Arithmetic Intensity (flop/byte)',
         'type': 'log',
         'dtick': '0.30102999566',
         'range': [np.log(0.18), np.log(11.2)],
