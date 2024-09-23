@@ -2037,10 +2037,10 @@ def analysis(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPI
     figure = go.Figure()
     if not filtered_df1.empty:
         values1 = filtered_df1.iloc[-1][['L1', 'L2', 'L3', 'DRAM', 'FP', 'FP_FMA', 'FPInst']].tolist()
-        figure.add_traces(plot_roofline(values1, ''))
+        figure.add_traces(plot_roofline(values1, '', ISA))
     if not filtered_df2.empty and not query2 == None:
         values2 = filtered_df2.iloc[-1][['L1', 'L2', 'L3', 'DRAM', 'FP', 'FP_FMA', 'FPInst']].tolist()
-        figure.add_traces(plot_roofline(values2, '2'))
+        figure.add_traces(plot_roofline(values2, '2', ISA2))
 
     #Plot the selected application as a dot
     if selected_applications:
@@ -2148,7 +2148,7 @@ def construct_query(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMByt
 
     return " and ".join(query_parts) if query_parts else None
     
-def plot_roofline(values, name_suffix):
+def plot_roofline(values, name_suffix, ISA):
     ai = np.linspace(0.00390625, 256, num=200000)
     traces = []
     cache_levels = ['L1', 'L2', 'L3', 'DRAM']
@@ -2167,7 +2167,7 @@ def plot_roofline(values, name_suffix):
                 x=ai, y=y_values,
                 mode='lines',
                 line=dict(color=color, dash=linestyle),
-                name=f'{cache_level}'
+                name=f'{cache_level} {ISA} ({values[cache_levels.index(cache_level)]} GB/s)'
             )
             traces.append(trace)
 
@@ -2181,7 +2181,7 @@ def plot_roofline(values, name_suffix):
         x=ai, y=y_values,
         mode='lines',
         line=dict(color=color_inst, dash="dashdot"),
-        name=values[6]
+        name=f'{values[6]} {ISA}'
     )
     traces.append(trace_inst)
     

@@ -37,7 +37,7 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
                 isa_set[0] = auto_args[0]
                 #We can then use 32 registers for avx2
                 if auto_args[1] == "avx2":
-                    isa_set.append("avx")
+                    isa_set.append("avx2")
                     #If sse is supported
                     if auto_args[2] == "sse":
                         isa_set.append("sse")
@@ -73,7 +73,7 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
                     continue
                 if((isa == "avx2" or isa == "avx") and auto_args[0] == "avx512" and auto_args[1] == "avx2"):
                     #To use more registers with avx2
-                    isa = "avx"
+                    isa = "avx2"
                 if ((isa == "avx2" or isa == "avx") and auto_args[1] != "avx2"):
                     print("AVX2 not supported on this machine.")
                     continue
