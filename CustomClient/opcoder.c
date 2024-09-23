@@ -638,6 +638,23 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst
                             } else {
                                 codeArith = 1;
                             }
+                            if(codeArith == 1){
+                                if (strstr(disas_instr, "xmm") != NULL){
+                                if (strstr(disas_instr, "byte") != NULL){
+                                    codeArith = 1;
+                                }else{
+                                    codeArith = 2;
+                                }
+                            }else if(strstr(disas_instr, "ymm") != NULL){
+                                codeArith = 3;
+                            }else if(strstr(disas_instr, "zmm") != NULL){
+                                codeArith = 4;
+                            }else {
+                                if (strstr(disas_instr, "byte") != NULL){
+                                }
+                                codeArith = 1;
+                            }
+                            }
                             drx_insert_counter_update(drcontext, bb, instr,
                                                 SPILL_SLOT_MAX + 1,
                                                 IF_AARCHXX_OR_RISCV64_(SPILL_SLOT_MAX + 1) &
