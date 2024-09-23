@@ -247,6 +247,7 @@ def round_power_of_2(number):
         return 1
 
 def carm_eq(ai, bw, fp):
+    import numpy as np
     return np.minimum(ai*bw, fp)
 
 
