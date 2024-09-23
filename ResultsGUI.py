@@ -2149,6 +2149,7 @@ def construct_query(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMByt
     return " and ".join(query_parts) if query_parts else None
     
 def plot_roofline(values, name_suffix, ISA):
+    import numpy as np
     ai = np.linspace(0.00390625, 256, num=200000)
     traces = []
     cache_levels = ['L1', 'L2', 'L3', 'DRAM']
