@@ -195,11 +195,10 @@ void * benchmark_test(void *t_args){
 				test_var[i] = 1;
 			}
 		#elif defined(RISCVVECTOR)
-			int LMUL = 8;
-			double size_kb = (double)(NUM_REP*OPS*(NUM_LD+NUM_ST)*sizeof(PRECISION)*VLEN*LMUL/1024.0);
+			double size_kb = (double)(NUM_REP*OPS*(NUM_LD+NUM_ST)*sizeof(PRECISION)*VLEN*VLMUL/1024.0);
 			int size_kb_rounded_up = (int)ceil(size_kb);
 			PRECISION * test_var = (PRECISION*)malloc(size_kb_rounded_up*1024);
-			for(i=0; i< NUM_REP*OPS*(NUM_LD+NUM_ST)*VLEN*LMUL; i++){
+			for(i=0; i< NUM_REP*OPS*(NUM_LD+NUM_ST)*VLEN*VLMUL; i++){
 				test_var[i] = 1;
 			}
 		//x86 SECTION

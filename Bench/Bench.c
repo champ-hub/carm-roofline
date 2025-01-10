@@ -10,7 +10,7 @@ int main (int argc, char*argv[]){
 	int i;
 	char * operation = NULL, * precision = NULL, * test = NULL;
 	int long long num_rep_fp = -1, num_rep = -1;
-	int num_ld = -1, num_st = -1, num_fp = -1, Vlen = -1;
+	int num_ld = -1, num_st = -1, num_fp = -1, Vlen = -1, LMUL = -1;
 	
 	for(i = 0; i < argc; i++){
 		if(strcmp(argv[i], "-test") == 0){        			//Select the test type 
@@ -37,6 +37,8 @@ int main (int argc, char*argv[]){
 			num_rep = atol(argv[i+1]);
 		}else if(strcmp(argv[i], "-Vlen")==0){
 			Vlen = atol(argv[i+1]);
+		}else if(strcmp(argv[i], "-LMUL")==0){
+			LMUL = atol(argv[i+1]);
 		}else if(strcmp(argv[i], "-h") ==0){				//Select to see help
 			printf("Usage for FLOPS: ./Bench -test FLOPS [options]\nOptions:\n\t-op - Select the operation (add | mul | div | fma | mad)\n\t-fp:Number of FP INST\n\t-mode:SCALAR or SIMD INST (scalar | simd)\n\t-precision:Select FP precision (dp | fp)\n");
 			printf("Usage for MEM: ./Bench -test MEM [options]\nOptions:\n\t-num_LD:Number of LD INST per loop iteration (>= 1 if num_ST = 0) \n\t-num_ST:Number of ST INST per loop iteration (>= 1 if num_LD = 0)\n\t-num_rep: Number of repetions of the LD/ST INST ( >=1 and useful to maintain a constant LD/ST ratio )\n\t-mode:SCALAR or SIMD INST (scalar | simd)\n\t-precision:Select FP precision (dp | fp)\n");
@@ -53,7 +55,7 @@ int main (int argc, char*argv[]){
 				exit(2);
 			}else{
 				printf("Benchmark flops\n");
-				create_benchmark_flops(operation, precision, num_rep_fp);
+				create_benchmark_flops(operation, precision, num_rep_fp, Vlen, LMUL);
 			}
 		}else if(strcmp(test,"MEM") == 0){
 			if(num_ld < 0 || num_st < 0 || (num_ld == 0 && num_st == 0) || (num_rep < 0) || precision == NULL || (strcmp(precision,"dp") != 0 && strcmp(precision,"sp") != 0)){
@@ -61,7 +63,7 @@ int main (int argc, char*argv[]){
 				exit(3);
 			}else{
 				printf("Benchmark mem\n");
-				create_benchmark_mem(num_rep, num_ld, num_st, precision, Vlen);
+				create_benchmark_mem(num_rep, num_ld, num_st, precision, Vlen, LMUL);
 			}
 		}else if(strcmp(test,"MIXED") == 0){
 			if(num_ld < 0 || num_st < 0 || (num_ld == 0 && num_st == 0) || (num_rep < 0) || precision == NULL || (strcmp(precision,"dp") != 0 && strcmp(precision,"sp") != 0) || operation == NULL || (strcmp(operation,"add") != 0 && strcmp(operation,"mul") != 0 && strcmp(operation,"div") != 0 && strcmp(operation,"fma") != 0 && strcmp(operation,"mad") != 0)|| num_fp < 1 || precision == NULL || (strcmp(precision,"dp") != 0 && strcmp(precision,"sp") != 0)){
@@ -69,7 +71,7 @@ int main (int argc, char*argv[]){
 				exit(3);
 			}else{
 				printf("Benchmark mixed\n");
-				create_benchmark_mixed(operation, num_rep, num_ld, num_st, num_fp, precision, Vlen);
+				create_benchmark_mixed(operation, num_rep, num_ld, num_st, num_fp, precision, Vlen, LMUL);
 			}
 		}else{
 			printf("Error, select a valid test. Select -h for help\n");

@@ -46,8 +46,9 @@ def runPAPI(executable_path, additional_args=None):
     #Setup environment to test Memory Operations
     PAPI_Event = "PAPI_LST_INS"
     os.environ["PAPI_EVENTS"] = PAPI_Event
-    
-    print("Running Provided Application For Memory Instructions PMU Data")
+
+    print("\n------------------------------")
+    print("Running Provided Application For Memory Instructions PMU Data\n")
     try:
         subprocess.run(command, check=True)
     except subprocess.CalledProcessError as e:
@@ -58,8 +59,8 @@ def runPAPI(executable_path, additional_args=None):
     #Modify environment to test SP FP Operations
     PAPI_Event = "PAPI_SP_OPS"
     os.environ["PAPI_EVENTS"] = PAPI_Event
-
-    print("\nRunning Provided Application For SP FP Operations PMU Data")
+    print("------------------------------")
+    print("Running Provided Application For SP FP Operations PMU Data\n")
     try:
         subprocess.run(command, check=True)
     except subprocess.CalledProcessError as e:
@@ -71,7 +72,8 @@ def runPAPI(executable_path, additional_args=None):
     PAPI_Event = "PAPI_DP_OPS"
     os.environ["PAPI_EVENTS"] = PAPI_Event
 
-    print("\nRunning Provided Application For DP FP Operations PMU Data")
+    print("------------------------------")
+    print("Running Provided Application For DP FP Operations PMU Data\n")
     try:
         subprocess.run(command, check=True)
     except subprocess.CalledProcessError as e:
@@ -368,16 +370,18 @@ if __name__ == "__main__":
     gflops = float(total_fp / total_time_nsec)
     bandwidth = float((memory_bytes) / total_time_nsec)
 
-    print("\nTotal FLOP Count:", total_fp)
-    print("SP FLOP Ratio: " + str(sp_ratio) + " DP FLOP Ration: " + str(dp_ratio))
+    print("\n---------PMU RESULTS-----------")
+    print("Total FP Operations:", total_fp)
     print("Calculated Total Memory Bytes:", memory_bytes)
-    print("Simple AI:", float(total_fp / total_mem))
-    print("Complete AI:", ai)
+    #print("Simple AI:", float(total_fp / total_mem))
+    print("SP FLOP Ratio: " + str(sp_ratio) + " DP FLOP Ration: " + str(dp_ratio))
     print("Threads Used:", thread_count)
 
-    print("Execution Time (seconds):" + str(float(total_time_nsec / 1e9)))
-    print("GFLOPS: " + str(gflops))
-    print("Bandwidth (Gbps): " + str(bandwidth))
+    print("\nExecution Time (seconds):" + str(float(total_time_nsec / 1e9)))
+    print("GFLOP/s: " + str(gflops))
+    print("Bandwidth (GB/s): " + str(bandwidth))
+    print("Arithmetic Intensity:", ai)
+    print("------------------------------")
 
     ct = datetime.datetime.now()
     
