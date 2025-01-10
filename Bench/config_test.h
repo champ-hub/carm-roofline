@@ -214,8 +214,8 @@
 	#define SP_FMA "fmadd.s"
 	#define SP_LOAD "flw"
 	#define SP_STORE "fsw"
-#elif defined(RISCVVECTOR)
-	#define ISA "riscvvector"
+#elif defined(RVV07)
+	#define ISA "rvv0.7"
 	#define NUM_REGISTER 32
 	#define MEM_SP_REGISTER "v"
 	#define MEM_DP_REGISTER "v"
@@ -239,6 +239,31 @@
 	#define SP_FMA "vfmadd.vv"
 	#define SP_LOAD "vle.v"
 	#define SP_STORE "vse.v"
+#elif defined(RVV1)
+	#define ISA "rvv1.0"
+	#define NUM_REGISTER 32
+	#define MEM_SP_REGISTER "v"
+	#define MEM_DP_REGISTER "v"
+	#define FP_SP_REGISTER "v"
+	#define FP_DP_REGISTER "v"
+	#define DP_ALIGN 8
+	#define SP_ALIGN 4
+	#define COBLERED "\"v0\",\"v1\",\"v2\",\"v3\",\"v4\",\"v5\",\"v6\",\"v7\",\"v8\",\"v9\",\"v10\",\"v11\",\"v12\",\"v13\",\"v14\",\"v15\",\"v16\",\"v17\",\"v18\",\"v19\",\"v20\",\"v21\",\"v22\",\"v23\",\"v24\",\"v25\",\"v26\",\"v27\",\"v28\",\"v29\",\"v30\",\"v31\",\"memory\""
+	#define DP_OPS 1
+	#define DP_DIV "vfdiv.vv"
+	#define DP_ADD "vfadd.vv"
+	#define DP_MUL "vfmul.vv"
+	#define DP_FMA "vfmadd.vv"
+	#define DP_LOAD "vle64.v"
+	#define DP_STORE "vse64.v"
+
+	#define SP_OPS 1
+	#define SP_DIV "vfdiv.vv"
+	#define SP_ADD "vfadd.vv"
+	#define SP_MUL "vfmul.vv"
+	#define SP_FMA "vfmadd.vv"
+	#define SP_LOAD "vle32.v"
+	#define SP_STORE "vse32.v"
 #else
 	#define ISA "scalar"
 	#define NUM_REGISTER 16

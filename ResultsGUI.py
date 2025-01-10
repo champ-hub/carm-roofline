@@ -21,7 +21,6 @@ from dash import Input, Output, State, html, dcc, no_update, DiskcacheManager, c
 import run
 import PMU_AI_Calculator
 import DBI_AI_Calculator
-import CodeInject
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
@@ -215,7 +214,7 @@ sidebar = dbc.Offcanvas(
             ])
         ], className="mb-3", style={'backgroundColor': '#6c757d'}),
         dbc.Button("Run Application Analysis", id="app-analysis-button", className="mb-2", style={'width': '100%'}),
-        dbc.Button("Run Application ROI Code Injection", id="app-inject-button", className="mb-2", style={'width': '100%'}),
+        #dbc.Button("Run Application ROI Code Injection", id="app-inject-button", className="mb-2", style={'width': '100%', 'display': 'none'}),
         dbc.Button("Stop Benchmark/Analysis", id="cancel-button", className="mb-2", style={'width': '100%'}),
     ], style={'backgroundColor': '#1a1a1a'}),
     id="offcanvas",
@@ -703,10 +702,8 @@ def handle_submit(n_clicks, checklist_values, machine_name, file_path, exec_argu
     cancel=[Input("cancel-button", "n_clicks")]
 )
 def execute_profiling(file_path_status, library_path_status, machine_name, file_path, arguments, checklist_values, profile_modal_open, library_modal_open):
-
     if "Processing complete" in file_path_status and "Library path saved" in library_path_status:
         parts = file_path_status.split()
-
 
         file_path = parts[2]
         checklist_values = parts[3]
@@ -715,11 +712,16 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
         #Joining the rest as execution arguments if any
         exec_arguments = ' '.join(parts[5:]) if len(parts) > 5 else None
         try:
-            exec_arguments_list = exec_arguments.split()
+            if exec_arguments != None:
+                exec_arguments_list = exec_arguments.split()
+            else:
+                exec_arguments_list = None
             if str(checklist_values) == str(['dbi']) or str(checklist_values) == str(['dbi_roi']):
                 method = "DR"
                 Dyno_path = read_library_path("DYNO")
+                DBI_AI_Calculator.check_client_exists(Dyno_path)
                 if str(checklist_values) == str(['dbi']):
+                    
                     exec_time = DBI_AI_Calculator.runApplication(0, file_path, exec_arguments_list)
                     
                     DBI_AI_Calculator.runDynamoRIO(Dyno_path, 0, file_path, exec_arguments_list)
@@ -747,18 +749,22 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
                 ai = float(fp_ops/memory_bytes)
                 bandwidth = float((memory_bytes * 8) / exec_time)
 
-                print("\nTotal FP operations:", fp_ops)
+                print("\n---------DBI RESULTS-----------")
+                print("Total FP operations:", fp_ops)
                 print("Total memory bytes:", memory_bytes)
                 print("Total integer operations:", integer_ops)
+
                 print("\nExecution time (seconds):", time_taken_seconds)
-                print("GFLOPS:", gflops)
+                print("GFLOP/s:", gflops)
+                print("Bandwidth (GB/s): " + str(bandwidth))
                 print("Arithmetic Intensity:", ai)
+                print("------------------------------\n")
 
                 ct = datetime.datetime.now()
                 date = ct.strftime('%Y-%m-%d %H:%M:%S')
     
 
-                DBI_AI_Calculator.update_csv(machine_name, file_path, gflops, ai, bandwidth, time_taken_seconds, "", date, None, None, None, method)
+                DBI_AI_Calculator.update_csv(machine_name, file_path, gflops, ai, bandwidth, time_taken_seconds, "", date, None, None, None, method, 1, 1)
             if str(checklist_values) == str(['pmu_roi']):
                 total_time_nsec, total_mem, total_sp, total_dp, thread_count = PMU_AI_Calculator.runPAPI(file_path, exec_arguments_list)
                 total_fp = total_sp + total_dp
@@ -782,17 +788,18 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
                 gflops = float(total_fp / total_time_nsec)
                 bandwidth = float((memory_bytes * 8) / total_time_nsec)
 
-                print("\nTotal FLOP Count:", total_fp)
+                print("\n---------PMU RESULTS-----------")
+                print("Total FP Operations:", total_fp)
+                print("Total Memory Bytes:", memory_bytes)
+                #print("Simple AI:", float(total_fp / total_mem))
                 print("SP FLOP Ratio: " + str(sp_ratio) + " DP FLOP Ration: " + str(dp_ratio))
-                print("Calculated Total Memory Bytes:", memory_bytes)
-                print("Simple AI:", float(total_fp / total_mem))
-                print("Complete AI:", ai)
                 print("Threads Used:", thread_count)
 
-
-                print("Execution Time (seconds):" + str(float(total_time_nsec / 1e9)))
-                print("GFLOPS: " + str(gflops))
-                print("Bandwidth (Gbps): " + str(bandwidth))
+                print("\nExecution Time (seconds):" + str(float(total_time_nsec / 1e9)))
+                print("GFLOP/s: " + str(gflops))
+                print("Bandwidth (GB/s): " + str(bandwidth))
+                print("Arithmetic Intensity:", ai)
+                print("------------------------------\n")
 
                 ct = datetime.datetime.now()
 
@@ -892,7 +899,7 @@ def update_button_status(pmu_dbi_values, file_path):
         return False
     return True
 
-
+"""
 @app.callback(
     Output("modal-inject", "is_open"),
     [Input("app-inject-button", "n_clicks"),
@@ -916,7 +923,7 @@ def toggle_modal_inject(open_clicks, close_clicks, submit_clicks, file_path_vali
         return not is_open
 
     return is_open
-
+"""
 
 @app.callback(
     [Output("file-path-valid", "children"),
@@ -934,10 +941,10 @@ def check_file_path(n_clicks, pmu_dbi, new_file, file_path):
 
     if not os.path.isfile(file_path) or (not file_path.endswith('.c') and not file_path.endswith('.cpp')):
         return False, "The specified file was not found or is not a C/C++ source file."
-    injected = CodeInject.inject_code(file_path, pmu_dbi, new_file)
+    #injected = CodeInject.inject_code(file_path, pmu_dbi, new_file)
 
-    if not injected:
-        return False, "Region of Interest Flags not Found."
+    #if not injected:
+        #return False, "Region of Interest Flags not Found."
     return True, ""
 
 
@@ -1024,7 +1031,7 @@ def execute_script1(n, name, l1_size, l2_size, l3_size, thread_set, interleaved,
     plot = 0
     
     try:
-        run.run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, thread_set, interleaved, num_ops, int(dram_bytes), dram_auto, test_type, verbose, set_freq, measure_freq, VLEN, tl1, tl2, plot)
+        run.run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, thread_set, interleaved, num_ops, int(dram_bytes), dram_auto, test_type, verbose, set_freq, measure_freq, VLEN, tl1, tl2, plot, 1, "./Results")
     except Exception as e:
         print("Task was interrupted:", e)
     return no_update
@@ -1054,7 +1061,12 @@ def update_additional_dropdowns(selected_file):
             
         options = [{'label': value, 'value': value} for value in unique_values]
 
-        width = '275px' if field == "Date" else '170px'
+        if field == "Date":
+            width = '275px'
+        elif field == "ISA":
+            width = '230px'
+        else: 
+            width = '161px'
 
         dropdown_style = {'display': 'inline-block', 'width': width, 'margin': '5px'}
         dropdown = html.Div([
@@ -1102,7 +1114,12 @@ def update_additional_dropdowns2(selected_file):
         else:
             unique_values = sorted(df[field.replace(" ", "")].unique())  
         options = [{'label': value, 'value': value} for value in unique_values]
-        width = '275px' if field == "Date" else '170px'
+        if field == "Date":
+            width = '275px'
+        elif field == "ISA":
+            width = '230px'
+        else: 
+            width = '161px'
 
         dropdown_style = {'display': 'inline-block', 'width': width, 'margin': '5px'}
         dropdown = html.Div([
@@ -1152,7 +1169,7 @@ def update_application_dropdown(selected_file):
  
     options = [{
     'label': f"{row['Name']} ({row['Method']}) - {row['Date']} ({' '.join(filter(None, [row['ISA'], row['Precision'], (str(row['Threads']) + ' Threads' if row['Threads'] else None)]))}{' |' if any([row['ISA'], row['Precision'], row['Threads']]) else ''} AI: {row['AI']} Gflops: {row['GFLOPS']})",
-    'value': f"{row['Name']}_{row['Date']}_{row['ISA']}_{row['Precision']}_{row['Threads']}_{row['AI']}_{row['GFLOPS']}"
+    'value': f"{row['Name']}  {row['Method']}  {row['Date']}  {row['ISA']}  {row['Precision']}  {row['Threads']}  {row['AI']}  {row['GFLOPS']}  {index}"
 } for index, row in df.iloc[::-1].iterrows()]
 
     dropdown = dcc.Dropdown(
@@ -2020,27 +2037,40 @@ def analysis(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPI
     figure = go.Figure()
     if not filtered_df1.empty:
         values1 = filtered_df1.iloc[-1][['L1', 'L2', 'L3', 'DRAM', 'FP', 'FP_FMA', 'FPInst']].tolist()
-        figure.add_traces(plot_roofline(values1, ''))
+        figure.add_traces(plot_roofline(values1, '', ISA))
     if not filtered_df2.empty and not query2 == None:
         values2 = filtered_df2.iloc[-1][['L1', 'L2', 'L3', 'DRAM', 'FP', 'FP_FMA', 'FPInst']].tolist()
-        figure.add_traces(plot_roofline(values2, '2'))
+        figure.add_traces(plot_roofline(values2, '2', ISA2))
 
     #Plot the selected application as a dot
     if selected_applications:
         for selected_application in selected_applications:
-            print(selected_application)
-            #parts = selected_application.split('_')
-            parts = selected_application.rsplit('_', 6)
-            if len(parts) >= 7:
-                name, date, isa, precision, threads, ai, gflops = parts[0], parts[1], parts[2], parts[3], parts[4], float(parts[5]), float(parts[6])
+            parts = selected_application.rsplit('  ', 8)
+            if len(parts) >= 8:
+                name, method, date, isa, precision, threads, ai, gflops, index_start = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], float(parts[6]), float(parts[7]), int(parts[8])
                 #Add trace for each application
                 figure.add_trace(go.Scatter(
-                    x=[ai], 
-                    y=[gflops], 
-                    mode='markers', 
-                    name=f'{name} ({date})', 
-                    marker=dict(size=10)
-                ))
+                        x=[ai], 
+                        y=[gflops], 
+                        mode='markers', 
+                        name=f'{name} ({date})', 
+                        marker=dict(size=10)
+                    ))
+                if method == "Paraver_TimeStamp":
+                    application_file_path = selected_file.replace("Roofline", "Applications")
+                    #Read the CSV file and extract data
+                    data_list = read_application_csv_file(application_file_path)
+                    df_app = pd.DataFrame(data_list)
+                    for index, row in df_app.iloc[index_start+1:].iterrows():
+                        if row["Method"] == method:
+                            if row["Date"] == date:
+                                figure.add_trace(go.Scatter(
+                                    x=[row["AI"]], 
+                                    y=[row["GFLOPS"]], 
+                                    mode='markers', 
+                                    name=f'{row["Name"]}', 
+                                    marker=dict(size=10)
+                                ))
 
     figure.update_layout(
     title={
@@ -2056,7 +2086,7 @@ def analysis(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPI
         }
     },
     xaxis={
-        'title': 'AI (Arithmetic Intensity)',
+        'title': 'Arithmetic Intensity (flop/byte)',
         'type': 'log',
         'dtick': '0.30102999566',
         'range': [np.log(0.18), np.log(11.2)],
@@ -2068,6 +2098,7 @@ def analysis(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPI
         'type': 'log',
         'dtick': '0.30102999566',
         'range': [np.log(0.25), np.log(25)],
+        #'range': [np.log(0.5), np.log(12.5)],
         'title_standoff': 0,
         'automargin': True
     },
@@ -2076,19 +2107,22 @@ def analysis(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPI
         'orientation': 'h',
         'x': 0.5,
         'y': -0.1,
+        #'y': -0.15,
         'xanchor': 'center',
         'yanchor': 'top'
     },
     font={'size': 18},
     showlegend=True,
     height=675,
+    #height=720,
     width=1900,
+    #width=950,
     margin=dict(t=60, l=80, b=20, r=40),
     plot_bgcolor='#e9ecef',
     paper_bgcolor='#e9ecef'
 )
 
-    return figure, {'display': 'block', 'width': '100%'}
+    return figure, {'display': 'block'}#, 'width': '100%', 'height' : '100%'}
 
 
 def construct_query(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPInst, Date):
@@ -2114,7 +2148,8 @@ def construct_query(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMByt
 
     return " and ".join(query_parts) if query_parts else None
     
-def plot_roofline(values, name_suffix):
+def plot_roofline(values, name_suffix, ISA):
+    import numpy as np
     ai = np.linspace(0.00390625, 256, num=200000)
     traces = []
     cache_levels = ['L1', 'L2', 'L3', 'DRAM']
@@ -2127,14 +2162,15 @@ def plot_roofline(values, name_suffix):
     linestyles = ['solid', 'solid', 'dash', 'dot']
 
     for cache_level, color, linestyle in zip(cache_levels, colors, linestyles):
-        y_values = run.carm_eq(ai, values[cache_levels.index(cache_level)], values[5])
-        trace = go.Scatter(
-            x=ai, y=y_values,
-            mode='lines',
-            line=dict(color=color, dash=linestyle),
-            name=f'{cache_level}'
-        )
-        traces.append(trace)
+        if values[cache_levels.index(cache_level)] > 0:
+            y_values = run.carm_eq(ai, values[cache_levels.index(cache_level)], values[5])
+            trace = go.Scatter(
+                x=ai, y=y_values,
+                mode='lines',
+                line=dict(color=color, dash=linestyle),
+                name=f'{cache_level} {ISA} ({values[cache_levels.index(cache_level)]} GB/s)'
+            )
+            traces.append(trace)
 
     for i in range(4):
         if values[i]:
@@ -2146,7 +2182,7 @@ def plot_roofline(values, name_suffix):
         x=ai, y=y_values,
         mode='lines',
         line=dict(color=color_inst, dash="dashdot"),
-        name=values[6]
+        name=f'{values[6]} {ISA}'
     )
     traces.append(trace_inst)
     
