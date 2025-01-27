@@ -13,6 +13,7 @@ import re
 import sys
 import platform
 import csv
+import glob
 
 import run
 
@@ -189,7 +190,7 @@ def check_sde_exists(path_sde):
         return False
 
 #Check if DynamoRIO Client is present
-def check_client_exists(path):
+def check_client_exists(path,client_path):
     
     drrun_path = os.path.join(path, 'bin64', 'drrun')
 
@@ -213,12 +214,12 @@ def check_client_exists(path):
     else:
         print(f"The build folder does not exist. Building the DynamoRIO Client.")
         try:
-            subprocess.run(f"mkdir build && cd build && {cmake_command} && make opcoder", check=True, shell=True)
+            subprocess.run(f"mkdir build && cd build && {cmake_command} && make ", check=True, shell=True)
         except subprocess.CalledProcessError as e:
             print("Error executing the command:", e)
     
     #Construct the path to the client file
-    path_client = os.path.join(script_dir, "build/bin/libopcoder.so")
+    path_client = os.path.join(script_dir, client_path)
 
     #Check if the client file exists
     if os.path.exists(path_client):
@@ -226,7 +227,7 @@ def check_client_exists(path):
     else:
         print(f"The opcode client does not exist in the path '{path_client}'. Building the client.")
         try:
-            subprocess.run(f"rm -rf build && mkdir build && cd build && {cmake_command} && make opcoder", check=True, shell=True)
+            subprocess.run(f"rm -rf build && mkdir build && cd build && {cmake_command} && make ", check=True, shell=True)
         except subprocess.CalledProcessError as e:
             print("Error executing the command:", e)
     return True
@@ -254,12 +255,12 @@ def runSDE(sde_path, roi, executable_path, additional_args):
 
 
 #Run DynamoRIO client with provided application
-def runDynamoRIO(dynamo_path, roi, executable_path, additional_args):
+def runDynamoRIO(dynamo_path, client_path, roi, mpi_command, executable_path, additional_args):
     #Construct the command with the provided paths and additional arguments
     if roi:
-        command = f"{dynamo_path}/bin64/drrun -c ./build/bin/libopcoder.so -roi -- {executable_path}"
+        command = f"{dynamo_path}/bin64/drrun -c {client_path} -roi -- {executable_path}"
     else:
-        command = f"{dynamo_path}/bin64/drrun -c ./build/bin/libopcoder.so -- {executable_path}"
+        command = f"{dynamo_path}/bin64/drrun -c {client_path} -- {executable_path}"
 
     # Add additional arguments to the command
     if additional_args != None:
@@ -275,33 +276,45 @@ def runDynamoRIO(dynamo_path, roi, executable_path, additional_args):
     
     #os.remove("timing_results.txt")
 
+
+def analyseTiming(filename):
+    with open(filename, "r") as file:
+        contents = file.read()
+        #Extract the number of seconds
+        match = re.search(r"Time Taken:\s*([\d.]+)\s*seconds", contents)
+        if match:
+            seconds = float(match.group(1))
+        else:
+            print("No match found in "+filename+" , stopping program.")
+            sys.exit(1)
+    file.close()
+
+    os.remove(filename)
+    return float(seconds * 1e9)
+
+
 #Run provided application for timming measurements
-def runApplication(roi, executable_path, additional_args):
+def runApplication(roi, mpi_command, executable_path, additional_args):
 
     #Add additional arguments to the command
-    if additional_args != None:
-        executable_path += " " + " ".join(additional_args)
-    print("\n------------------------------")
-    print("Running Provided Application For Timming Data\n")
+    executable_path = mpi_command + " " + executable_path 
+    if (additional_args != None):
+        executable_path += " " + " ".join(additional_args) 
+
+    print("------------------------------")
+    print("Running Provided Application For Timing Data\n")
+
     if roi:
         try:
             subprocess.run(executable_path, check=True, shell=True)
         except subprocess.CalledProcessError as e:
             print("Error executing the command:", e)
+        timing_filelist = glob.glob("timing_results_*.txt")
+        all_timings = [0.0 for i in timing_filelist]
+        for i in range(len(timing_filelist)):
+            all_timings[i] = analyseTiming(timing_filelist[i])
+        return max(all_timings)
 
-        with open("timing_results.txt", "r") as file:
-            contents = file.read()
-            #Extract the number of seconds
-            match = re.search(r"Time Taken:\s*([\d.]+)\s*seconds", contents)
-            if match:
-                seconds = float(match.group(1))
-            else:
-                print("No match found in timing_results.txt, stopping program.")
-                sys.exit(1)
-        file.close()
-
-        os.remove("timing_results.txt")
-        return float(seconds * 1e9)
     else:
     
         try:
@@ -470,139 +483,20 @@ def analyseDynamoRIOx86():
                         misc_operations[opcode] = count
     return fp_ops, memory_bytes, integer_ops
 
-def analyseDynamoRIOARM():
+def analyseDynamoRIOARM(filename):
     arith = False
     mem = False
     fp_ops = 0
     integer_ops = 0
     memory_bytes = 0
 
-    with open('output.txt', 'r') as file:
-        for line in file:
-            # Arithmetic Section       
-            if "Floating Point and Integer opcode execution counts" in line:
-                arith = True
-                continue
+    with open(filename, 'r') as file:
+        lines = file.readlines()[1:]
+        values = lines[0].split(",")
+        fp_ops = int(values[0])
+        memory_bytes = int(values[1])
+        integer_ops = int(values[3])
 
-            if arith:
-                if "Memory opcode execution counts" in line:
-                    arith = False
-                    mem = True
-                    continue
-
-                line = line.strip()
-                parts = line.split(':')
-                if len(parts) == 2:
-                    count, rest = parts
-                    count = int(count.strip())
-                    
-                    #Check if the "|" character is present in the rest of the line
-                    if "error" in rest:
-                        continue
-                    if "|" in rest:
-                        #If "|" is present, split the rest of the line based on the "|" character
-                        opcode, description = rest.split("|")
-                        opcode = opcode.strip()
-                        description = description.strip()
-                        match = re.search(r'(\d+)x', description)
-                        if opcode[0] == "f":
-                            if match:
-                                if opcode == "fmla":
-                                    fp_ops += count*int(match.group(1))*2
-                                else:
-                                    fp_ops += count*int(match.group(1))
-                                #print("Opcode: " + opcode + "FP Count: " + str(count) + " | Factor: " +str(int(match.group(1))) + " | Total: " + str(count*int(match.group(1))))
-                        else:
-                            if match:
-                                integer_ops += count*int(match.group(1))
-                                #print("Integer Count: " + str(count) + " | Factor: " +str(int(match.group(1))) + " | Total: " + str(count*int(match.group(1))))
-                    else:
-                        #If "|" is not present, check if the word "TOTAL" is in the rest of the line
-                        if "TOTAL" in rest:
-                            #If "TOTAL" is present, set the opcode to the part before "TOTAL" and description to "TOTAL"
-                            parts = rest.split()
-                            opcode = " ".join(parts[:-1]).strip()
-                            description = "TOTAL"
-                        else:
-                            #If "TOTAL" is not present, set the opcode to the whole rest of the line and description to None
-                            opcode = rest.strip()
-                            description = None
-                #If Floating Point
-                if opcode[0] == "f":
-
-                    if opcode in ARM_FP_operations:
-                        #Check if the entry with the same count and description already exists
-                            if (count, description) not in ARM_FP_operations[opcode]:
-                                ARM_FP_operations[opcode].append((count, description))
-                    else:
-                        #If the opcode doesn't exist, create a new list with the entry
-                        ARM_FP_operations[opcode] = [(count, description)]
-                #If Integer
-                else:
-
-                    if opcode in ARM_INT_operations:
-                        #Check if the entry with the same count and description already exists
-                            if (count, description) not in ARM_INT_operations[opcode]:
-                                ARM_INT_operations[opcode].append((count, description))
-                    else:
-                        #If the opcode doesn't exist, create a new list with the entry
-                        ARM_INT_operations[opcode] = [(count, description)]
-                            
-            #Memory Section
-            elif mem:
-
-                if "Miscellaneous Opcode execution counts" in line:
-                    mem = False
-                    continue
-
-                line = line.strip()
-                parts = line.split(':')
-                if len(parts) == 2:
-                    count, rest = parts
-                    count = int(count.strip())
-                    
-                    #Check if the "|" character is present in the rest of the line
-                    if "error" in rest:
-                        continue
-                    if "|" in rest:
-                        #If "|" is present, split the rest of the line based on the "|" character
-                        opcode, description = rest.split("|")
-                        opcode = opcode.strip()
-                        description = description.strip()
-                        size, extrarest = description.split(" ")
-                        memory_bytes += count*int(size)
-                    else:
-                        #If "|" is not present, check if the word "TOTAL" is in the rest of the line
-                        if "TOTAL" in rest:
-                            #If "TOTAL" is present, set the opcode to the part before "TOTAL" and description to "TOTAL"
-                            parts = rest.split()
-                            opcode = " ".join(parts[:-1]).strip()
-                            description = "TOTAL"
-                        else:
-                            #If "TOTAL" is not present, set the opcode to the whole rest of the line and description to None
-                            opcode = rest.strip()
-                            description = None
-                
-                #Store the count, opcode, and description in the dictionary
-                #Check if the opcode already exists in the dictionary
-                if opcode in memory_operations:
-                    #Check if the entry with the same count and description already exists
-                        if (count, description) not in memory_operations[opcode]:
-                            memory_operations[opcode].append((count, description))
-                else:
-                    #If the opcode doesn't exist, create a new list with the entry
-                    memory_operations[opcode] = [(count, description)]
-            else:
-                parts = line.split(':')
-                if len(parts) == 2:
-                    count, opcode = parts
-                    count = count.strip()
-                    opcode = opcode.strip()
-
-                    #Check if the count is an integer
-                    if count.isdigit():
-                        count = int(count)
-                        misc_operations[opcode] = count
     return fp_ops, memory_bytes, integer_ops
 
 def printDynamoRIOx86():
@@ -1051,8 +945,8 @@ if __name__ == "__main__":
     parser.add_argument('--isa', default='', nargs='?', choices=['avx512', 'avx', 'avx2', 'sse', 'scalar', 'neon', 'armscalar', 'riscvscalar', 'riscvvector', ''], help='Main ISA used by the application, if not sure leave blank (optional only for naming facilitation).')
     parser.add_argument('-t', '--threads', default='0', nargs='?', type = int, help='Number of threads used by the application (optional only for naming facilitation).')
     parser.add_argument('-p', '--precision', default='', nargs='?', choices=['dp', 'sp'], help='Data Precision used by the application (optional only for naming facilitation).')
+    parser.add_argument('--mpi-command', default='', help='Enable MPI with MPI_COMMAND in argument to execute the binary')
     parser.add_argument("executable_path", help="Path to the executable provided by the user")
-    
     parser.add_argument("additional_args", nargs="...", help="Additional arguments for the user's application.")
    
 
@@ -1071,11 +965,15 @@ if __name__ == "__main__":
             sys.exit(1)
     else:
         #Check if DynamoRIO client is present
-        if not (check_client_exists(args.dbi_path)):
+        if CPU_Type == "aarch64":
+            client_path = "build/bin/libflops_bytes.so"
+        else:
+            client_path = "build/bin/libopcoder.so"
+        if not (check_client_exists(args.dbi_path,client_path)):
             sys.exit(1)
 
     #Run the application to get time taken
-    exec_time = runApplication(args.roi, args.executable_path, args.additional_args)
+    exec_time = runApplication(args.roi, args.mpi_command, args.executable_path, args.additional_args)
 
     if args.sde:
         runSDE(args.dbi_path, args.roi, args.executable_path, args.additional_args)
@@ -1086,14 +984,22 @@ if __name__ == "__main__":
                 
     else:
         #Run the client with the provided executable and arguments
-        runDynamoRIO(args.dbi_path, args.roi, args.executable_path, args.additional_args)
+        runDynamoRIO(args.dbi_path, client_path, args.roi, args.mpi_command, args.executable_path, args.additional_args)
         
         if CPU_Type == "x86_64":
             fp_ops, memory_bytes, integer_ops = analyseDynamoRIOx86()
             printDynamoRIOx86()
         elif CPU_Type == "aarch64":
-            fp_ops, memory_bytes, integer_ops = analyseDynamoRIOARM()
-            printDynamoRIOARM()
+            output_filelist = glob.glob("output_*.txt")
+            fp_ops = 0
+            memory_bytes = 0
+            integer_ops = 0
+            for file in output_filelist:
+                fp_ops_rank, memory_bytes_rank, integer_ops_rank = analyseDynamoRIOARM(file)
+                fp_ops += fp_ops_rank
+                memory_bytes += memory_bytes_rank
+                integer_ops += integer_ops_rank
+                os.remove(file)
         else:
             print("No opcode analysis support on this architecture.")
             sys.exit(1)
