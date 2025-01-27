@@ -196,5 +196,5 @@ endfunction (add_sample_standalone)
 # a function scope, we must set the global vars ahead of time:
 configure_DynamoRIO_global(OFF ON)
 
-
+add_sample_client(flops_bytes "flops_bytes.c" "drmgr;drreg;drx;drutil")
 add_sample_client(opcoder     "opcoder.c"       "drmgr;drreg;drx")
