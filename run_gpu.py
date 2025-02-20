@@ -23,7 +23,7 @@ def read_config(config_file):
 	
 	return name
 
-def check_hardware(verbose,freq, set_freq):
+def check_hardware(verbose, set_freq, freq_sm, freq_mem):
 	compute_capability = 0
 	gpu_name = ''
 	cuda_precisions = ['scalar', 'hp', 'sp', 'dp']
@@ -56,6 +56,30 @@ def check_hardware(verbose,freq, set_freq):
 
 				if compute_capability >= 89:
 					pass #implement fp8
+
+	# Configure SM and MEM frequency
+	if set_freq and freq_sm !=0 and freq_mem != 0:
+		# Turn on persistency mode
+		result = subprocess.run(['nvidia-smi', '-i', str(device_id), '-pm', '1'], stdout=subprocess.PIPE)
+		
+		if result.returncode != 0:
+			print(result.stdout.decode('utf-8').rstrip())
+			sys.exit(2)
+		
+		# Configure SM freqency
+		result = subprocess.run(['nvidia-smi', '-i', str(device_id), '-lgc', str(freq_sm)], stdout=subprocess.PIPE)
+
+		if result.returncode != 0:
+			print(result.stdout.decode('utf-8').rstrip())
+			sys.exit(3)
+		
+		# Configure MEM frequency
+		result = subprocess.run(['nvidia-smi', '-i', str(device_id), '-lmc', str(freq_mem)], stdout=subprocess.PIPE)
+
+		if result.returncode != 0:
+			print(result.stdout.decode('utf-8').rstrip())
+			sys.exit(4)
+		
 	
 	if verbose > 2:
 		print("-----------------GPU INFORMATION-----------------")
@@ -64,14 +88,27 @@ def check_hardware(verbose,freq, set_freq):
 		print("Supported CUDA Precisions:", ', '.join(cuda_precisions))
 		if tensor_cores:
 			print("Supported Tensor Core Precisions:", ', '.join(tensor_core_precisions))
+		
+		# Print current GPU frequencies
+		result = subprocess.run(['nvidia-smi', '--query-gpu=clocks.sm,clocks.mem', '-i', str(device_id), '--format=csv,noheader'], stdout=subprocess.PIPE)
+		result = result.stdout.decode('utf-8').rstrip().split(' ')
+		real_freq_sm = result[0]
+		real_freq_mem = result[2]
+		print("Current SM Frequency:", real_freq_sm, "MHz")
+		print("Current Memory Frequency:", real_freq_mem, "MHz")
 
 
 
-def run_roofline(verbose):
-	check_hardware(verbose,0,0)
+def run_roofline(verbose, set_freq, freq_sm, freq_mem):
+	check_hardware(verbose, set_freq, freq_sm, freq_mem)
 
 
-
+def shutdown(set_freq):
+	if set_freq:
+		result = subprocess.run(['nvidia-smi', '-i', str(device_id), '-pm', '0'], stdout=subprocess.PIPE)
+		print(result.stdout.decode('utf-8').rstrip())
+		if result.returncode != 0:
+			print("Important: It was not possible to disable Persistent Mode in GPU", device_id)
 
 
 def main():
@@ -82,6 +119,10 @@ def main():
 	parser.add_argument('config', nargs='?', help='Path to the configuration file')
 	parser.add_argument('-v', '--verbose', default=1, nargs='?', type=int, choices=[0, 1, 2, 3], help='Level of terminal output (0 -> No Output 1 -> Only Errors and Test Details, 2 -> Intermediate Test Results, 3 -> Configuration Values Selected/Detected)')
 	parser.add_argument('-out', '--output', default='./Results', nargs='?', help='Path to the output directory')
+
+	parser.add_argument('--freq_sm', dest='freq_sm', default=0, nargs='?', type = int, help='Desired SM frequency during test')
+	parser.add_argument('--freq_mem', dest='freq_mem', default=0, nargs='?', type=int, help='Desired MEM frequency during test')
+	parser.add_argument('--set_freq',  dest='set_freq', action='store_const', const=1, default=0, help='Set SM and MEM frequency to indicated one')
 
 	args = parser.parse_args()
 
@@ -103,7 +144,9 @@ def main():
 		print('NVIDIA GPU not detected')
 		sys.exit(1)
 
-	run_roofline(args.verbose)
+	run_roofline(args.verbose, args.set_freq, args.freq_sm, args.freq_mem)
+
+	shutdown(args.set_freq)
 
 if __name__ == '__main__':
 	main()
