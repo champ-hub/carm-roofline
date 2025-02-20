@@ -23,7 +23,7 @@ def read_config(config_file):
 	
 	return name
 
-def check_hardware(verbose, set_freq, freq_sm, freq_mem):
+def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor):
 	compute_capability = 0
 	gpu_name = ''
 	cuda_precisions = ['scalar', 'hp', 'sp', 'dp']
@@ -57,6 +57,24 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem):
 				if compute_capability >= 89:
 					pass #implement fp8
 
+	# Check valid arithmetic precisions
+	if target_cuda[0] == 'auto':
+		target_cuda = cuda_precisions.copy()
+	else:
+		for item in target_cuda:
+			if item not in cuda_precisions:
+				print("WARNING: Selected CUDA arithmetic precision", item, "was detected and removed since it is not supported by the tested GPU.")
+				target_cuda.remove(item)
+	
+	if target_tensor[0] == 'auto':
+		target_tensor = tensor_core_precisions.copy()
+	else:
+		for item in target_tensor:
+			if item not in tensor_core_precisions:
+				print("WARNING: Selected Tensor Core arithmetic precision", item, "was detected and removed since it is not supported by the tested GPU.")
+				target_tensor.remove(item)
+	
+
 	# Configure SM and MEM frequency
 	if set_freq and freq_sm !=0 and freq_mem != 0:
 		# Turn on persistency mode
@@ -86,8 +104,10 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem):
 		print("GPU:", gpu_name)
 		print("Compute Capability:", compute_capability)
 		print("Supported CUDA Precisions:", ', '.join(cuda_precisions))
+		print("Tested CUDA Precisions:", ', '.join(target_cuda))
 		if tensor_cores:
 			print("Supported Tensor Core Precisions:", ', '.join(tensor_core_precisions))
+			print("Tested Tensor Core Precisions:", ', '.join(target_tensor))
 		
 		# Print current GPU frequencies
 		result = subprocess.run(['nvidia-smi', '--query-gpu=clocks.sm,clocks.mem', '-i', str(device_id), '--format=csv,noheader'], stdout=subprocess.PIPE)
@@ -97,16 +117,17 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem):
 		print("Current SM Frequency:", real_freq_sm, "MHz")
 		print("Current Memory Frequency:", real_freq_mem, "MHz")
 
+	return target_cuda, target_tensor
 
 
-def run_roofline(verbose, set_freq, freq_sm, freq_mem):
-	check_hardware(verbose, set_freq, freq_sm, freq_mem)
+
+def run_roofline(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor):
+	target_cuda, target_tensor = check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor)
 
 
 def shutdown(set_freq):
 	if set_freq:
 		result = subprocess.run(['nvidia-smi', '-i', str(device_id), '-pm', '0'], stdout=subprocess.PIPE)
-		print(result.stdout.decode('utf-8').rstrip())
 		if result.returncode != 0:
 			print("Important: It was not possible to disable Persistent Mode in GPU", device_id)
 
@@ -123,6 +144,9 @@ def main():
 	parser.add_argument('--freq_sm', dest='freq_sm', default=0, nargs='?', type = int, help='Desired SM frequency during test')
 	parser.add_argument('--freq_mem', dest='freq_mem', default=0, nargs='?', type=int, help='Desired MEM frequency during test')
 	parser.add_argument('--set_freq',  dest='set_freq', action='store_const', const=1, default=0, help='Set SM and MEM frequency to indicated one')
+
+	parser.add_argument('--cuda', default=['auto'], nargs='+', choices=['auto','hp', 'scalar', 'sp', 'dp', 'bf16'], help='Set of CUDA core arithmetic precisions to test. If auto, all will be tested.')
+	parser.add_argument('--tensor', default=['auto'], nargs='+', choices=['auto', 'fp16_32', 'fp16_16', 'tf32', 'bf16', 'int8', 'int4', 'int1'], help='Set of Tensor Core arithmetic precisions to test. If auto, all will be tested.')
 
 	args = parser.parse_args()
 
@@ -144,7 +168,7 @@ def main():
 		print('NVIDIA GPU not detected')
 		sys.exit(1)
 
-	run_roofline(args.verbose, args.set_freq, args.freq_sm, args.freq_mem)
+	run_roofline(args.verbose, args.set_freq, args.freq_sm, args.freq_mem, args.cuda, args.tensor)
 
 	shutdown(args.set_freq)
 
