@@ -124,6 +124,26 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_ten
 def run_roofline(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor):
 	target_cuda, target_tensor = check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor)
 
+	if verbose == 1:
+		print("------------------------------")
+		print("Running Benchmarks for the CUDA Core Precisions", target_cuda)
+		if not target_tensor:
+			print("Tensor Cores are not supported in this device.")
+		else:
+			print("On the Following Tensor Core Precisions: ", target_tensor)
+		print("------------------------------")
+
+	# Compile benchmark generator
+	os.system("cd GPU && make clean && make")
+
+	# Cuda Core benchmarks
+	for precision in target_cuda:
+		pass
+
+	# Tensor Core benchmarks
+	for precision in target_tensor:
+		pass
+
 
 def shutdown(set_freq):
 	if set_freq:
