@@ -17,7 +17,7 @@ CXX=g++ -m64
 CXXFLAGS=-O3 -Wall
 LDFLAGS=-L$(CU_DIR)/lib64/ -lcudart
 NVCC=nvcc
-NVCCFLAGS=
+NVCCFLAGS=-arch=sm_$(compute_capability)
 
 
 OBJS= $(OBJDIR)/main_test.o $(OBJDIR)/benchmark.o
