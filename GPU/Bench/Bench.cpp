@@ -1,6 +1,7 @@
 #include <getopt.h>
 #include <stdlib.h>
 
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -16,6 +17,7 @@ using namespace std;
 
 int main(int argc, char* argv[]) {
 	const struct option longopts[] = {{"test", required_argument, 0, 't'},
+									  {"compute", required_argument, 0, 'c'},
 									  {"target", required_argument, 0, 'a'},
 									  {"precision", required_argument, 0, 'p'},
 									  {"operation", required_argument, 0, 'o'},
@@ -25,10 +27,14 @@ int main(int argc, char* argv[]) {
 	int o;
 
 	string test, target, precision, operation;
+	int compute_capability = 0;
 
-	while ((o = getopt_long(argc, argv, "t:a:p:o:h", longopts, NULL)) != -1) switch (o) {
+	while ((o = getopt_long(argc, argv, "t:c:a:p:o:h", longopts, NULL)) != -1) switch (o) {
 			case 't':
 				test = optarg;
+				break;
+			case 'c':
+				compute_capability = atoi(optarg);
 				break;
 			case 'a':
 				target = optarg;
@@ -61,15 +67,21 @@ int main(int argc, char* argv[]) {
 				exit(EXIT_FAILURE);
 		}
 
+	if (compute_capability == 0) {
+		cerr << "ERROR: Compute Capability not set. Unable to compile benchmarks." << endl;
+		return 3;
+	}
+
 	if (test == "FLOPS") {
 		// TODO
-		create_benchmark_flops(DEVICE, target, operation, precision, 1024, 32768, 32768);
+		create_benchmark_flops(DEVICE, compute_capability, target, operation, precision, 1024,
+							   32768);
 	} else if (test == "MEM") {
 		// TODO
 	} else if (test == "MIXED") {
 		// TODO
 	} else {
-		fprintf(stderr, "ERROR: Test not found. Please select a valid test.\n");
+		cerr << "ERROR: Test not found. Please select a valid test." << endl;
 		return 2;
 	};
 

@@ -117,12 +117,12 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_ten
 		print("Current SM Frequency:", real_freq_sm, "MHz")
 		print("Current Memory Frequency:", real_freq_mem, "MHz")
 
-	return target_cuda, target_tensor
+	return compute_capability, target_cuda, target_tensor
 
 
 
 def run_roofline(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor):
-	target_cuda, target_tensor = check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor)
+	compute_capability, target_cuda, target_tensor = check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor)
 
 	if verbose == 1:
 		print("------------------------------")
