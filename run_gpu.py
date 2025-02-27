@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import os
 import subprocess
@@ -26,7 +27,7 @@ def read_config(config_file):
 def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor):
 	compute_capability = 0
 	gpu_name = ''
-	cuda_precisions = ['scalar', 'hp', 'sp', 'dp']
+	cuda_precisions = ['int', 'hp', 'sp', 'dp']
 	tensor_cores = False
 	tensor_core_precisions = []
 
@@ -138,7 +139,16 @@ def run_roofline(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tenso
 
 	# Cuda Core benchmarks
 	for precision in target_cuda:
-		pass
+		# Generate benchmarks
+		#os.system("GPU/Bench/Bench  --target cuda --test FLOPS --precision sp --compute 86")
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--precision", precision, "--compute", str(compute_capability)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stderr.decode('utf-8').rstrip())
+			sys.exit(5)
+
+		# result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
+		# print("Performance("+precision+"): ", result.stdout.decode('utf-8').rstrip())
+
 
 	# Tensor Core benchmarks
 	for precision in target_tensor:
