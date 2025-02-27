@@ -43,14 +43,14 @@ def update_csv(name, test, results, date, target, precision, inst, threads, bloc
 		#If exists, append without header
 		with open(csv_path, 'a', newline='') as csvfile:
 			writer = csv.writer(csvfile)
-			writer.writerow(results)
+			writer.writerow(output)
 	else:
 		#If not, write with header and include secondary headers
 		with open(csv_path, 'w', newline='') as csvfile:
 			writer = csv.writer(csvfile)
 			writer.writerow(secondary_headers)
 			writer.writerow(primary_headers)
-			writer.writerow(results)
+			writer.writerow(output)
 
 def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor):
 	compute_capability = 0
