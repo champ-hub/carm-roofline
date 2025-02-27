@@ -85,8 +85,5 @@ int main(int argc, char* argv[]) {
 		return 2;
 	};
 
-	// cout << "Test:" << test << endl;
-	// cout << "Precision:" << precision << endl;
-	// cout << "Target:" << target << endl;
 	return 0;
 }

@@ -1,6 +1,6 @@
-EXECUTABLE := ../bin/test
+EXECUTABLE := GPU/bin/test
 
-CU_FILES   := ../bin
+CU_FILES   := GPU/bin
 
 CU_DIR    := /usr/local/cuda-12.4/
 
@@ -12,7 +12,7 @@ LOGS	   := logs
 
 ###########################################################
 
-OBJDIR=../bin/objs
+OBJDIR=GPU/bin/objs
 CXX=g++ -m64
 CXXFLAGS=-O3 -Wall
 LDFLAGS=-L$(CU_DIR)/lib64/ -lcudart

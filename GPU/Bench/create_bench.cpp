@@ -9,16 +9,19 @@ using namespace std;
 
 void create_benchmark_flops(int device, int compute_capability, string target, string operation,
 							string precision, int threads_per_block, int num_blocks) {
-	if (!filesystem::is_directory("../bin")) {
-		filesystem::create_directory("../bin");
+	if (!filesystem::is_directory("GPU/bin")) {
+		if (!filesystem::create_directory("GPU/bin")) {
+			cerr << "ERROR: Wasn't able to create bin directory" << endl;
+			exit(6);
+		}
 	}
 
 	if (target == "cuda") {
 		// CUDA cores
 		string text;
 
-		ifstream input("../Test/main_test_base.cu");
-		ofstream output("../bin/main_test.cu");
+		ifstream input("GPU/Test/main_test_base.cu");
+		ofstream output("GPU/bin/main_test.cu");
 
 		while (getline(input, text)) {
 			output << text << endl;
@@ -47,8 +50,8 @@ void create_benchmark_flops(int device, int compute_capability, string target, s
 		input.close();
 		output.close();
 
-		input.open("../Test/benchmark_base.cu");
-		output.open("../bin/benchmark.cu");
+		input.open("GPU/Test/benchmark_base.cu");
+		output.open("GPU/bin/benchmark.cu");
 
 		while (getline(input, text)) {
 			output << text << endl;
@@ -106,11 +109,12 @@ void create_benchmark_flops(int device, int compute_capability, string target, s
 		input.close();
 		output.close();
 		char buffer[100];
-		sprintf(buffer, "make compute_capability=%d -f ../Test/Makefile", compute_capability);
+		cout << endl;
+		sprintf(buffer, "make compute_capability=%d -f GPU/Test/Makefile", compute_capability);
 		int check = system(buffer);
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
-			exit(6);
+			exit(7);
 		}
 
 	} else {
