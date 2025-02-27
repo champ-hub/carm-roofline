@@ -1,3 +1,4 @@
+#include <bits/getopt_core.h>
 #include <getopt.h>
 #include <stdlib.h>
 
@@ -22,14 +23,16 @@ int main(int argc, char* argv[]) {
 									  {"precision", required_argument, 0, 'p'},
 									  {"operation", required_argument, 0, 'o'},
 									  {"help", no_argument, 0, 'h'},
+									  {"threads", required_argument, 0, 's'},
+									  {"blocks", required_argument, 0, 'b'},
 									  {0, 0, 0, 0}};
 
 	int o;
 
 	string test, target, precision, operation;
-	int compute_capability = 0;
+	int compute_capability = 0, threads_per_block = 0, num_blocks = 0;
 
-	while ((o = getopt_long(argc, argv, "t:c:a:p:o:h", longopts, NULL)) != -1) switch (o) {
+	while ((o = getopt_long(argc, argv, "t:c:a:p:o:hs:b:", longopts, NULL)) != -1) switch (o) {
 			case 't':
 				test = optarg;
 				break;
@@ -44,6 +47,12 @@ int main(int argc, char* argv[]) {
 				break;
 			case 'o':
 				operation = optarg;	 // fma, mul, add, div for cuda core operations
+				break;
+			case 's':
+				threads_per_block = atoi(optarg);
+				break;
+			case 'b':
+				num_blocks = atoi(optarg);
 				break;
 			case 'h':
 				// TODO: IMPLEMENT
@@ -74,8 +83,8 @@ int main(int argc, char* argv[]) {
 
 	if (test == "FLOPS") {
 		// TODO
-		create_benchmark_flops(DEVICE, compute_capability, target, operation, precision, 1024,
-							   32768);
+		create_benchmark_flops(DEVICE, compute_capability, target, operation, precision,
+							   threads_per_block, num_blocks);
 	} else if (test == "MEM") {
 		// TODO
 	} else if (test == "MIXED") {
