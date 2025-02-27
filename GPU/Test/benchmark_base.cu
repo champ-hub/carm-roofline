@@ -5,6 +5,7 @@
 
 // DEFINE PRECISION
 
+// DEFINE FUNCTION
 __global__ void benchmark(PRECISION *d_X, int iterations) {
 	int id = blockIdx.x * blockDim.x + threadIdx.x;
 

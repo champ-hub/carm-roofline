@@ -84,7 +84,7 @@ int main(int argc, char* argv[]) {
 		create_benchmark_flops(DEVICE, compute_capability, target, operation, precision,
 							   threads_per_block, num_blocks);
 	} else if (test == "MEM") {
-		create_benchmark_mem(DEVICE, compute_capability, "shared", precision, threads_per_block,
+		create_benchmark_mem(DEVICE, compute_capability, target, precision, threads_per_block,
 							 num_blocks);
 	} else if (test == "MIXED") {
 		// TODO
