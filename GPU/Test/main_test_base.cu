@@ -20,16 +20,18 @@ using namespace std;
 
 // DEFINE TEST
 
+// DEFINE FUNCTION
 __global__ void benchmark(PRECISION *d_X, int iterations);
 
 int main() {
 	// Allocate memory in GPU
 	cudaSetDevice(DEVICE);
 
-	int iterations = 10;
+	int iterations = 1;
 	float milliseconds = 0;
 	vector<float> time_series;
 
+	// DEFINE VECTORS
 	PRECISION *d_X;
 	cudaMalloc((void **)&d_X, NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(PRECISION));
 
@@ -42,6 +44,7 @@ int main() {
 	while (milliseconds < 150.f) {
 		iterations *= 2;
 		cudaEventRecord(start);
+		// DEFINE CALL
 		benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, iterations);
 		cudaEventRecord(stop);
 		cudaEventSynchronize(stop);
@@ -52,6 +55,7 @@ int main() {
 	// Perform testing
 	for (int i = 0; i < NUM_REPS; i++) {
 		cudaEventRecord(start);
+		// DEFINE CALL
 		benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, iterations);
 		cudaEventRecord(stop);
 		cudaEventSynchronize(stop);

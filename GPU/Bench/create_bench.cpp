@@ -211,5 +211,101 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 
 	} else if (target == "global") {
 		// Global Memory
+		string text;
+
+		ifstream input("GPU/Test/main_test_base.cu");
+		ofstream output("GPU/bin/main_test.cu");
+
+		while (getline(input, text)) {
+			output << text << endl;
+			if (text == "// DEFINE KERNEL PARAMETERS") {
+				output << "#define THREADS_PER_BLOCK " << threads_per_block << endl;
+				output << "#define NUM_BLOCKS " << num_blocks << endl;
+				output << "#define STRIDE 32768 * 8L" << endl;
+			} else if (text == "// DEFINE PRECISION") {
+				string aux;
+				if (precision == "sp")
+					aux = "float";
+				else if (precision == "dp")
+					aux = "double";
+				else if (precision == "int")
+					aux = "int";
+				else if (precision == "hp")
+					aux = "half";
+				else if (precision == "bf16")
+					aux = "nv_bfloat16";
+
+				output << "#define PRECISION " << aux << endl;
+			} else if (text == "// DEFINE DEVICE") {
+				output << "#define DEVICE " << device << endl;
+			} else if (text == "// DEFINE TEST") {
+				output << "#define FLOPS 0" << endl;
+			} else if (text == "// DEFINE FUNCTION") {
+				output
+					<< "__global__ void benchmark(PRECISION *d_X, PRECISION *d_Y, int iterations);"
+					<< endl;
+				getline(input, text);
+			} else if (text == "\t// DEFINE VECTORS") {
+				output << "PRECISION *d_X;\ncudaMalloc((void **)&d_X, (NUM_BLOCKS * "
+						  "THREADS_PER_BLOCK + 128 * STRIDE)* sizeof(PRECISION));"
+					   << endl;
+				output << "PRECISION *d_Y;\ncudaMalloc((void **)&d_Y, (NUM_BLOCKS * "
+						  "THREADS_PER_BLOCK + 128 * STRIDE)* sizeof(PRECISION));"
+					   << endl;
+				getline(input, text);
+				getline(input, text);
+			} else if (text.find("// DEFINE CALL") != string::npos) {
+				output << "benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, d_Y, iterations);"
+					   << endl;
+				getline(input, text);
+			}
+		}
+
+		input.close();
+		output.close();
+
+		input.open("GPU/Test/benchmark_base.cu");
+		output.open("GPU/bin/benchmark.cu");
+
+		while (getline(input, text)) {
+			output << text << endl;
+			if (text == "// DEFINE PRECISION") {
+				string aux;
+				if (precision == "sp")
+					aux = "float";
+				else if (precision == "dp")
+					aux = "double";
+				else if (precision == "int")
+					aux = "int";
+				else if (precision == "hp")
+					aux = "half";
+				else if (precision == "bf16")
+					aux = "nv_bfloat16";
+
+				output << "#define PRECISION " << aux << endl;
+				output << "#define THREADS_PER_BLOCK " << threads_per_block << endl;
+				output << "#define STRIDE 32768 * 8L" << endl;
+			} else if (text == "\t// DEFINE INITIALIZATION") {
+				output << "\tPRECISION d;" << endl;
+			} else if (text.find("// DEFINE LOOP") != string::npos) {
+				output << "d = d_X[id + j * STRIDE];\nd_Y[id + j * STRIDE] = d;" << endl;
+			} else if (text == "// DEFINE FUNCTION") {
+				output
+					<< "__global__ void benchmark(PRECISION *d_X, PRECISION *d_Y, int iterations) {"
+					<< endl;
+				getline(input, text);
+			}
+		}
+
+		input.close();
+		output.close();
+		char buffer[100];
+		cout << endl;
+		sprintf(buffer, "make compute_capability=%d -f GPU/Test/Makefile", compute_capability);
+		int check = system(buffer);
+		if (check != 0) {
+			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
+			exit(12);
+		}
 	}
 }

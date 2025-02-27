@@ -2,9 +2,9 @@
 import argparse
 import os
 import subprocess
-import datetime # check if used
-import platform # check if used
-import sys # check if used
+import datetime
+import sys 
+import csv
 
 # TODO: use some config file or option to define target GPU
 device_id = 0
@@ -23,6 +23,34 @@ def read_config(config_file):
 			name = l[1].rstrip()
 	
 	return name
+
+def update_csv(name, test, results, date, target, precision, inst, threads, blocks, out_path):
+	csv_path = f"{out_path}/Roofline/{name}_{test}.csv"
+	output = [date, target, precision, threads, blocks, inst]
+
+	output.append(results["shared"])
+	#L2 cache to be implemented
+	output.append(0)
+	output.append(results["global"])
+
+	output.append(results["flops"])
+
+	secondary_headers = ["Name:", name, "Shared", "L2(todo)", "Global", "FP"]
+	primary_headers = ["Date", "ISA", "Precision", "Threads per Block", "Number of Blocks", "FP Inst.", "GB/s", "GB/s", "GB/s", "Gflops/s"]
+
+	#Check if the file exists
+	if os.path.exists(csv_path):
+		#If exists, append without header
+		with open(csv_path, 'a', newline='') as csvfile:
+			writer = csv.writer(csvfile)
+			writer.writerow(results)
+	else:
+		#If not, write with header and include secondary headers
+		with open(csv_path, 'w', newline='') as csvfile:
+			writer = csv.writer(csvfile)
+			writer.writerow(secondary_headers)
+			writer.writerow(primary_headers)
+			writer.writerow(results)
 
 def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor):
 	compute_capability = 0
@@ -122,7 +150,7 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_ten
 
 
 
-def run_roofline(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor, threads, blocks):
+def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, target_tensor, threads, blocks):
 	compute_capability, target_cuda, target_tensor = check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor)
 
 	if verbose == 1:
@@ -139,6 +167,7 @@ def run_roofline(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tenso
 
 	# Cuda Core benchmarks
 	for precision in target_cuda:
+		ouputs = {}
 		# Generate benchmarks
 		#FLOPS
 		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -150,6 +179,8 @@ def run_roofline(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tenso
 		if result.returncode != 0:
 			print(result.stdout.decode('utf-8').rstrip())
 			exit(8)
+		
+		ouputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
 		print("Performance(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
 
 		#MEM Shared
@@ -162,7 +193,41 @@ def run_roofline(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tenso
 		if result.returncode != 0:
 			print(result.stdout.decode('utf-8').rstrip())
 			exit(10)
+
+		ouputs["shared"] = result.stdout.decode('utf-8').split(' ')[0]
 		print("Bandwith shared memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
+
+		#MEM Global
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "global", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stderr.decode('utf-8').rstrip())
+			sys.exit(9)
+
+		result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stdout.decode('utf-8').rstrip())
+			exit(10)
+			
+		ouputs["global"] = result.stdout.decode('utf-8').split(' ')[0]
+		print("Bandwith global memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
+
+
+		# Save results
+		if out == './Results':
+			if os.path.isdir('Results') == False:
+				os.mkdir('Results')
+			if os.path.isdir('Results/Roofline') == False:
+				os.mkdir('Results/Roofline')
+		else:
+			if os.path.isdir(out):
+				if os.path.isdir(out + "/Roofline") == False:
+					os.mkdir(out + "/Roofline")
+			else:
+				print("ERROR: Provided output path does not exist")
+
+		ct = datetime.datetime.now()
+		date = ct.strftime('%Y-%m-%d %H:%M:%S')
+		update_csv(name, "Roofline", ouputs, date, "cuda", precision, "fma", threads, blocks, out)
 
 
 	# Tensor Core benchmarks
@@ -216,7 +281,7 @@ def main():
 		print('NVIDIA GPU not detected')
 		sys.exit(1)
 
-	run_roofline(args.verbose, args.set_freq, args.freq_sm, args.freq_mem, args.cuda, args.tensor, args.threads, args.blocks)
+	run_roofline(args.verbose, args.name, args.output, args.set_freq, args.freq_sm, args.freq_mem, args.cuda, args.tensor, args.threads, args.blocks)
 
 	shutdown(args.set_freq)
 
