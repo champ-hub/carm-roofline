@@ -18,6 +18,8 @@ using namespace std;
 
 // DEFINE DEVICE
 
+// DEFINE TEST
+
 __global__ void benchmark(PRECISION *d_X, int iterations);
 
 int main() {
@@ -69,10 +71,18 @@ int main() {
 		median = time_series[time_series.size() / 2];
 	}
 
-	double flops = 2. * 4 * iterations * 128 * THREADS_PER_BLOCK * NUM_BLOCKS / 1e9;
-	float perf = flops * 1e3 / median;
+	if (FLOPS) {
+		double flops = 2. * 4 * iterations * 128 * THREADS_PER_BLOCK * NUM_BLOCKS / 1e9;
+		float perf = flops * 1e3 / median;
 
-	cout << perf << " GFLOPS" << endl;
+		cout << perf << " GFLOPS/s" << endl;
+	} else {
+		double bytes =
+			sizeof(PRECISION) * 2. * iterations * 128 * THREADS_PER_BLOCK * NUM_BLOCKS / 1e9;
+		float bandwidth = bytes * 1e3 / median;
+
+		cout << bandwidth << " GB/s" << endl;
+	}
 
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);

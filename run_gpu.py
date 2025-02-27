@@ -140,7 +140,8 @@ def run_roofline(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tenso
 	# Cuda Core benchmarks
 	for precision in target_cuda:
 		# Generate benchmarks
-		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--precision", precision, "--compute", str(compute_capability)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		#FLOPS
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		if result.returncode != 0:
 			print(result.stderr.decode('utf-8').rstrip())
 			sys.exit(5)
@@ -150,6 +151,18 @@ def run_roofline(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tenso
 			print(result.stdout.decode('utf-8').rstrip())
 			exit(8)
 		print("Performance(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
+
+		#MEM Shared
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "shared", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stderr.decode('utf-8').rstrip())
+			sys.exit(9)
+
+		result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stdout.decode('utf-8').rstrip())
+			exit(10)
+		print("Bandwith shared memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
 
 
 	# Tensor Core benchmarks
