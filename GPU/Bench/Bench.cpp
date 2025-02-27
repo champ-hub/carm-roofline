@@ -1,4 +1,3 @@
-#include <bits/getopt_core.h>
 #include <getopt.h>
 #include <stdlib.h>
 
@@ -82,11 +81,11 @@ int main(int argc, char* argv[]) {
 	}
 
 	if (test == "FLOPS") {
-		// TODO
 		create_benchmark_flops(DEVICE, compute_capability, target, operation, precision,
 							   threads_per_block, num_blocks);
 	} else if (test == "MEM") {
-		// TODO
+		create_benchmark_mem(DEVICE, compute_capability, "shared", precision, threads_per_block,
+							 num_blocks);
 	} else if (test == "MIXED") {
 		// TODO
 	} else {
