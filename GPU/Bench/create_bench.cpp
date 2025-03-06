@@ -140,6 +140,8 @@ void create_benchmark_tensor(int device, int compute_capability, string operatio
 
 			if (precision == "fp16_16" || precision == "fp16_32" || precision == "bf16") {
 				output << "#define M 16\n#define N 8\n#define K 16" << endl;
+			} else if (precision == "tf32") {
+				output << "#define M 16\n#define N 8\n#define K 8" << endl;
 			}
 			output << "#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS" << endl;
 			output << "#define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS" << endl;
@@ -164,6 +166,13 @@ void create_benchmark_tensor(int device, int compute_capability, string operatio
 					   << " nv_bfloat16" << endl;
 				output << "#define PRECISION_B"
 					   << " nv_bfloat16" << endl;
+				output << "#define PRECISION_C"
+					   << " float" << endl;
+			} else if (precision == "tf32") {
+				output << "#define PRECISION_A"
+					   << " float" << endl;
+				output << "#define PRECISION_B"
+					   << " float" << endl;
 				output << "#define PRECISION_C"
 					   << " float" << endl;
 			}
@@ -222,6 +231,13 @@ void create_benchmark_tensor(int device, int compute_capability, string operatio
 					   << " nv_bfloat16" << endl;
 				output << "#define PRECISION_C"
 					   << " float" << endl;
+			} else if (precision == "tf32") {
+				output << "#define PRECISION_A"
+					   << " float" << endl;
+				output << "#define PRECISION_B"
+					   << " float" << endl;
+				output << "#define PRECISION_C"
+					   << " float" << endl;
 			}
 		} else if (text == "\t// DEFINE INITIALIZATION") {
 			if (precision == "fp16_16") {
@@ -233,25 +249,38 @@ void create_benchmark_tensor(int device, int compute_capability, string operatio
 				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
 					   << endl;
 				output << "uint32_t *C = reinterpret_cast<uint32_t *>(&fragsC[0]);" << endl;
-			} else if (precision == "dp")
-				output << "\tPRECISION a = 1.;\n\tPRECISION b = 2.;\n\tPRECISION c = "
-						  "3.;\n\tPRECISION d = 4.;"
+
+			} else if (precision == "fp16_32") {
+				output << "half fragsA[8];\nhalf fragsB[4];\nfloat fragsC[4];" << endl;
+				output << "fragsA[0] = d_A[id];\nfragsB[0] = d_B[id];\nfragsC[0] = d_C[id];"
 					   << endl;
-			else if (precision == "int")
-				output << "\tPRECISION a = 1;\n\tPRECISION b = 2;\n\tPRECISION c = "
-						  "3;\n\tPRECISION d = 4;"
+				output << "uint32_t const *A = reinterpret_cast<uint32_t const *>(&fragsA[0]);"
 					   << endl;
-			else if (precision == "hp")
-				output << "\tPRECISION a = __float2half(1.f);\n\tPRECISION b = "
-						  "__float2half(2.f);\n\tPRECISION c = __float2half(3.f);\n\tPRECISION "
-						  "d = __float2half(4.f);"
+				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
 					   << endl;
-			else if (precision == "bf16")
-				output << "\tPRECISION a = __float2bfloat16(1.f);\n\tPRECISION b = "
-						  "__float2bfloat16(2.f);\n\tPRECISION c = "
-						  "__float2bfloat16(3.f);\n\tPRECISION "
-						  "d = __float2bfloat16(4.f);"
+				output << "float *C = reinterpret_cast<float *>(&fragsC[0]);" << endl;
+
+			} else if (precision == "bf16") {
+				output << "nv_bfloat16 fragsA[8];\nnv_bfloat16 fragsB[4];\nfloat fragsC[4];"
 					   << endl;
+				output << "fragsA[0] = d_A[id];\nfragsB[0] = d_B[id];\nfragsC[0] = d_C[id];"
+					   << endl;
+				output << "uint32_t const *A = reinterpret_cast<uint32_t const *>(&fragsA[0]);"
+					   << endl;
+				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
+					   << endl;
+				output << "float *C = reinterpret_cast<float *>(&fragsC[0]);" << endl;
+
+			} else if (precision == "tf32") {
+				output << "float fragsA[4];\nfloat fragsB[2];\nfloat fragsC[4];" << endl;
+				output << "fragsA[0] = d_A[id];\nfragsB[0] = d_B[id];\nfragsC[0] = d_C[id];"
+					   << endl;
+				output << "uint32_t const *A = reinterpret_cast<uint32_t const *>(&fragsA[0]);"
+					   << endl;
+				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
+					   << endl;
+				output << "float *C = reinterpret_cast<float *>(&fragsC[0]);" << endl;
+			}
 		} else if (text.find("// DEFINE LOOP") != string::npos) {
 			if (precision == "fp16_16") {
 				output << "asm volatile(\"mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 "
@@ -260,16 +289,37 @@ void create_benchmark_tensor(int device, int compute_capability, string operatio
 				output << ": \"+r\"(C[0]), \"+r\"(C[1]) : \"r\"(A[0]), \"r\"(A[1]), "
 						  "\"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
 					   << endl;
-			} else {
-				output << "\t\ta = a * a + b;\n\t\tb = b * b + c;\n\t\tc = c * c + d;\n\t\td = "
-						  "d * d + a;"
+
+			} else if (precision == "fp16_32") {
+				output << "asm volatile(\"mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 "
+						  "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\\n\""
+					   << endl;
+				output << ": \"+f\"(C[0]), \"+f\"(C[1]), \"+f\"(C[2]), \"+f\"(C[3]) : \"r\"(A[0]), "
+						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
+					   << endl;
+
+			} else if (precision == "bf16") {
+				output << "asm volatile(\"mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 "
+						  "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\\n\""
+					   << endl;
+				output << ": \"+f\"(C[0]), \"+f\"(C[1]), \"+f\"(C[2]), \"+f\"(C[3]) : \"r\"(A[0]), "
+						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
+					   << endl;
+			} else if (precision == "tf32") {
+				output << "asm volatile(\"mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 "
+						  "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\\n\""
+					   << endl;
+				output << ": \"+f\"(C[0]), \"+f\"(C[1]), \"+f\"(C[2]), \"+f\"(C[3]) : \"r\"(A[0]), "
+						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
 					   << endl;
 			}
+
 		} else if (text == "// DEFINE FUNCTION") {
 			output << "__global__ void benchmark(PRECISION_A *d_A, PRECISION_B *d_B, "
 					  "PRECISION_C *d_C, int iterations) {"
 				   << endl;
 			getline(input, text);
+
 		} else if (text == "\t// DEFINE CLOSURE") {
 			output << "d_C[id] = fragsC[0];" << endl;
 			getline(input, text);
