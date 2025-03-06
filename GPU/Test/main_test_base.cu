@@ -2,6 +2,7 @@
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
+#include <mma.h>
 #include <stdlib.h>
 
 #include <algorithm>
@@ -75,22 +76,25 @@ int main() {
 		median = time_series[time_series.size() / 2];
 	}
 
-	if (FLOPS) {
-		double flops = 2. * 4 * iterations * 128 * THREADS_PER_BLOCK * NUM_BLOCKS / 1e9;
-		float perf = flops * 1e3 / median;
+#if FLOPS == 1
+	double flops = 2. * 4 * iterations * 128 * THREADS_PER_BLOCK * NUM_BLOCKS / 1e9;
+	float perf = flops * 1e3 / median;
 
-		cout << perf << " GFLOPS/s" << endl;
-	} else {
-		double bytes =
-			sizeof(PRECISION) * 2. * iterations * 128 * THREADS_PER_BLOCK * NUM_BLOCKS / 1e9;
-		float bandwidth = bytes * 1e3 / median;
+	cout << perf << " GFLOPS/s" << endl;
+#elif FLOPS == 2
+	double flops = 2. * M * N * K * iterations * 128 * (THREADS_PER_BLOCK / 32) * NUM_BLOCKS / 1e9;
+	float perf = flops * 1e3 / median;
 
-		cout << bandwidth << " GB/s" << endl;
-	}
+	cout << perf << "GFLOPS/s" << endl;
+#else
+	double bytes = sizeof(PRECISION) * 2. * iterations * 128 * THREADS_PER_BLOCK * NUM_BLOCKS / 1e9;
+	float bandwidth = bytes * 1e3 / median;
+
+	cout << bandwidth << " GB/s" << endl;
+#endif
 
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);
 
-	cudaFree(d_X);
 	return 0;
 }

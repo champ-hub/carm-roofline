@@ -17,6 +17,6 @@ __global__ void benchmark(PRECISION *d_X, int iterations) {
 			// DEFINE LOOP
 		}
 	}
-
+	// DEFINE CLOSURE
 	d_X[id] = d;
 }
