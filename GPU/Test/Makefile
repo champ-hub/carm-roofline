@@ -2,7 +2,7 @@ EXECUTABLE := GPU/bin/test
 
 CU_FILES   := GPU/bin
 
-CU_DIR    := /usr/local/cuda-12.4/
+CU_DIR    := /usr/local/cuda-12.4
 
 CC_FILES   := 
 

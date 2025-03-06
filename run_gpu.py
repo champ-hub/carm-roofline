@@ -89,6 +89,8 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_ten
 	# Check valid arithmetic precisions
 	if target_cuda[0] == 'auto':
 		target_cuda = cuda_precisions.copy()
+	elif 'none' in target_cuda:
+		target_cuda = []
 	else:
 		for item in target_cuda:
 			if item not in cuda_precisions:
@@ -97,6 +99,8 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_ten
 	
 	if target_tensor[0] == 'auto':
 		target_tensor = tensor_core_precisions.copy()
+	elif 'none' in target_tensor:
+		target_tensor = []
 	else:
 		for item in target_tensor:
 			if item not in tensor_core_precisions:
@@ -232,7 +236,19 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 
 	# Tensor Core benchmarks
 	for precision in target_tensor:
-		pass
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "tensor", "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		
+		if result.returncode != 0:
+			print(result.stderr.decode('utf-8').rstrip())
+			sys.exit(5)
+		
+		result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stdout.decode('utf-8').rstrip())
+			exit(8)
+		
+		#ouputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
+		print("Performance Tensor(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
 
 
 def shutdown(set_freq):
@@ -255,8 +271,8 @@ def main():
 	parser.add_argument('--freq_mem', dest='freq_mem', default=0, nargs='?', type=int, help='Desired MEM frequency during test')
 	parser.add_argument('--set_freq',  dest='set_freq', action='store_const', const=1, default=0, help='Set SM and MEM frequency to indicated one')
 
-	parser.add_argument('--cuda', default=['auto'], nargs='+', choices=['auto','hp', 'int', 'sp', 'dp', 'bf16'], help='Set of CUDA core arithmetic precisions to test. If auto, all will be tested.')
-	parser.add_argument('--tensor', default=['auto'], nargs='+', choices=['auto', 'fp16_32', 'fp16_16', 'tf32', 'bf16', 'int8', 'int4', 'int1'], help='Set of Tensor Core arithmetic precisions to test. If auto, all will be tested.')
+	parser.add_argument('--cuda', default=['auto'], nargs='+', choices=['none','auto','hp', 'int', 'sp', 'dp', 'bf16'], help='Set of CUDA core arithmetic precisions to test. If auto, all will be tested.')
+	parser.add_argument('--tensor', default=['auto'], nargs='+', choices=['none','auto', 'fp16_32', 'fp16_16', 'tf32', 'bf16', 'int8', 'int4', 'int1'], help='Set of Tensor Core arithmetic precisions to test. If auto, all will be tested.')
 
 	parser.add_argument('--threads', default=1024, nargs='?', type=int, help='Num of threads per block to execute in the benchmarks')
 	parser.add_argument('--blocks', default=32768, nargs='?', type=int, help='Number of thread blocks to execute in the benchmarks')
