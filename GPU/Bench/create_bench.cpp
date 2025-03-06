@@ -142,6 +142,12 @@ void create_benchmark_tensor(int device, int compute_capability, string operatio
 				output << "#define M 16\n#define N 8\n#define K 16" << endl;
 			} else if (precision == "tf32") {
 				output << "#define M 16\n#define N 8\n#define K 8" << endl;
+			} else if (precision == "int8") {
+				output << "#define M 16\n#define N 8\n#define K 32" << endl;
+			} else if (precision == "int4") {
+				output << "#define M 16\n#define N 8\n#define K 64" << endl;
+			} else if (precision == "int1") {
+				output << "#define M 16\n#define N 8\n#define K 256" << endl;
 			}
 			output << "#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS" << endl;
 			output << "#define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS" << endl;
@@ -175,6 +181,13 @@ void create_benchmark_tensor(int device, int compute_capability, string operatio
 					   << " float" << endl;
 				output << "#define PRECISION_C"
 					   << " float" << endl;
+			} else if (precision == "int8" || precision == "int4" || precision == "int1") {
+				output << "#define PRECISION_A"
+					   << " char" << endl;
+				output << "#define PRECISION_B"
+					   << " char" << endl;
+				output << "#define PRECISION_C"
+					   << " int" << endl;
 			}
 		} else if (text == "// DEFINE DEVICE") {
 			output << "#define DEVICE " << device << endl;
@@ -238,6 +251,13 @@ void create_benchmark_tensor(int device, int compute_capability, string operatio
 					   << " float" << endl;
 				output << "#define PRECISION_C"
 					   << " float" << endl;
+			} else if (precision == "int8" || precision == "int4" || precision == "int1") {
+				output << "#define PRECISION_A"
+					   << " char" << endl;
+				output << "#define PRECISION_B"
+					   << " char" << endl;
+				output << "#define PRECISION_C"
+					   << " int" << endl;
 			}
 		} else if (text == "\t// DEFINE INITIALIZATION") {
 			if (precision == "fp16_16") {
@@ -280,7 +300,18 @@ void create_benchmark_tensor(int device, int compute_capability, string operatio
 				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
 					   << endl;
 				output << "float *C = reinterpret_cast<float *>(&fragsC[0]);" << endl;
+
+			} else if (precision == "int8" || precision == "int4" || precision == "int1") {
+				output << "char fragsA[16];\nchar fragsB[8];\nint fragsC[4];" << endl;
+				output << "fragsA[0] = d_A[id];\nfragsB[0] = d_B[id];\nfragsC[0] = d_C[id];"
+					   << endl;
+				output << "uint32_t const *A = reinterpret_cast<uint32_t const *>(&fragsA[0]);"
+					   << endl;
+				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
+					   << endl;
+				output << "int *C = reinterpret_cast<int *>(&fragsC[0]);" << endl;
 			}
+
 		} else if (text.find("// DEFINE LOOP") != string::npos) {
 			if (precision == "fp16_16") {
 				output << "asm volatile(\"mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 "
@@ -305,11 +336,37 @@ void create_benchmark_tensor(int device, int compute_capability, string operatio
 				output << ": \"+f\"(C[0]), \"+f\"(C[1]), \"+f\"(C[2]), \"+f\"(C[3]) : \"r\"(A[0]), "
 						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
 					   << endl;
+
 			} else if (precision == "tf32") {
 				output << "asm volatile(\"mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 "
 						  "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\\n\""
 					   << endl;
 				output << ": \"+f\"(C[0]), \"+f\"(C[1]), \"+f\"(C[2]), \"+f\"(C[3]) : \"r\"(A[0]), "
+						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
+					   << endl;
+
+			} else if (precision == "int8") {
+				output << "asm volatile(\"mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 "
+						  "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\\n\""
+					   << endl;
+				output << ": \"+r\"(C[0]), \"+r\"(C[1]), \"+r\"(C[2]), \"+r\"(C[3]) : \"r\"(A[0]), "
+						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
+					   << endl;
+
+			} else if (precision == "int4") {
+				output << "asm volatile(\"mma.sync.aligned.m16n8k64.row.col.s32.s4.s4.s32 "
+						  "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\\n\""
+					   << endl;
+				output << ": \"+r\"(C[0]), \"+r\"(C[1]), \"+r\"(C[2]), \"+r\"(C[3]) : \"r\"(A[0]), "
+						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
+					   << endl;
+
+			} else if (precision == "int1") {
+				output
+					<< "asm volatile(\"mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.xor.popc "
+					   "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\\n\""
+					<< endl;
+				output << ": \"+r\"(C[0]), \"+r\"(C[1]), \"+r\"(C[2]), \"+r\"(C[3]) : \"r\"(A[0]), "
 						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
 					   << endl;
 			}
