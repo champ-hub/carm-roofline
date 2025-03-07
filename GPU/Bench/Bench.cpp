@@ -85,8 +85,8 @@ int main(int argc, char* argv[]) {
 			create_benchmark_flops(DEVICE, compute_capability, operation, precision,
 								   threads_per_block, num_blocks);
 		else if (target == "tensor")
-			create_benchmark_tensor(DEVICE, compute_capability, operation, precision,
-									threads_per_block, num_blocks);
+			create_benchmark_tensor(DEVICE, compute_capability, precision, threads_per_block,
+									num_blocks);
 	} else if (test == "MEM") {
 		create_benchmark_mem(DEVICE, compute_capability, target, precision, threads_per_block,
 							 num_blocks);
