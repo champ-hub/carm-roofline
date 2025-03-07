@@ -147,7 +147,7 @@ void create_benchmark_tensor(int device, int compute_capability, string operatio
 			} else if (precision == "int4") {
 				output << "#define M 16\n#define N 8\n#define K 64" << endl;
 			} else if (precision == "int1") {
-				output << "#define M 16\n#define N 8\n#define K 256" << endl;
+				output << "#define M 16L\n#define N 8L\n#define K 128L" << endl;
 			}
 			output << "#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS" << endl;
 			output << "#define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS" << endl;
@@ -301,8 +301,17 @@ void create_benchmark_tensor(int device, int compute_capability, string operatio
 					   << endl;
 				output << "float *C = reinterpret_cast<float *>(&fragsC[0]);" << endl;
 
-			} else if (precision == "int8" || precision == "int4" || precision == "int1") {
+			} else if (precision == "int8" || precision == "int4") {
 				output << "char fragsA[16];\nchar fragsB[8];\nint fragsC[4];" << endl;
+				output << "fragsA[0] = d_A[id];\nfragsB[0] = d_B[id];\nfragsC[0] = d_C[id];"
+					   << endl;
+				output << "uint32_t const *A = reinterpret_cast<uint32_t const *>(&fragsA[0]);"
+					   << endl;
+				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
+					   << endl;
+				output << "int *C = reinterpret_cast<int *>(&fragsC[0]);" << endl;
+			} else if (precision == "int1") {
+				output << "char fragsA[8];\nchar fragsB[4];\nint fragsC[4];" << endl;
 				output << "fragsA[0] = d_A[id];\nfragsB[0] = d_B[id];\nfragsC[0] = d_C[id];"
 					   << endl;
 				output << "uint32_t const *A = reinterpret_cast<uint32_t const *>(&fragsA[0]);"
@@ -363,11 +372,11 @@ void create_benchmark_tensor(int device, int compute_capability, string operatio
 
 			} else if (precision == "int1") {
 				output
-					<< "asm volatile(\"mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.xor.popc "
-					   "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\\n\""
+					<< "asm volatile(\"mma.sync.aligned.m16n8k128.row.col.s32.b1.b1.s32.xor.popc "
+					   "{%0,%1,%2,%3}, {%4,%5}, {%6}, {%0,%1,%2,%3};\\n\""
 					<< endl;
 				output << ": \"+r\"(C[0]), \"+r\"(C[1]), \"+r\"(C[2]), \"+r\"(C[3]) : \"r\"(A[0]), "
-						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
+						  "\"r\"(A[1]), \"r\"(B[0]));"
 					   << endl;
 			}
 
