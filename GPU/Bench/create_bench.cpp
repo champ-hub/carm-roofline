@@ -44,6 +44,11 @@ void create_benchmark_flops(int device, int compute_capability, string operation
 			output << "#define DEVICE " << device << endl;
 		} else if (text == "// DEFINE TEST") {
 			output << "#define FLOPS 1" << endl;
+			if (operation == "fma") {
+				output << "#define MULTIPLIER 2" << endl;
+			} else if (operation == "add" || operation == "mul") {
+				output << "#define MULTIPLIER 1" << endl;
+			}
 		}
 	}
 
@@ -95,13 +100,33 @@ void create_benchmark_flops(int device, int compute_capability, string operation
 					   << endl;
 		} else if (text.find("// DEFINE LOOP") != string::npos) {
 			if (precision == "hp" || precision == "bf16") {
-				output << "\t\ta = __hfma(a, a, b);\n\t\tb = __hfma(b, b, c);\n\t\tc = "
-						  "__hfma(c, c, d);\n\t\td = __hfma(d, d, a);"
-					   << endl;
+				if (operation == "fma") {
+					output << "\t\ta = __hfma(a, a, b);\n\t\tb = __hfma(b, b, c);\n\t\tc = "
+							  "__hfma(c, c, d);\n\t\td = __hfma(d, d, a);"
+						   << endl;
+				} else if (operation == "add") {
+					output << "\t\ta = __hadd(a, b);\n\t\tb = __hadd(b, c);\n\t\tc = "
+							  "__hadd(c, d);\n\t\td = __hadd(d, a);"
+						   << endl;
+				} else if (operation == "mul") {
+					output << "\t\ta = __hmul(a, b);\n\t\tb = __hmul(b, c);\n\t\tc = "
+							  "__hmul(c, d);\n\t\td = __hmul(d, a);"
+						   << endl;
+				}
 			} else {
-				output << "\t\ta = a * a + b;\n\t\tb = b * b + c;\n\t\tc = c * c + d;\n\t\td = "
-						  "d * d + a;"
-					   << endl;
+				if (operation == "fma") {
+					output << "\t\ta = a * a + b;\n\t\tb = b * b + c;\n\t\tc = c * c + d;\n\t\td = "
+							  "d * d + a;"
+						   << endl;
+				} else if (operation == "add") {
+					output << "\t\ta = a + b;\n\t\tb = b + c;\n\t\tc = c + d;\n\t\td = "
+							  "d + a;"
+						   << endl;
+				} else if (operation == "mul") {
+					output << "\t\ta = a * b;\n\t\tb = b * c;\n\t\tc = c * d;\n\t\td = "
+							  "d * a;"
+						   << endl;
+				}
 			}
 		}
 	}
@@ -118,7 +143,7 @@ void create_benchmark_flops(int device, int compute_capability, string operation
 	}
 }
 
-void create_benchmark_tensor(int device, int compute_capability, string operation, string precision,
+void create_benchmark_tensor(int device, int compute_capability, string precision,
 							 int threads_per_block, int num_blocks) {
 	if (!filesystem::is_directory("GPU/bin")) {
 		if (!filesystem::create_directory("GPU/bin")) {

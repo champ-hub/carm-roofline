@@ -11,7 +11,7 @@
 
 using namespace std;
 
-#define NUM_REPS 1024
+#define NUM_REPS 64
 
 // DEFINE KERNEL PARAMETERS
 
@@ -77,7 +77,7 @@ int main() {
 	}
 
 #if FLOPS == 1
-	double flops = 2. * 4 * iterations * 128 * THREADS_PER_BLOCK * NUM_BLOCKS / 1e9;
+	double flops = MULTIPLIER * 4. * iterations * 128 * THREADS_PER_BLOCK * NUM_BLOCKS / 1e9;
 	float perf = flops * 1e3 / median;
 
 	cout << perf << " GFLOPS/s" << endl;
