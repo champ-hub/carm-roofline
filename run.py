@@ -14,18 +14,29 @@ import datetime
 import platform
 import re
 import sys
+from decimal import Decimal
 
 import DBI_AI_Calculator
 
 riscv_vector_compiler_path = "gcc"
+SVE_compiler_path = "gcc"
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+bench_ex = os.path.join(script_dir, 'Bench', 'Bench')
+test_ex = os.path.join(script_dir, 'bin', 'test')
 
 #Mapping between ISA and memory transfer size
-mem_inst_size = {"avx512": {"sp": 64, "dp": 64}, "avx": {"sp": 32, "dp": 32}, "avx2": {"sp": 32, "dp": 32}, "sse": {"sp": 16, "dp": 16}, "scalar": {"sp": 4, "dp": 8}, "neon": {"sp": 16, "dp": 16}, "armscalar": {"sp": 4, "dp": 8}, "riscvscalar": {"sp": 4, "dp": 8}, "rvv0.7": {"sp": 4, "dp": 8}, "rvv1.0": {"sp": 4, "dp": 8}}
-ops_fp = {"avx512": {"sp": 16, "dp": 8}, "avx": {"sp": 8, "dp": 4}, "avx2": {"sp": 8, "dp": 4}, "sse": {"sp": 4, "dp": 2}, "scalar": {"sp": 1, "dp": 1}, "neon":{"sp": 4, "dp": 2}, "armscalar": {"sp": 1, "dp": 1}, "riscvscalar": {"sp": 1, "dp": 1}, "rvv0.7": {"sp": 1, "dp": 1}, "rvv1.0": {"sp": 1, "dp": 1}}
+mem_inst_size = {"avx512": {"sp": 64, "dp": 64}, "avx": {"sp": 32, "dp": 32}, "avx2": {"sp": 32, "dp": 32}, "sse": {"sp": 16, "dp": 16}, "scalar": {"sp": 4, "dp": 8}, "neon": {"sp": 16, "dp": 16}, "armscalar": {"sp": 4, "dp": 8},  "sve": {"sp": 4, "dp": 8}, "riscvscalar": {"sp": 4, "dp": 8}, "rvv0.7": {"sp": 4, "dp": 8}, "rvv1.0": {"sp": 4, "dp": 8}}
+ops_fp = {"avx512": {"sp": 16, "dp": 8}, "avx": {"sp": 8, "dp": 4}, "avx2": {"sp": 8, "dp": 4}, "sse": {"sp": 4, "dp": 2}, "scalar": {"sp": 1, "dp": 1}, "neon":{"sp": 4, "dp": 2}, "armscalar": {"sp": 1, "dp": 1}, "sve": {"sp": 1, "dp": 1}, "riscvscalar": {"sp": 1, "dp": 1}, "rvv0.7": {"sp": 1, "dp": 1}, "rvv1.0": {"sp": 1, "dp": 1}}
 test_sizes = [2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 512, 600, 768, 1024, 1536, 2048, 3072, 4096, 5120, 6144, 8192, 10240, 12288, 16384, 24567, 32768, 65536, 98304, 131072, 262144, 393216, 524288]
+
+x86_ISAs = ["avx512", "avx2", "sse", "scalar"]
+other_ISAs = ["sve", "neon", "armscalar", "rvv1.0", "rvv0.7", "riscvscalar"]
+vector_agnostic_ISA = ["sve", "rvv0.7", "rvv1.0"]
 
 def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size, l3_size, VLEN, LMUL):
     CPU_Type = platform.machine()
+    config_dir = os.path.join(script_dir, 'config', 'auto_config')
 
     if CPU_Type == "x86_64":
         
@@ -59,7 +70,7 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
             supported_isas = []
 
             for item in isa_set:
-                if item in ["neon", "armscalar", "rvv1.0", "rvv0.7", "riscvscalar"]:
+                if item in other_ISAs:
                     print("WARNING: Selected ISA " + item + " was detected and removed since it is not supported by " + CPU_Type + " architectures.")
                 else:
                     supported_isas.append(item)
@@ -132,9 +143,20 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
             LMUL = 1
         isa_set = ["armscalar" if x == "scalar" else x for x in isa_set]
 
-        if (isa_set[0] == "auto"):
-            isa_set[0] = "neon"
-            isa_set.append("armscalar")
+        if (isa_set[0] == "auto" or "sve" in isa_set):
+            subprocess.run([SVE_compiler_path, "-o", "./config/auto_config/SVE_Vector", "./config/auto_config/SVE_Vector.c", "-march=armv8-a+sve"])
+            result = subprocess.run(["./config/auto_config/SVE_Vector"], stdout=subprocess.PIPE)
+            VLEN_Check = int(result.stdout.decode('utf-8'))
+            VLEN = (VLEN_Check/8)
+
+            print("SVE Vector with " + str(VLEN) + " elements (dp).")
+
+            if (isa_set[0] == "auto"):
+                isa_set[0] = "sve"
+                isa_set.append("neon")
+                isa_set.append("armscalar")
+            elif not "sve" in isa_set:
+                isa_set.append("sve")
 
             return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
         return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
@@ -153,14 +175,17 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
         
         isa_set = ["riscvscalar" if x == "scalar" else x for x in isa_set]
         if (isa_set[0] == "auto" or "rvv0.7" in isa_set or "rvv1.0" in isa_set):
+            rvv_source = os.path.join(config_dir, 'RISCV_Vector.c')
+            rvv_ex = os.path.join(config_dir, 'RISCV_Vector')
             if "rvv0.7" in isa_set:
-                subprocess.run([riscv_vector_compiler_path, "-o", "./config/auto_config/RISCV_Vector", "./config/auto_config/RISCV_Vector.c", "-march=rv64gcv0p7"])
-                #subprocess.run([riscv_vector_compiler_path, "-o", "./config/auto_config/RISCV_Vector", "./config/auto_config/RISCV_Vector.c", "-march=rv64gcv0p7", "-menable-experimental-extensions"])
+                subprocess.run([riscv_vector_compiler_path, "-o", rvv_ex, rvv_source, "-march=rv64gcv0p7"])
+                #For Clang -menable-experimental-extensions is sometimes needed
+                #subprocess.run([riscv_vector_compiler_path, "-o", rvv_ex, rvv_source, "-march=rv64gcv0p7", "-menable-experimental-extensions"])
             elif "rvv1.0" in isa_set:
-                subprocess.run([riscv_vector_compiler_path, "-o", "./config/auto_config/RISCV_Vector", "./config/auto_config/RISCV_Vector.c", "-march=rv64gcv"])
-            result = subprocess.run(["./config/auto_config/RISCV_Vector", "dp"], stdout=subprocess.PIPE)
+                subprocess.run([riscv_vector_compiler_path, "-o", rvv_ex, rvv_source, "-march=rv64gcv"])
+            result = subprocess.run([rvv_ex, "dp"], stdout=subprocess.PIPE)
             VLEN_Check = int(result.stdout.decode('utf-8'))
-            os.remove("./config/auto_config/RISCV_Vector")
+            os.remove(rvv_ex)
             if VLEN < VLEN_Check:
                 if VLEN == 1:
                     VLEN = VLEN_Check
@@ -196,15 +221,19 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
 #Call system probing and frequency setting code (x86 Only)
 def autoconf(new_max_freq, set_freq):
 
-    subprocess.run(["gcc", "-o", "./config/auto_config/autoconfig", "./config/auto_config/autoconfig.c"])
+    config_dir = os.path.join(script_dir, 'config', 'auto_config')
+    c_file = os.path.join(config_dir, 'autoconfig.c')
+    output_bin = os.path.join(config_dir, 'autoconfig')
+
+    subprocess.run(["gcc", "-o", output_bin, c_file])
 
     if (set_freq == 0):
         new_max_freq = 0
         
-    result = subprocess.run(["./config/auto_config/autoconfig", str(new_max_freq)], stdout=subprocess.PIPE)
+    result = subprocess.run([output_bin, str(new_max_freq)], stdout=subprocess.PIPE)
     arguments = result.stdout.decode('utf-8').split('\n')
 
-    os.remove("./config/auto_config/autoconfig")
+    os.remove(output_bin)
 
     return arguments
 
@@ -293,9 +322,9 @@ def plot_roofline(name, data, date, isa, precision, threads, num_ld, num_st, ins
     plt.rcParams.update(new_rc_params)
     plt.tight_layout()
     if(interleaved):
-        plt.savefig('Results/Roofline/' + name + '_roofline_' + str(date) + '_' + isa + "_" + str(precision) + "_" + str(threads) + "_Threads_" + str(num_ld) + "Load_" + str(num_st) + "Store_" + inst + "_Interleaved"'.svg')
+        plt.savefig('carm_results/Roofline/' + name + '_roofline_' + str(date) + '_' + isa + "_" + str(precision) + "_" + str(threads) + "_Threads_" + str(num_ld) + "Load_" + str(num_st) + "Store_" + inst + "_Interleaved"'.svg')
     else:
-        plt.savefig('Results/Roofline/' + name + '_roofline_' + str(date) + '_' + isa + "_" + str(precision) + "_" + str(threads) + "_Threads_" + str(num_ld) + "Load_" + str(num_st) + "Store_" + inst +'.svg')
+        plt.savefig('carm_results/Roofline/' + name + '_roofline_' + str(date) + '_' + isa + "_" + str(precision) + "_" + str(threads) + "_Threads_" + str(num_ld) + "Load_" + str(num_st) + "Store_" + inst +'.svg')
 
 def custom_round(value, digits=4):
     if value == 0:
@@ -305,12 +334,13 @@ def custom_round(value, digits=4):
         return round(value, digits)
     else:
         #For numbers less than 1, find the position of the first non-zero digit after the decimal
-        str_value = str(value)
-        if 'e' in str_value or 'E' in str_value:  #Check for scientific notation
+        dec_val = Decimal(str(value))
+        str_val = format(dec_val, 'f')
+        if 'e' in str_val or 'E' in str_val:  #Check for scientific notation
             return round(value, digits)
         
         #Count positions until first non-zero digit after the decimal
-        decimal_part = str_value.split('.')[1]
+        decimal_part = str_val.split('.')[1]
         leading_zeros = 0
         for char in decimal_part:
             if char == '0':
@@ -324,9 +354,11 @@ def custom_round(value, digits=4):
     
 def update_csv(name, test_type, data, data_cycles, date, isa, precision, threads, num_ld, num_st, inst, interleaved, l1_size, l2_size, l3_size, dram_bytes, VLEN, LMUL, out_path):
 
-    csv_path = f"{out_path}/Roofline/{name}_{test_type.replace(' ', '_')}.csv"
+    csv_path = f"{out_path}/roofline/{name}_{test_type.replace(' ', '_')}.csv"
     if (isa in ["rvv0.7", "rvv1.0"]):
-        isa = str(isa) + "_vl" + str(VLEN) + "_lmul" + str(LMUL) 
+        isa = str(isa) + "_vl" + str(VLEN) + "_lmul" + str(LMUL)
+    elif isa in ["sve"]:
+        isa = str(isa) + "_vl" + str(VLEN)
     results = [
         date,
         isa,
@@ -350,7 +382,7 @@ def update_csv(name, test_type, data, data_cycles, date, isa, precision, threads
     else:
         results.append(0)
         results.append(0)
-    if l1_size > 0:
+    if l3_size > 0:
         results.append(custom_round(data["L3"]))
         results.append(custom_round(data_cycles["L3"]))
     else:
@@ -398,7 +430,7 @@ def print_results(isa, test_type, test_data, data_cycles, num_reps, test_size, i
         print("ISA:", isa,  "| Number of Threads:", threads, "| Allocated Size:", test_size, "Kb | Precision:", precision, "| Interleaved:", inter, "| Number of Loads:", num_ld, "| Number of Stores:", num_st, "| Memory Instruction Size:", mem_inst_size[isa][precision]*VLEN, "| Total Inner Loop Reps:", int(inner_loop_reps),  "| Number of Reps:", num_reps)
     else:
         print("ISA:", isa,  "| Number of Threads:", threads, "| Instruction:", inst, "| Precision:", precision, "| Interleaved:", inter, "| FP Operations per Instruction:", (FP_factor*ops_fp[isa][precision])*VLEN, "| Total Inner Loop Reps:", int(inner_loop_reps), "| Number of reps:", num_reps)
-    if isa not in ["neon", "armscalar", "riscvscalar", "rvv0.7", "rvv1.0"]:
+    if isa in x86_ISAs:
         print("Best Average Cycles:", cycles, "| Best Average Time (in ms):", time_ms)
     else:
         print("Best Average Time (in ms):", time_ms)
@@ -411,12 +443,14 @@ def print_results(isa, test_type, test_data, data_cycles, num_reps, test_size, i
     else:
         print("Flops per Cycle:", data_cycles*ops_fp[isa][precision]*FP_factor*VLEN)
         print("GFLOP/s:", test_data)
-    if isa not in ["neon", "armscalar", "riscvscalar", "rvv0.7", "rvv1.0"]:
+    if isa in x86_ISAs:
         print("Max Recorded Frequency (GHz):", freq_real, "| Nominal Frequency (GHz):", freq_nominal, "| Actual Frequency to Nominal Frequency Ratio:", float(freq_real/freq_nominal))
     else:
         print("Max Recorded Frequency (GHz):", freq_real)
-    if isa == "rvv0.7" or isa == "rvv1.0":
+    if isa in ["rvv0.7", "rvv1.0"]:
         print("Vector Length:", VLEN, "Elements | Vector LMUL:", LMUL)
+    elif isa in ["sve"]:
+        print("Vector Length:", VLEN)
     print("------------------------------")
 
 #Run Roofline tests
@@ -453,7 +487,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
     for threads in threads_set:
         for isa in isa_set:
             #Compile benchmark generator
-            os.system("make clean && make isa=" + isa )
+            os.system(f"make -C {script_dir} clean && make -C {script_dir} isa={isa}")
             for precision in precision_set:
                 if verbose > 1:
                     print("------------------------------")
@@ -477,17 +511,21 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                 if VLEN_aux > 1 and precision == "sp":
                     VLEN = VLEN_aux * 2
                     LMUL = LMUL_aux
-                if isa not in ["rvv0.7", "rvv1.0"]:
+                if isa not in vector_agnostic_ISA:
                     VLEN = 1
+                    LMUL = 1
+                if isa in ["sve"]:
                     LMUL = 1
                 if verbose > 2 and isa in ["rvv0.7", "rvv1.0"]:
                     print("VLEN IS:", VLEN, "| LMUL IS:", LMUL)
+                elif verbose > 2 and isa in ["sve"]:
+                    print("VLEN IS:", VLEN)
            
 
                 #Calculate number of repetitions for each test
                 if (l1_size > 0):
-                    num_reps["L1"] = int(int(l1_size)*1024/(tl1*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
-                    test_size["L1"] = (int(l1_size))/tl1
+                    num_reps["L1"] = int(int(l1_size)*1024/(tl1*2*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
+                    test_size["L1"] = (int(l1_size))/(tl1*2)
                 else:
                     print("WARNING: No L1 Size Found, you can use the -l1 <l1_size> argument, or a configuration file to specify it.")
 
@@ -528,18 +566,18 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                 if (test_type == 'L1' or test_type == 'roofline') and l1_size > 0:
                     #Run L1 Test
 
-                    os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["L1"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
+                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["L1"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
                     
                     if(interleaved):
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
                     else:
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
                 
                     out = result.stdout.decode('utf-8').split(',')
                     
                     inner_loop_reps = float(out[1])
                     freq_real = float(out[2])
-                    if isa not in ["neon", "armscalar", "riscvscalar", "rvv0.7", "rvv1.0"]:
+                    if isa in x86_ISAs:
                         cycles = float(out[0])
                         freq_nominal = float(out[3])
                         data['L1'] = float((threads*num_reps["L1"]*(num_ld+num_st)*mem_inst_size[isa][precision]*freq_real*inner_loop_reps)/(cycles*float(freq_real/freq_nominal)))
@@ -556,21 +594,21 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                 if (test_type == 'L2' or test_type == 'roofline') and l2_size > 0:
                     #Run L2 Test
 
-                    os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["L2"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
+                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["L2"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
                     
                     if test_type == 'roofline' and l1_size > 0:
                         no_freq_measure = 1
                     
                     if(interleaved):
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
                     else:
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
                     
                     out = result.stdout.decode('utf-8').split(',')
                     inner_loop_reps = float(out[1])
                     if no_freq_measure == 0:
                         freq_real = float(out[2])
-                    if isa not in ["neon", "armscalar", "riscvscalar", "rvv0.7", "rvv1.0"]:
+                    if isa in x86_ISAs:
                         cycles = float(out[0])
                         if no_freq_measure == 0:
                             freq_nominal = float(out[3])
@@ -587,21 +625,21 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                 if ((test_type == 'L3' or test_type == 'roofline') and int(l3_size) > 0):
                     #Run L3 Test 
 
-                    os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["L3"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
+                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["L3"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
                     
                     if test_type == 'roofline' and (l1_size > 0 or l2_size > 0):
                         no_freq_measure = 1
 
                     if(interleaved):
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
                     else:
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
                 
                     out = result.stdout.decode('utf-8').split(',')
                     inner_loop_reps = float(out[1])
                     if no_freq_measure == 0:
                         freq_real = float(out[2])
-                    if isa not in ["neon", "armscalar", "riscvscalar", "rvv0.7", "rvv1.0"]:
+                    if isa in x86_ISAs:
                         cycles = float(out[0])
                         if no_freq_measure == 0:
                             freq_nominal = float(out[3])
@@ -618,21 +656,21 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                 if (test_type == 'DRAM' or test_type == 'roofline'):
                     #Run DRAM Test
                 
-                    os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["DRAM"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
+                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["DRAM"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
                     
                     if test_type == 'roofline' and (l1_size > 0 or l2_size > 0 or l3_size > 0):
                         no_freq_measure = 1
 
                     if(interleaved):
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
                     else:
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
                     
                     out = result.stdout.decode('utf-8').split(',')
                     inner_loop_reps = float(out[1])
                     if no_freq_measure == 0:
                         freq_real = float(out[2])
-                    if isa not in ["neon", "armscalar", "riscvscalar", "rvv0.7", "rvv1.0"]:
+                    if isa in x86_ISAs:
                         cycles = float(out[0])
                         if no_freq_measure == 0:
                             freq_nominal = float(out[3])
@@ -649,21 +687,21 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                 if (test_type == 'FP' or test_type == 'roofline'):
                     #Run FP Test
                 
-                    os.system("./Bench/Bench -test FLOPS -op " + inst + " -precision " + precision + " -fp " + str(num_reps["FP"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
+                    os.system(str(bench_ex) + " -test FLOPS -op " + inst + " -precision " + precision + " -fp " + str(num_reps["FP"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
                     
                     if test_type == 'roofline' and (l1_size > 0 or l2_size > 0 or l3_size > 0 or dram_bytes > 0):
                         no_freq_measure = 1
 
                     if(interleaved):
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
                     else:
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
                     
                     out = result.stdout.decode('utf-8').split(',')
                     inner_loop_reps = float(out[1])
                     if no_freq_measure == 0:
                         freq_real = float(out[2])
-                    if isa not in ["neon", "armscalar", "riscvscalar", "rvv0.7", "rvv1.0"]:
+                    if isa in x86_ISAs:
                         cycles = float(out[0])
                         if no_freq_measure == 0:
                             freq_nominal = float(out[3])
@@ -685,22 +723,22 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                     inst_fma = 'fma'
                     FP_factor = 2
                 
-                    os.system("./Bench/Bench -test FLOPS -op " + inst_fma + " -precision " + precision + " -fp " + str(num_reps["FP_FMA"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
+                    os.system(str(bench_ex) + " -test FLOPS -op " + inst_fma + " -precision " + precision + " -fp " + str(num_reps["FP_FMA"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
                     
                     if test_type == 'roofline' and (l1_size > 0 or l2_size > 0 or l3_size > 0 or dram_bytes > 0):
                         no_freq_measure = 1
 
                     if(interleaved):
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
                     else:
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
                     
                     out = result.stdout.decode('utf-8').split(',')
 
                     inner_loop_reps = float(out[1])
                     if no_freq_measure == 0:
                         freq_real = float(out[2])
-                    if isa not in ["neon", "armscalar", "riscvscalar", "rvv0.7", "rvv1.0"]:
+                    if isa in x86_ISAs:
                         cycles = float(out[0])
                         if no_freq_measure == 0:
                             freq_nominal = float(out[3])
@@ -716,15 +754,15 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
 
                 #Save Results if a full Roofline test is done
                 if (test_type == 'roofline'):
-                    if (out_path == './Results'):
-                        if(os.path.isdir('Results') == False):
-                            os.mkdir('Results')
-                        if(os.path.isdir('Results/Roofline') == False):
-                            os.mkdir('Results/Roofline')
+                    if (out_path == './carm_results'):
+                        if(os.path.isdir('carm_results') == False):
+                            os.mkdir('carm_results')
+                        if(os.path.isdir('carm_results/roofline') == False):
+                            os.mkdir('carm_results/roofline')
                     else:
                         if(os.path.isdir(out_path)):
-                            if(os.path.isdir(out_path + "/Roofline") == False):
-                                os.mkdir(out_path + "/Roofline")
+                            if(os.path.isdir(out_path + "/roofline") == False):
+                                os.mkdir(out_path + "/roofline")
                         else:
                             print("ERROR: Provided output path does not exist")
                     ct = datetime.datetime.now()
@@ -733,7 +771,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                         plot_roofline(name, data, date, isa, precision, threads, num_ld, num_st, inst, interleaved, out_path)
                     
                     date = ct.strftime('%Y-%m-%d %H:%M:%S')
-                    update_csv(name, "Roofline", data, data_cycles, date, isa, precision, threads, num_ld, num_st, inst, interleaved, l1_size, l2_size, l3_size, dram_bytes, VLEN, LMUL, out_path)
+                    update_csv(name, "roofline", data, data_cycles, date, isa, precision, threads, num_ld, num_st, inst, interleaved, l1_size, l2_size, l3_size, dram_bytes, VLEN, LMUL, out_path)
 
 #Run Memory Bandwidth tests
 def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precision_set, num_ld, num_st, threads_set, interleaved, verbose, no_freq_measure, VLEN, tl1, plot, LMUL):
@@ -776,35 +814,37 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                 if VLEN_aux > 1 and precision == "sp":
                     VLEN = VLEN_aux * 2
                     LMUL = LMUL_aux
-                if isa not in ["rvv0.7", "rvv1.0"]:
+                if isa not in vector_agnostic_ISA:
                     VLEN = 1
+                    LMUL = 1
+                if isa in ["sve"]:
                     LMUL = 1
                 if verbose > 2 and isa in ["rvv0.7", "rvv1.0"]:
                     print("VLEN IS:", VLEN, "| LMUL IS:", LMUL)
-                if verbose > 0:
-                    print("------------------------------")
+                elif verbose > 2 and isa in ["sve"]:
+                    print("VLEN IS:", VLEN)
                     
                 Gbps = [0] * len(test_sizes)
                 InstCycle = [0] * len(test_sizes)
 
                 os.system("make clean && make isa=" + isa)
 
-                num_reps = int(int(l1_size)*1024/(tl1*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
+                num_reps = int(int(l1_size)*1024/(tl1*2*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
 
                 os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
                 
                 no_freq_measure = 0
 
                 if(interleaved):
-                    result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
+                    result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
                 else:
-                    result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
+                    result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
 
                 no_freq_measure = 1
                 out = result.stdout.decode('utf-8').split(',')
 
                 freq_real = float(out[2])
-                if isa not in ["neon", "armscalar", "riscvscalar", "rvv0.7", "rvv1.0"]:
+                if isa in x86_ISAs:
                     freq_nominal = float(out[3])
 
                 i=0
@@ -814,15 +854,15 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                     os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
                 
                     if(interleaved):
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq_real), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq_real), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
                     else:
-                        result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq_real), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
+                        result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq_real), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
 
                     out = result.stdout.decode('utf-8').split(',')
                     inner_loop_reps = float(out[1])
                     if verbose > 2:
-                        print(size, "Kb")
-                    if isa not in ["neon", "armscalar", "riscvscalar", "rvv0.7", "rvv1.0"]:
+                        print("Testing with ", size, "Kb")
+                    if isa in x86_ISAs:
                         cycles = float(out[0])
                         Gbps[i] = float((threads*num_reps*(num_ld+num_st)*mem_inst_size[isa][precision]*freq_real*inner_loop_reps)/(cycles*float(freq_real/freq_nominal)))
                         InstCycle[i] = float((threads*num_reps*(num_ld+num_st)*inner_loop_reps)/(cycles*float(freq_real/freq_nominal)))
@@ -834,20 +874,22 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                 i = 0
                 if (verbose > 1):
                     print("ISA:", isa,  "| Number of Threads:", threads, " | Precision:", precision, "| Interleaved:", inter, "| Number of Loads:", num_ld, "| Number of Stores:", num_st, "| Memory Instruction Size:", mem_inst_size[isa][precision]*VLEN)
-                    if isa not in ["neon", "armscalar", "riscvscalar", "rvv0.7", "rvv1.0"]:
+                    if isa in x86_ISAs:
                         print("Max Recorded Frequency (GHz):", freq_real, "| Nominal Frequency (GHz):", freq_nominal, "| Actual Frequency to Nominal Frequency Ratio:", float(freq_real/freq_nominal))
                     else:
                         print("Max Recorded Frequency (GHz):", freq_real)
-                        if isa == "rvv0.7" or isa == "rvv1.0":
+                        if isa in ["rvv0.7", "rvv1.0"]:
                             print("Vector Length:", VLEN, "Elements | Vector LMUL:", LMUL)
+                        elif isa in ["sve"]:
+                            print("Vector Length:", VLEN, "Elements")
                     for size in test_sizes:
                         print("Size:", size, "Kb | Gbps:", custom_round(Gbps[i]), "| Instructions per Cycle:", custom_round(InstCycle[i]))
                         i += 1
 
                 if(os.path.isdir('Results') == False):
                     os.mkdir('Results')
-                if(os.path.isdir('Results/MemoryCurve') == False):
-                    os.mkdir('Results/MemoryCurve')
+                if(os.path.isdir('carm_results/MemoryCurve') == False):
+                    os.mkdir('carm_results/MemoryCurve')
 
                 ct = datetime.datetime.now()
                 date = ct.strftime('%Y-%m-%d %H:%M:%S')
@@ -909,13 +951,13 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                     
                     date = ct.strftime('%Y-%m-%d_%H-%M-%S')
                     if interleaved:
-                        plt.savefig('Results/MemoryCurve/' + name + '_Memory_Curve_' + date + "_" + isa + "_" + str(precision) + "_" + str(threads) + "_Threads_" + str(num_ld) + "Load_" + str(num_st) + "Store_" + "Interleaved" + '.svg')
+                        plt.savefig('carm_results/memory_curve/' + name + '_memory_curve_' + date + "_" + isa + "_" + str(precision) + "_" + str(threads) + "_Threads_" + str(num_ld) + "Load_" + str(num_st) + "Store_" + "Interleaved" + '.svg')
                     else:
-                        plt.savefig('Results/MemoryCurve/' + name + '_Memory_Curve_' + date + "_" + isa + "_" + str(precision) + "_" + str(threads) + "_Threads_" + str(num_ld) + "Load_" + str(num_st) + "Store" + '.svg')
+                        plt.savefig('carm_results/memory_curve/' + name + '_memory_curve_' + date + "_" + isa + "_" + str(precision) + "_" + str(threads) + "_Threads_" + str(num_ld) + "Load_" + str(num_st) + "Store" + '.svg')
                     
 def update_memory_csv(Gbps, InstCycle, date, name, l1_size, l2_size, l3_size, isa, precision, num_ld, num_st, threads, interleaved, VLEN, LMUL):
 
-    csv_path = f"./Results/MemoryCurve/{name}_Memory_Curve.csv"
+    csv_path = f"./carm_results/memory_curve/{name}_memory_curve.csv"
     
     #Concatenate each test size with itself
     duplicated_test_sizes = [size for size in test_sizes for _ in range(2)]
@@ -937,6 +979,8 @@ def update_memory_csv(Gbps, InstCycle, date, name, l1_size, l2_size, l3_size, is
         #Write the results to CSV
         if (isa in ["rvv0.7", "rvv1.0"]):
             isa = str(isa) + "_vl" + str(VLEN) + "_lmul" + str(LMUL)
+        elif isa in ["sve"]:
+            isa = str(isa) + "_vl" + str(VLEN)
         results = [date, isa, precision, threads, num_ld, num_st, "Yes" if interleaved else "No"] + ['']
         for gbps, inst_cycle in zip(Gbps, InstCycle):
             results.append(custom_round(gbps))
@@ -981,17 +1025,21 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                 if VLEN_aux > 1 and precision == "sp":
                     VLEN = VLEN_aux * 2
                     LMUL = LMUL_aux
-                if not isa in  ["rvv0.7", "rvv1.0"]:
+                if isa not in  vector_agnostic_ISA:
                     VLEN = 1
+                    LMUL = 1
+                if isa in ["sve"]:
                     LMUL = 1
                 if verbose > 2 and isa in ["rvv0.7", "rvv1.0"]:
                     print("VLEN IS:", VLEN, "| LMUL IS:", LMUL)
+                elif verbose > 2 and isa in ["sve"]:
+                    print("VLEN IS:", VLEN)
         
                 os.system("make clean && make isa=" + isa)
                 if test_type == "mixedL1":
                     if l1_size > 0:
-                        num_reps = int(int(l1_size)*1024/(tl1*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
-                        test_size = (int(l1_size))/tl1
+                        num_reps = int(int(l1_size)*1024/(tl1*2*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
+                        test_size = (int(l1_size))/(tl1*2)
                     else:
                         print("WARNING: No L1 Size Found, you can use the -l1 <l1_size> argument, or a configuration file to specify it.")
                         return
@@ -1035,17 +1083,17 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                 os.system("./Bench/Bench -test MIXED -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -num_FP " + str(num_fp) + " -op " + inst + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
 
                 if(interleaved):
-                    result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
+                    result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
                     inter = "Yes"
                 else:
-                    result = subprocess.run(["./bin/test", "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
+                    result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure)], stdout=subprocess.PIPE)
                     inter = "No"
                 out = result.stdout.decode('utf-8').split(',')
 
                 inner_loop_reps = float(out[1])
                 freq_real = float(out[2])
 
-                if isa not in ["neon", "armscalar", "riscvscalar", "rvv0.7", "rvv1.0"]:
+                if isa in x86_ISAs:
                     cycles = float(out[0])
                     freq_nominal = float(out[3])
                     gflops = float(threads*num_reps*num_fp*FP_factor*ops_fp[isa][precision]*freq_real*inner_loop_reps)/(cycles*float(freq_real/freq_nominal))
@@ -1097,14 +1145,14 @@ def main():
     parser = argparse.ArgumentParser(description='Script to run micro-benchmarks to construct Cache-Aware Roofline Model')
     parser.add_argument('--test', default='roofline', nargs='?', choices=['FP', 'L1', 'L2', 'L3', 'DRAM', 'roofline', 'MEM', 'mixedL1', 'mixedL2', 'mixedL3', 'mixedDRAM'], help='Type of the test. Roofline test measures the bandwidth of the different memory levels and FP Performance, MEM test measures the bandwidth of various memory sizes, mixed test measures bandwidth and FP performance for a combination of memory acceses (to L1, L2, L3, or DRAM) and FP operations (Default: roofline)')
     parser.add_argument('--no_freq_measure',  dest='no_freq_measure', action='store_const', const=1, default=0, help='Measure CPU frequency or not')
-    parser.add_argument('--freq', default='2.0', nargs='?', type = float, help='Expected/Desired CPU frequency during test, (if no_freq_measure or set_freq is enabled)')
-    parser.add_argument('--set_freq',  dest='set_freq', action='store_const', const=1, default=0, help='Set Processor frequency to indicated one (x86 only)')
+    parser.add_argument('--freq', default='2.0', nargs='?', type = float, help='Expected/Desired CPU frequency during test (if no_freq_measure or set_freq is enabled)')
+    parser.add_argument('--set_freq',  dest='set_freq', action='store_const', const=1, default=0, help='Set Processor frequency to indicated one (x86 only, might require admin priviliges and might not work for certain systems)')
     parser.add_argument('--name', default='unnamed', nargs='?', type = str, help='Name for results file (if not using config file)')
     parser.add_argument('-v', '--verbose', default=1, nargs='?', type = int, choices=[0, 1, 2, 3], help='Level of terminal output (0 -> No Output 1 -> Only ISA Errors and Test Details, 2 -> Intermediate Test Results, 3 -> Configuration Values Selected/Detected)')
     parser.add_argument('--inst', default='add', nargs='?', choices=['add', 'mul', 'div', 'fma'], help='FP Instruction (Default: add), FMA performance is measured by default too.')
     parser.add_argument('-vl', '--vector_length',  default=1, nargs='?', type=positive_int, help='Vector Length in double-precision elements for RVV configuration (Default: 1)')
     parser.add_argument('-vlmul', '--vector_lmul', default=1, nargs='?', type = int, choices=[1, 2, 4, 8], help='Vector Register Grouping for RVV configuration (Default: 1)')
-    parser.add_argument('--isa', default=['auto'], nargs='+', choices=['avx512', 'avx2', 'sse', 'scalar', 'neon', 'armscalar', 'riscvscalar', 'rvv0.7', 'rvv1.0', 'auto'], help='set of ISAs to test, if auto will test all available ISAs (Default: auto)')
+    parser.add_argument('--isa', default=['auto'], nargs='+', choices=['avx512', 'avx2', 'sse', 'scalar', 'neon', 'armscalar', 'sve', 'riscvscalar', 'rvv0.7', 'rvv1.0', 'auto'], help='set of ISAs to test, if auto will test all available ISAs (Default: auto)')
     parser.add_argument('-p', '--precision', default=['dp'], nargs='+', choices=['dp', 'sp'], help='Data Precision (Default: dp)')
     parser.add_argument('-ldst', '--ld_st_ratio',  default=2, nargs='?', type=positive_int, help='Load/Store Ratio (Default: 2)')
     parser.add_argument('-fpldst', '--fp_ld_st_ratio',  default=1, nargs='?', type=positive_int, help='FP to Load/Store Ratio, for mixed test (Default: 1)')
@@ -1114,17 +1162,17 @@ def main():
     parser.add_argument('-t', '--threads', default=[1], nargs='+', type=positive_int, help='Set of number of threads for the micro-benchmarking, insert multiple thread valus by spacing them, no commas (Default: [1])')
     parser.add_argument('-i', '--interleaved',  dest='interleaved', action='store_const', const=1, default=0, help='For thread binding when cores are interleaved between NUMA domains (Default: 0)')
     parser.add_argument('-ops', '--num_ops',  default=32768, nargs='?', type=positive_int, help='Number of FP operations to be used in FP test (Default: 32768)')
-    parser.add_argument('--dram_bytes',  default=524288, nargs='?', type=positive_int, help='Size of the array for the DRAM test in KiB (Default: 524288 (512 MiB))')
+    parser.add_argument('--dram_kbytes',  default=524288, nargs='?', type=positive_int, help='Size of the array for the DRAM test in KiB (Default: 524288 (512 MiB))')
     parser.add_argument('--dram_auto',  dest='dram_auto', action='store_const', const=1, default=0, help='Automatically calculate the DRAM test size needed to ensure data does not fit in L3, can require a lot of memory in some cases, make sure it fits in the DRAM of your system (Default: 0)')
     parser.add_argument('--plot',  dest='plot', action='store_const', const=1, default=0, help='Create CARM plot SVG for each test result')
 
-    parser.add_argument('-tl1', '--threads_per_l1',  default=2, nargs='?', type = int, help='Expected amount of threads that will have to share the same L1 cache (Default: 2)')
+    parser.add_argument('-tl1', '--threads_per_l1',  default=1, nargs='?', type = int, help='Expected amount of threads that will have to share the same L1 cache (Default: 1)')
     parser.add_argument('-tl2', '--threads_per_l2',  default=2, nargs='?', type = int, help='Expected amount of threads that will have to share the same L2 cache (Default: 2)')
     parser.add_argument('-l1', '--l1_size',  default=0, nargs='?', type = int, help='L1 size per core')
     parser.add_argument('-l2', '--l2_size',  default=0, nargs='?', type = int, help='L2 size per core')
     parser.add_argument('-l3', '--l3_size',  default=0, nargs='?', type = int, help='L3 total size')
 
-    parser.add_argument('-out', '--output', nargs='?', default='./Results', help='Path to a folder to save roofline results to (Default: ./Results | Only applies to roofline results)')
+    parser.add_argument('-out', '--output', nargs='?', default='./carm_results', help='Path to a folder to save roofline results to (Default: ./carm_results | Only applies to roofline results)')
 
     args = parser.parse_args()
     if (args.verbose == 3):
@@ -1169,11 +1217,11 @@ def main():
         isa_set = ["auto"]
 
     if args.test in ["mixedL1", "mixedL2", "mixedL3", "mixedDRAM"]:
-        run_mixed(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, args.precision, num_ld, num_st, num_fp, args.threads, args.interleaved, args.num_ops, args.dram_bytes, args.dram_auto, args.test, args.verbose, args.set_freq, args.no_freq_measure, args.vector_length, args.threads_per_l1,  args.threads_per_l2, args.vector_lmul)
+        run_mixed(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, args.precision, num_ld, num_st, num_fp, args.threads, args.interleaved, args.num_ops, args.dram_kbytes, args.dram_auto, args.test, args.verbose, args.set_freq, args.no_freq_measure, args.vector_length, args.threads_per_l1,  args.threads_per_l2, args.vector_lmul)
     elif args.test == 'MEM':
         run_memory(name, freq, args.set_freq, l1_size, l2_size, l3_size, isa_set, args.precision, num_ld, num_st, args.threads, args.interleaved, args.verbose, args.no_freq_measure, args.vector_length, args.threads_per_l1, args.plot, args.vector_lmul)
     else:
-        run_roofline(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, args.precision, num_ld, num_st, args.threads, args.interleaved, args.num_ops, args.dram_bytes, args.dram_auto, args.test, args.verbose, args.set_freq, args.no_freq_measure, args.vector_length, args.threads_per_l1,  args.threads_per_l2, args.plot, args.vector_lmul, args.output)
+        run_roofline(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, args.precision, num_ld, num_st, args.threads, args.interleaved, args.num_ops, args.dram_kbytes, args.dram_auto, args.test, args.verbose, args.set_freq, args.no_freq_measure, args.vector_length, args.threads_per_l1,  args.threads_per_l2, args.plot, args.vector_lmul, args.output)
 
 if __name__ == "__main__":
     main()

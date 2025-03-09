@@ -139,6 +139,31 @@
 	#define SP_FMA "vfmadd132ps"
 	#define SP_LOAD "movaps"
 	#define SP_STORE "movaps"
+#elif defined(SVE)
+	#define ISA "sve"
+	#define NUM_REGISTER 32
+	#define MEM_SP_REGISTER ".s"
+	#define MEM_DP_REGISTER ".d"
+	#define FP_SP_REGISTER ".s"
+	#define FP_DP_REGISTER ".d"
+	#define DP_ALIGN 8
+	#define SP_ALIGN 4
+	#define COBLERED "\"w0\", \"w1\", \"z0\", \"z1\", \"z2\", \"z3\", \"z4\", \"z5\", \"z6\", \"z7\", \"z8\", \"z9\", \"z10\", \"z11\", \"z12\", \"z13\", \"z14\", \"z15\", \"z16\", \"z17\", \"z18\", \"z19\", \"z20\", \"z21\", \"z22\", \"z23\", \"z24\", \"z25\", \"z26\", \"z27\", \"z28\", \"z29\", \"z30\", \"z31\", \"memory\""
+	#define DP_OPS 1
+	#define DP_DIV "fdiv"
+	#define DP_ADD "fadd"
+	#define DP_MUL "fmul"
+	#define DP_FMA "fmla"
+	#define DP_LOAD "ld1d"
+	#define DP_STORE "st1d"
+
+	#define SP_OPS 1
+	#define SP_DIV "fdiv"
+	#define SP_ADD "fadd"
+	#define SP_MUL "fmul"
+	#define SP_FMA "fmla"
+	#define SP_LOAD "ld1w"
+	#define SP_STORE "st1w"
 #elif defined(NEON)
 	#define ISA "neon"
 	#define NUM_REGISTER 32

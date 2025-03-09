@@ -17,32 +17,25 @@ import platform
 import threading
 import run
 import csv
+import shutil
+from decimal import Decimal
 
 #Define a global set to store the names of JSON files that have been read
 read_files = set()
 
-def runPAPI_async(executable_path, additional_args):
-    thread = threading.Thread(target=runPAPI, args=(executable_path, additional_args))
+def runPAPI_async(executable_path, debug, additional_args):
+    thread = threading.Thread(target=runPAPI, args=(executable_path, debug, additional_args))
     thread.start()
 
-#Check if PAPI is present
-def check_PAPI_exists(PAPI_path):
-    PAPI_src = os.path.join(PAPI_path, "src")
-    if os.path.exists(PAPI_src):
-        print(f"PAPI src folder found in: '{PAPI_path}'.")
-    else:
-        print(f"No PAPI src folder found in: '{PAPI_src}'.")
-        sys.exit(1)
-
 #Run PAPI with provided application
-def runPAPI(executable_path, additional_args=None):
+def runPAPI(executable_path, debug, additional_args=None):
     additional_args = additional_args or []
     #Construct the command with the provided paths and additional arguments
     command = [executable_path, *additional_args]
 
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    PAPI_output = os.path.join(script_dir, "PMU_Readings")
-    os.environ["PAPI_OUTPUT_DIRECTORY"] = PAPI_output
+    PAPI_output_folder = "carm_pmu_output"
+    os.environ["PAPI_OUTPUT_DIRECTORY"] = PAPI_output_folder
+
     #Setup environment to test Memory Operations
     PAPI_Event = "PAPI_LST_INS"
     os.environ["PAPI_EVENTS"] = PAPI_Event
@@ -81,15 +74,33 @@ def runPAPI(executable_path, additional_args=None):
     
     total_real_time_nsec_dp, total_papi_dp_ops, thread_count = analysePAPI(PAPI_Event)
 
+    #Remove intermediate output when not in debug mode
+    if not debug:
+        if os.path.isdir(PAPI_output_folder):
+            shutil.rmtree(PAPI_output_folder)
+        else:
+            print(f"Warning: Directory {PAPI_output_folder} does not exist, something went wrong")
+
     return float((total_real_time_nsec_mem + total_real_time_nsec_sp + total_real_time_nsec_dp)/3), total_papi_mem_ins, total_papi_sp_ops, total_papi_dp_ops, thread_count
     
 
 def analysePAPI(PAPI_Event):
     global read_files
 
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    PAPI_output = os.path.join(script_dir, "PMU_Readings/papi_hl_output")
-    files = os.listdir(PAPI_output)
+    PAPI_output = "./carm_pmu_output/papi_hl_output"
+    try:
+        files = os.listdir(PAPI_output)
+        # Continue with processing `files`...
+        
+    except FileNotFoundError:
+        print(f"Error: The directory '{PAPI_output}' was not found, does the analyzed executable contain the necessary ROI definitions using the PAPI high-level interface?")
+        sys.exit(1)  # Exit the program with a non-zero status
+
+    # If you need to handle the case where it exists but is not a directory:
+    except NotADirectoryError:
+        print(f"Error: The directory '{PAPI_output}' was not found, does the analyzed executable contain the necessary ROI definitions using the PAPI high-level interface?")
+        sys.exit(1)
+    #files = os.listdir(PAPI_output)
 
     #Filter out files that have already been read
     new_files = [file for file in files if file not in read_files]
@@ -97,7 +108,7 @@ def analysePAPI(PAPI_Event):
     #Ensure there's exactly one new file in the folder
     if len(new_files) != 1:
         print("Error: Folder should contain exactly one new file.")
-        return None
+        sys.exit(1)
     
     #Get the path of the new JSON file
     new_file_path = os.path.join(PAPI_output, new_files[0])
@@ -105,7 +116,7 @@ def analysePAPI(PAPI_Event):
     #Ensure the file is a JSON file
     if not new_file_path.endswith('.json'):
         print("Error: File in folder is not a JSON file.")
-        return None
+        sys.exit(1)
     
     #Read and return the JSON data
     with open(new_file_path, 'r') as file:
@@ -243,7 +254,7 @@ def plot_roofline_with_dot(executable_path, exec_flops, exec_ai, choice, date):
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    result_dir = os.path.join(script_dir, "Results/Roofline")
+    result_dir = os.path.join(script_dir, "carm_results/Roofline")
 
     title, data, data_cycles = read_data_from_files(result_dir, choice)
 
@@ -283,23 +294,23 @@ def plot_roofline_with_dot(executable_path, exec_flops, exec_ai, choice, date):
     new_rc_params = {'text.usetex': False,"svg.fonttype": 'none'}
     plt.rcParams.update(new_rc_params)
     plt.tight_layout()
-    if(os.path.isdir('Results') == False):
-            os.mkdir('Results')
-    if(os.path.isdir('Results/Applications') == False):
-        os.mkdir('Results/Applications')
-    plt.savefig('Results/Applications/' + executable_name + "_" + title["name"] + '_PMU_roofline_analysis_' + date + '_' + str(title["isa"]) + "_" + str(title["precision"]) + "_" + str(title["threads"]) + "_Threads_" + str(title["load"]) + "Load_" + str(title["store"]) + "Store_" + title["inst"] + '.svg')
+    if(os.path.isdir('carm_results') == False):
+            os.mkdir('carm_results')
+    if(os.path.isdir('carm_results/applications') == False):
+        os.mkdir('carm_results/applications')
+    plt.savefig('carm_results/applications/' + executable_name + "_" + title["name"] + '_PMU_roofline_analysis_' + date + '_' + str(title["isa"]) + "_" + str(title["precision"]) + "_" + str(title["threads"]) + "_Threads_" + str(title["load"]) + "Load_" + str(title["store"]) + "Store_" + title["inst"] + '.svg')
 
 def update_csv(machine, executable_path, exec_flops, exec_ai, bandwidth, time, name, date, isa, precision, threads):
 
-    csv_path = f"./Results/Applications/{machine}_Applications.csv"
+    csv_path = f"./carm_results/applications/{machine}_applications.csv"
 
     if name == "":
         name = os.path.basename(executable_path)
 
-    if(os.path.isdir('Results') == False):
-        os.mkdir('Results')
-    if(os.path.isdir('Results/Applications') == False):
-        os.mkdir('Results/Applications')
+    if(os.path.isdir('carm_results') == False):
+        os.mkdir('carm_results')
+    if(os.path.isdir('carm_results/applications') == False):
+        os.mkdir('carm_results/applications')
 
     results = [
         date,
@@ -311,7 +322,7 @@ def update_csv(machine, executable_path, exec_flops, exec_ai, bandwidth, time, n
         run.custom_round(exec_ai),
         run.custom_round(exec_flops),
         run.custom_round(bandwidth),
-        run.custom_round(time)
+        np.format_float_positional(run.custom_round(time), trim='-')
     ]
 
     headers = ['Date', 'Method', 'Name', 'ISA', 'Precision', 'Threads', 'AI', 'Gflops', 'Bandwidth', 'Time']
@@ -330,8 +341,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Run an executable with PAPI instrumentation.")
 
-    parser.add_argument("PAPI_path", nargs = "?", help="Path to the PAPI directory.")
     parser.add_argument("executable_path", help="Path to the executable provided by the user.")
+    parser.add_argument('-d', '--debug',  dest='debug', action='store_const', const=1, default=0, help='Will conserve the raw PMU output from PAPI for debugging')
     parser.add_argument('-dr', '--drawroof',  dest='drawroof', action='store_const', const=1, default=0, help='Plot application in a chosen roofline chart localy (work in progress).')
     parser.add_argument('-c', '--choice', default=0, nargs='?', type = int, help='Automatically choose a roofline chart for the application analysis, --drawroof is required for this (Default: 0).')
     parser.add_argument("additional_args", nargs="...", help="Additional arguments for the user's application.")
@@ -346,10 +357,10 @@ if __name__ == "__main__":
         print("No PMU analysis support on non x86 / ARM CPUS.")
         sys.exit(1)
 
-    if not (args.PAPI_path is None):
-        check_PAPI_exists(args.PAPI_path)
 
-    total_time_nsec, total_mem, total_sp, total_dp, thread_count = runPAPI(args.executable_path, args.additional_args)
+    total_time_nsec, total_mem, total_sp, total_dp, thread_count = runPAPI(args.executable_path, args.debug, args.additional_args)
+
+    time_taken_seconds = float (total_time_nsec / 1e9)
 
     total_fp = total_sp + total_dp
 
@@ -371,16 +382,17 @@ if __name__ == "__main__":
     bandwidth = float((memory_bytes) / total_time_nsec)
 
     print("\n---------PMU RESULTS-----------")
-    print("Total FP Operations:", total_fp)
-    print("Calculated Total Memory Bytes:", memory_bytes)
-    #print("Simple AI:", float(total_fp / total_mem))
-    print("SP FLOP Ratio: " + str(sp_ratio) + " DP FLOP Ration: " + str(dp_ratio))
+    print("Total FP Operations:", run.custom_round(total_fp))
+    print("Calculated Total Memory Bytes:", run.custom_round(memory_bytes))
+
+    print("SP FLOP Ratio: " + str(run.custom_round(sp_ratio)) + " DP FLOP Ration: " + str(run.custom_round(dp_ratio)))
     print("Threads Used:", thread_count)
 
-    print("\nExecution Time (seconds):" + str(float(total_time_nsec / 1e9)))
-    print("GFLOP/s: " + str(gflops))
-    print("Bandwidth (GB/s): " + str(bandwidth))
-    print("Arithmetic Intensity:", ai)
+    print("\nExecution Time (seconds):",np.format_float_positional(run.custom_round(time_taken_seconds), trim='-'))
+    print("\nExecution Time (seconds):",time_taken_seconds)
+    print("GFLOP/s: " + str(run.custom_round(gflops)))
+    print("Bandwidth (GB/s): " + str(run.custom_round(bandwidth)))
+    print("Arithmetic Intensity:", run.custom_round(ai))
     print("------------------------------")
 
     ct = datetime.datetime.now()
@@ -395,4 +407,4 @@ if __name__ == "__main__":
             print("No Matplotlib and/or Numpy found, in order to draw CARM graphs make sure to install them.")
 
     date = ct.strftime('%Y-%m-%d %H:%M:%S')
-    update_csv(args.name, args.executable_path, gflops, ai, bandwidth, float(total_time_nsec / 1e9), args.app_name, date, args.isa, precision, thread_count)
+    update_csv(args.name, args.executable_path, gflops, ai, bandwidth, time_taken_seconds, args.app_name, date, args.isa, precision, thread_count)
