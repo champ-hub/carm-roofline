@@ -1,24 +1,24 @@
 COMPILER = gcc
 CFLAGS = -g -Wall -Wextra -Ofast -march=native
-CFLAGS += -pthread
 
 arch := $(shell arch)
 ifeq ($(arch), x86_64)
 	ifeq ($(isa),avx512)
-		ASSEMBLY_FILE = Test/CoreClockCheckerx86_AVX512.s
+		ASSEMBLY_FILE = CoreClockCheckerx86_AVX512.s
 	else
-		ASSEMBLY_FILE = Test/CoreClockCheckerx86.s
+		ASSEMBLY_FILE = CoreClockCheckerx86.s
 	endif
 else ifeq ($(arch),aarch64)
-	ASSEMBLY_FILE = Test/CoreClockCheckerARM.s
+	ASSEMBLY_FILE = CoreClockCheckerARM.s
+	CFLAGS = -g -Wall -Wextra -Ofast -march=armv8-a+sve -pthread
 else ifeq ($(arch),riscv64)
-	ASSEMBLY_FILE = Test/CoreClockCheckerRISCV.s
-	CFLAGS = -g -Wall -Wextra -Ofast -march=rv64g
-#CFLAGS = -g -Wall -Wextra -Ofast -march=rv64gcv0p7 -menable-experimental-extensions
+	ASSEMBLY_FILE = CoreClockCheckerRISCV.s
+	CFLAGS = -g -Wall -Wextra -Ofast -march=rv64g -pthread
+#CFLAGS = -g -Wall -Wextra -Ofast -march=rv64gcv0p7 -menable-experimental-extensions -pthread
 else
-	ASSEMBLY_FILE = Test/CoreClockChecker.s
+	ASSEMBLY_FILE = CoreClockChecker.s
     $(error Unsupported architecture: $(arch))
 endif
 
 all:
-	$(COMPILER) $(CFLAGS) Test/main_test.c $(ASSEMBLY_FILE) -o bin/test -lm -Wno-unused-variable -Wno-unused-parameter
+	$(COMPILER) $(CFLAGS) main_test.c $(ASSEMBLY_FILE) -o ../bin/test -lm -Wno-unused-variable -Wno-unused-parameter

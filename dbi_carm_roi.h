@@ -22,12 +22,12 @@ void CARM_roi_end() {
     __SSC_MARK(0xDEAD);
     clock_gettime(CLOCK_MONOTONIC, &t_end);
     double timing_duration = ((t_end.tv_sec + (double) t_end.tv_nsec / 1000000000) - (t_start.tv_sec + (double) t_start.tv_nsec / 1000000000));
-    FILE *timing_results_file = fopen("timing_results.txt", "w");
+    FILE *timing_results_file = fopen("carm_timing_results.txt", "w");
     if (timing_results_file != NULL) {
         fprintf(timing_results_file, "Time Taken:\t%0.9lf seconds\n", timing_duration);
         fclose(timing_results_file);
     } else {
-        perror("Failed to open timing_results.txt");
+        perror("Failed to open carm_timing_results.txt");
     }
 }
 

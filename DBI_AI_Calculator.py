@@ -91,12 +91,14 @@ x86_AVX512_fp_operations = {
     "vmulpd": {"count": 0, "string": "AVX512 (8x 64 bit)", "factor": 8},
     "vfmadd132pd": {"count": 0, "string": "AVX512 (16x 64 bit)", "factor": 16},
     "vfmadd231pd": {"count": 0, "string": "AVX512 (16x 64 bit)", "factor": 16},
+    "vfmadd213pd": {"count": 0, "string": "AVX512 (16x 64 bit)", "factor": 16},
     "vdivps": {"count": 0, "string": "AVX512 (16x 32 bit)", "factor": 16},
     "vaddps": {"count": 0, "string": "AVX512 (16x 32 bit)", "factor": 16},
     "vsubps": {"count": 0, "string": "AVX512 (16x 32 bit)", "factor": 16},
     "vmulps": {"count": 0, "string": "AVX512 (16x 32 bit)", "factor": 16},
     "vfmadd132ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32},
-    "vfmadd231ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32}
+    "vfmadd231ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32},
+    "vfmadd213ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32}
 }
 
 #INTEGER OPERATIONS
@@ -200,25 +202,27 @@ def check_client_exists(path):
         print(f"No DynamoRIO executable 'drrun' found in: '{drrun_path}'.")
         return False
 
-    cmake_command = f"cmake -DDynamoRIO_DIR={path}/cmake ../CustomClient"
-    
     #Check for build folder
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    #Construct the path to the build folder
-    build_dir = os.path.join(script_dir, "build")
+    cmake_command = f"cmake -DDynamoRIO_DIR={path}/cmake {script_dir}/CustomClient"
+    
+    
 
-    if os.path.exists(build_dir):
+    #Construct the path to the build folder
+    build_dir = "./carm_dbi_build"
+
+    if os.path.exists("./carm_dbi_build"):
         print(f"The build folder is present.")
     else:
         print(f"The build folder does not exist. Building the DynamoRIO Client.")
         try:
-            subprocess.run(f"mkdir build && cd build && {cmake_command} && make opcoder", check=True, shell=True)
+            subprocess.run(f"mkdir carm_dbi_build && cd carm_dbi_build && {cmake_command} && make opcoder", check=True, shell=True)
         except subprocess.CalledProcessError as e:
             print("Error executing the command:", e)
     
     #Construct the path to the client file
-    path_client = os.path.join(script_dir, "build/bin/libopcoder.so")
+    path_client = os.path.join(build_dir, "bin/libopcoder.so")
 
     #Check if the client file exists
     if os.path.exists(path_client):
@@ -226,7 +230,7 @@ def check_client_exists(path):
     else:
         print(f"The opcode client does not exist in the path '{path_client}'. Building the client.")
         try:
-            subprocess.run(f"rm -rf build && mkdir build && cd build && {cmake_command} && make opcoder", check=True, shell=True)
+            subprocess.run(f"rm -rf carm_dbi_build && mkdir carm_dbi_build && cd carm_dbi_build && {cmake_command} && make opcoder", check=True, shell=True)
         except subprocess.CalledProcessError as e:
             print("Error executing the command:", e)
     return True
@@ -257,9 +261,9 @@ def runSDE(sde_path, roi, executable_path, additional_args):
 def runDynamoRIO(dynamo_path, roi, executable_path, additional_args):
     #Construct the command with the provided paths and additional arguments
     if roi:
-        command = f"{dynamo_path}/bin64/drrun -c ./build/bin/libopcoder.so -roi -- {executable_path}"
+        command = f"{dynamo_path}/bin64/drrun -c ./carm_dbi_build/bin/libopcoder.so -roi -- {executable_path}"
     else:
-        command = f"{dynamo_path}/bin64/drrun -c ./build/bin/libopcoder.so -- {executable_path}"
+        command = f"{dynamo_path}/bin64/drrun -c ./carm_dbi_build/bin/libopcoder.so -- {executable_path}"
 
     # Add additional arguments to the command
     if additional_args != None:
@@ -289,18 +293,18 @@ def runApplication(roi, executable_path, additional_args):
         except subprocess.CalledProcessError as e:
             print("Error executing the command:", e)
 
-        with open("timing_results.txt", "r") as file:
+        with open("carm_timing_results.txt", "r") as file:
             contents = file.read()
             #Extract the number of seconds
             match = re.search(r"Time Taken:\s*([\d.]+)\s*seconds", contents)
             if match:
                 seconds = float(match.group(1))
             else:
-                print("No match found in timing_results.txt, stopping program.")
+                print("No match found in carm_timing_results.txt, stopping program.")
                 sys.exit(1)
         file.close()
 
-        os.remove("timing_results.txt")
+        os.remove("carm_timing_results.txt")
         return float(seconds * 1e9)
     else:
     
@@ -348,7 +352,7 @@ def analyseDynamoRIOx86():
     fp_ops = 0
     integer_ops = 0
     memory_bytes = 0
-    with open('output.txt', 'r') as file:
+    with open('carm_dbi_output.txt', 'r') as file:
         for line in file:
             #Arithmetic Section       
             if "Floating Point and Integer opcode execution counts" in line:
@@ -477,7 +481,7 @@ def analyseDynamoRIOARM():
     integer_ops = 0
     memory_bytes = 0
 
-    with open('output.txt', 'r') as file:
+    with open('carm_dbi_output.txt', 'r') as file:
         for line in file:
             # Arithmetic Section       
             if "Floating Point and Integer opcode execution counts" in line:
@@ -941,7 +945,7 @@ def plot_roofline_with_dot(executable_path, exec_flops, exec_ai, choice, roi, da
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     #Construct the path to the build folder
-    result_dir = os.path.join(script_dir, "Results/Roofline")
+    result_dir = os.path.join(script_dir, "carm_results/Roofline")
 
     title, data, data_cycles = read_data_from_files(result_dir, choice)
 
@@ -984,28 +988,28 @@ def plot_roofline_with_dot(executable_path, exec_flops, exec_ai, choice, roi, da
     new_rc_params = {'text.usetex': False,"svg.fonttype": 'none'}
     plt.rcParams.update(new_rc_params)
     plt.tight_layout()
-    if(os.path.isdir('Results') == False):
-            os.mkdir('Results')
-    if(os.path.isdir('Results/Applications') == False):
-        os.mkdir('Results/Applications')
+    if(os.path.isdir('carm_results') == False):
+            os.mkdir('carm_results')
+    if(os.path.isdir('carm_results/applications') == False):
+        os.mkdir('carm_results/applications')
 
     if roi:
-        plt.savefig('Results/Applications/' + executable_name + "_" + title["name"] + '_DBI_ROI_roofline_analysis_' + date + '_' + str(title["isa"]) + "_" + str(title["precision"]) + "_" + str(title["threads"]) + "_Threads_" + str(title["load"]) + "Load_" + str(title["store"]) + "Store_" + title["inst"] + '.svg')
+        plt.savefig('carm_results/applications/' + executable_name + "_" + title["name"] + '_DBI_ROI_roofline_analysis_' + date + '_' + str(title["isa"]) + "_" + str(title["precision"]) + "_" + str(title["threads"]) + "_Threads_" + str(title["load"]) + "Load_" + str(title["store"]) + "Store_" + title["inst"] + '.svg')
     else:
-        plt.savefig('Results/Applications/' + executable_name + "_" + title["name"] + '_DBI_roofline_analysis_' + date + '_' + str(title["isa"]) + "_" + str(title["precision"]) + "_" + str(title["threads"]) + "_Threads_" + str(title["load"]) + "Load_" + str(title["store"]) + "Store_" + title["inst"] + '.svg')
+        plt.savefig('carm_results/applications/' + executable_name + "_" + title["name"] + '_DBI_roofline_analysis_' + date + '_' + str(title["isa"]) + "_" + str(title["precision"]) + "_" + str(title["threads"]) + "_Threads_" + str(title["load"]) + "Load_" + str(title["store"]) + "Store_" + title["inst"] + '.svg')
 
 
 def update_csv(machine, executable_path, exec_flops, exec_ai, bandwidth, time, name, date, isa, precision, threads, method, VLEN, LMUL):
 
-    csv_path = f"./Results/Applications/{machine}_Applications.csv"
+    csv_path = f"./carm_results/applications/{machine}_applications.csv"
 
     if name == "":
         name = os.path.basename(executable_path)
 
-    if(os.path.isdir('Results') == False):
-        os.mkdir('Results')
-    if(os.path.isdir('Results/Applications') == False):
-        os.mkdir('Results/Applications')
+    if(os.path.isdir('carm_results') == False):
+        os.mkdir('carm_results')
+    if(os.path.isdir('carm_results/applications') == False):
+        os.mkdir('carm_results/applications')
     
     if (isa in ["rvv0.7", "rvv1.0"]):
         isa = str(isa) + "_vl" + str(VLEN) + "_lmul" + str(LMUL)

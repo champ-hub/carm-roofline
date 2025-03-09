@@ -23,17 +23,35 @@ void create_benchmark_flops(char * op, char * precision, int long long fp, int V
 	//Free auxiliary variables
 	free(assembly_op_flops_1);
 	if(strcmp(op,"mad") == 0) free(assembly_op_flops_2);
-	
+
+	char cmd[8192];
+    
+
 	#if defined (AVX512)
+		snprintf(cmd, sizeof(cmd), "make isa=avx512 -f %s/../Test/Makefile_Benchmark ", PROJECT_DIR);
+
+		check = system(cmd);
+		if (check == -1) {
+			perror("system() error");
+			return EXIT_FAILURE;
+		}
 		check = system("make isa=avx512 -f Test/Makefile_Benchmark");
 		if (check != 0){
 			printf("There was a problem making the benchmark");
 		}
 	#else
-		check = system("make -f Test/Makefile_Benchmark");
-		if (check != 0){
+		snprintf(cmd, sizeof(cmd), 
+         "make -C %s/../Test -f Makefile_Benchmark", PROJECT_DIR);
+
+		check = system(cmd);
+		if (check == -1) {
 			printf("There was a problem making the benchmark");
 		}
+		/*check = system("make -f /home/zemor/Desktop/carm-roofline/Test/Makefile_Benchmark");
+		//check = system("make -C Test -f Makefile_Benchmark");
+		if (check != 0){
+			printf("There was a problem making the benchmark");
+		}*/
 	#endif
 }
 
@@ -55,15 +73,25 @@ void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * 
 		
 	//Free auxiliary variables
 	free(assembly_op);
-	
+	char cmd[8192];
 	#if defined (AVX512)
+		snprintf(cmd, sizeof(cmd), "make isa=avx512 -f %s/../Test/Makefile_Benchmark ", PROJECT_DIR);
+
+		check = system(cmd);
+		if (check == -1) {
+			perror("system() error");
+			return EXIT_FAILURE;
+		}
 		check = system("make isa=avx512 -f Test/Makefile_Benchmark");
 		if (check != 0){
 			printf("There was a problem making the benchmark");
 		}
 	#else
-		check = system("make -f Test/Makefile_Benchmark");
-		if (check != 0){
+		snprintf(cmd, sizeof(cmd), 
+         "make -C %s/../Test -f Makefile_Benchmark", PROJECT_DIR);
+
+		check = system(cmd);
+		if (check == -1) {
 			printf("There was a problem making the benchmark");
 		}
 	#endif
@@ -100,14 +128,25 @@ void create_benchmark_mixed(char * op, int long long num_rep, int num_ld, int nu
 	//Free auxiliary variables
 	free(assembly_op);
 	
+	char cmd[8192];
 	#if defined (AVX512)
+		snprintf(cmd, sizeof(cmd), "make isa=avx512 -f %s/../Test/Makefile_Benchmark ", PROJECT_DIR);
+
+		check = system(cmd);
+		if (check == -1) {
+			perror("system() error");
+			return EXIT_FAILURE;
+		}
 		check = system("make isa=avx512 -f Test/Makefile_Benchmark");
 		if (check != 0){
 			printf("There was a problem making the benchmark");
 		}
 	#else
-		check = system("make -f Test/Makefile_Benchmark");
-		if (check != 0){
+		snprintf(cmd, sizeof(cmd), 
+         "make -C %s/../Test -f Makefile_Benchmark", PROJECT_DIR);
+
+		check = system(cmd);
+		if (check == -1) {
 			printf("There was a problem making the benchmark");
 		}
 	#endif

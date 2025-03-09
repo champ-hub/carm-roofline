@@ -1,6 +1,9 @@
 COMPILER = gcc
 FLAGS = -g -Wall -Wextra -O2
 
+CURRENT_DIR := $(shell pwd)
+FLAGS += -DPROJECT_DIR=\"$(CURRENT_DIR)\"
+
 ifeq ($(isa),sse)
 	FLAGS += -DSSE
 else ifeq ($(isa),avx)
@@ -13,6 +16,8 @@ else ifeq ($(isa),neon)
 	FLAGS += -DNEON
 else ifeq ($(isa),armscalar)
 	FLAGS += -DASCALAR
+else ifeq ($(isa),sve)
+	FLAGS += -DSVE
 else ifeq ($(isa),riscvscalar)
 	FLAGS += -DRISCVSCALAR
 else ifeq ($(isa),rvv0.7)
