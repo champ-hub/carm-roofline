@@ -1,5 +1,5 @@
 COMPILER = gcc
-CFLAGS = -g -Wall -Wextra -Ofast -march=native
+CFLAGS = -g -Wall -Wextra -Ofast -pthread
 
 arch := $(shell arch)
 ifeq ($(arch), x86_64)
@@ -8,15 +8,15 @@ ifeq ($(arch), x86_64)
 	else
 		ASSEMBLY_FILE = CoreClockCheckerx86.s
 	endif
+	CFLAGS += -march=native
 else ifeq ($(arch),aarch64)
 	ASSEMBLY_FILE = CoreClockCheckerARM.s
-	CFLAGS = -g -Wall -Wextra -Ofast -march=armv8-a+sve -pthread
+	CFLAGS += -march=armv8-a+sve
 else ifeq ($(arch),riscv64)
 	ASSEMBLY_FILE = CoreClockCheckerRISCV.s
-	CFLAGS = -g -Wall -Wextra -Ofast -march=rv64g -pthread
-#CFLAGS = -g -Wall -Wextra -Ofast -march=rv64gcv0p7 -menable-experimental-extensions -pthread
+	CFLAGS += -march=rv64g
+#CFLAGS += -march=rv64gcv0p7 -menable-experimental-extensions
 else
-	ASSEMBLY_FILE = CoreClockChecker.s
     $(error Unsupported architecture: $(arch))
 endif
 
