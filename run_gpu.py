@@ -5,9 +5,12 @@ import subprocess
 import datetime
 import sys 
 import csv
+from dotenv import load_dotenv # type: ignore
+
+load_dotenv('GPU/gpu.env')
 
 # TODO: use some config file or option to define target GPU
-device_id = 0
+DEVICE = os.getenv('DEVICE')
 
 def read_config(config_file):
 	f = open(config_file, 'r')
@@ -60,12 +63,12 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_ten
 	tensor_core_precisions = []
 
 	# Obtain compute capability
-	result = subprocess.run(['nvidia-smi','--query-gpu=compute_cap', '-i', str(device_id), '--format=csv,noheader'], stdout=subprocess.PIPE)
+	result = subprocess.run(['nvidia-smi','--query-gpu=compute_cap', '-i', str(DEVICE), '--format=csv,noheader'], stdout=subprocess.PIPE)
 	result = result.stdout.decode('utf-8').rstrip().split('.')
 	compute_capability = int(result[0])*10+int(result[1])
 
 	# Obtain GPU name to see if it's GTX (necessary as GTX 1660 is compute capability 75 and does not have TC)
-	result = subprocess.run(['nvidia-smi','--query-gpu=gpu_name', '-i', str(device_id), '--format=csv,noheader'], stdout=subprocess.PIPE)
+	result = subprocess.run(['nvidia-smi','--query-gpu=gpu_name', '-i', str(DEVICE), '--format=csv,noheader'], stdout=subprocess.PIPE)
 	gpu_name = result.stdout.decode('utf-8').rstrip()
 
 	if compute_capability >= 70 and gpu_name.find('GTX') < 0:
@@ -111,21 +114,21 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_ten
 	# Configure SM and MEM frequency
 	if set_freq and freq_sm !=0 and freq_mem != 0:
 		# Turn on persistency mode
-		result = subprocess.run(['nvidia-smi', '-i', str(device_id), '-pm', '1'], stdout=subprocess.PIPE)
+		result = subprocess.run(['nvidia-smi', '-i', str(DEVICE), '-pm', '1'], stdout=subprocess.PIPE)
 		
 		if result.returncode != 0:
 			print(result.stdout.decode('utf-8').rstrip())
 			sys.exit(2)
 		
 		# Configure SM freqency
-		result = subprocess.run(['nvidia-smi', '-i', str(device_id), '-lgc', str(freq_sm)], stdout=subprocess.PIPE)
+		result = subprocess.run(['nvidia-smi', '-i', str(DEVICE), '-lgc', str(freq_sm)], stdout=subprocess.PIPE)
 
 		if result.returncode != 0:
 			print(result.stdout.decode('utf-8').rstrip())
 			sys.exit(3)
 		
 		# Configure MEM frequency
-		result = subprocess.run(['nvidia-smi', '-i', str(device_id), '-lmc', str(freq_mem)], stdout=subprocess.PIPE)
+		result = subprocess.run(['nvidia-smi', '-i', str(DEVICE), '-lmc', str(freq_mem)], stdout=subprocess.PIPE)
 
 		if result.returncode != 0:
 			print(result.stdout.decode('utf-8').rstrip())
@@ -143,7 +146,7 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_ten
 			print("Tested Tensor Core Precisions:", ', '.join(target_tensor))
 		
 		# Print current GPU frequencies
-		result = subprocess.run(['nvidia-smi', '--query-gpu=clocks.sm,clocks.mem', '-i', str(device_id), '--format=csv,noheader'], stdout=subprocess.PIPE)
+		result = subprocess.run(['nvidia-smi', '--query-gpu=clocks.sm,clocks.mem', '-i', str(DEVICE), '--format=csv,noheader'], stdout=subprocess.PIPE)
 		result = result.stdout.decode('utf-8').rstrip().split(' ')
 		real_freq_sm = result[0]
 		real_freq_mem = result[2]
@@ -185,7 +188,21 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 			exit(8)
 		
 		ouputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
-		print("Performance(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
+		print("Performance(" + precision + ", " + cuda_op + "): ", result.stdout.decode('utf-8').rstrip())
+
+		if cuda_op != "fma":
+			result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--operation", "fma", "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			if result.returncode != 0:
+				print(result.stderr.decode('utf-8').rstrip())
+				sys.exit(5)
+
+			result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
+			if result.returncode != 0:
+				print(result.stdout.decode('utf-8').rstrip())
+				exit(8)
+			
+			ouputs["fma"] = result.stdout.decode('utf-8').split(' ')[0]
+			print("Performance(" + precision + ", " + "fma" + "): ", result.stdout.decode('utf-8').rstrip())
 
 		#MEM Shared
 		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "shared", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -231,31 +248,77 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 
 		ct = datetime.datetime.now()
 		date = ct.strftime('%Y-%m-%d %H:%M:%S')
-		update_csv(name, "Roofline", ouputs, date, "cuda", precision, "fma", threads, blocks, out)
+		update_csv(name, "Roofline", ouputs, date, "cuda", precision, cuda_op, threads, blocks, out)
 
 
 	# Tensor Core benchmarks
 	for precision in target_tensor:
+		outputs = {}
+		# TENSOR FLOPS
 		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "tensor", "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-		
 		if result.returncode != 0:
 			print(result.stderr.decode('utf-8').rstrip())
-			sys.exit(5)
+			sys.exit(16)
 		
 		result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
 		if result.returncode != 0:
 			print(result.stdout.decode('utf-8').rstrip())
-			exit(8)
+			exit(17)
 		
-		#ouputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
+		ouputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
 		print("Performance Tensor(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
+
+		#MEM Shared
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "shared", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stderr.decode('utf-8').rstrip())
+			sys.exit(18)
+
+		result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stdout.decode('utf-8').rstrip())
+			exit(19)
+
+		ouputs["shared"] = result.stdout.decode('utf-8').split(' ')[0]
+		print("Bandwith shared memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
+
+		#MEM Global
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "global", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stderr.decode('utf-8').rstrip())
+			sys.exit(20)
+
+		result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stdout.decode('utf-8').rstrip())
+			exit(21)
+			
+		ouputs["global"] = result.stdout.decode('utf-8').split(' ')[0]
+		print("Bandwith global memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
+
+				# Save results
+		if out == './Results':
+			if os.path.isdir('Results') == False:
+				os.mkdir('Results')
+			if os.path.isdir('Results/Roofline') == False:
+				os.mkdir('Results/Roofline')
+		else:
+			if os.path.isdir(out):
+				if os.path.isdir(out + "/Roofline") == False:
+					os.mkdir(out + "/Roofline")
+			else:
+				print("ERROR: Provided output path does not exist")
+
+		ct = datetime.datetime.now()
+		date = ct.strftime('%Y-%m-%d %H:%M:%S')
+		update_csv(name, "Roofline", ouputs, date, "tensor", precision, "mma", threads, blocks, out)
 
 
 def shutdown(set_freq):
 	if set_freq:
-		result = subprocess.run(['nvidia-smi', '-i', str(device_id), '-pm', '0'], stdout=subprocess.PIPE)
+		result = subprocess.run(['nvidia-smi', '-i', str(DEVICE), '-pm', '0'], stdout=subprocess.PIPE)
 		if result.returncode != 0:
-			print("Important: It was not possible to disable Persistent Mode in GPU", device_id)
+			print("Important: It was not possible to disable Persistent Mode in GPU", DEVICE)
 
 
 def main():
@@ -273,7 +336,7 @@ def main():
 
 	parser.add_argument('--cuda', default=['auto'], nargs='+', choices=['none','auto','hp', 'int', 'sp', 'dp', 'bf16'], help='Set of CUDA core arithmetic precisions to test. If auto, all will be tested.')
 	parser.add_argument('--tensor', default=['auto'], nargs='+', choices=['none','auto', 'fp16_32', 'fp16_16', 'tf32', 'bf16', 'int8', 'int4', 'int1'], help='Set of Tensor Core arithmetic precisions to test. If auto, all will be tested.')
-	parser.add_argument('--cuda_op', dest='cuda_op', default='fma', nargs='?', choices=['fma', 'add', 'mul'], help="Desired operation to execute in CUDA Cores.")
+	parser.add_argument('--cuda_op', dest='cuda_op', default='add', nargs='?', choices=['fma', 'add', 'mul'], help="Desired operation to execute in CUDA Cores.")
 
 	parser.add_argument('--threads', default=1024, nargs='?', type=int, help='Num of threads per block to execute in the benchmarks')
 	parser.add_argument('--blocks', default=32768, nargs='?', type=int, help='Number of thread blocks to execute in the benchmarks')
