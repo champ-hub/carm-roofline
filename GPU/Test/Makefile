@@ -1,8 +1,10 @@
+include GPU/gpu.env
+
 EXECUTABLE := GPU/bin/test
 
 CU_FILES   := GPU/bin
 
-CU_DIR    := /usr/local/cuda-12.4
+CU_DIR    := $(CUDA_PATH)
 
 CC_FILES   := 
 
@@ -16,7 +18,7 @@ OBJDIR=GPU/bin/objs
 CXX=g++ -m64
 CXXFLAGS=-O3 -Wall
 LDFLAGS=-L$(CU_DIR)/lib64/ -lcudart
-NVCC=nvcc
+NVCC=$(CU_DIR)/bin/nvcc
 NVCCFLAGS=-arch=sm_$(compute_capability)
 
 
