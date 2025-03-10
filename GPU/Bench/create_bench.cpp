@@ -449,13 +449,14 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 				output << "#define NUM_BLOCKS " << num_blocks << endl;
 			} else if (text == "// DEFINE PRECISION") {
 				string aux;
-				if (precision == "sp")
+				if (precision == "sp" || precision == "tf32")
 					aux = "float";
 				else if (precision == "dp")
 					aux = "double";
-				else if (precision == "int")
+				else if (precision == "int" || precision == "int8" || precision == "int4" ||
+						 precision == "int1")
 					aux = "int";
-				else if (precision == "hp")
+				else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
 					aux = "half";
 				else if (precision == "bf16")
 					aux = "nv_bfloat16";
@@ -478,13 +479,14 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 			output << text << endl;
 			if (text == "// DEFINE PRECISION") {
 				string aux;
-				if (precision == "sp")
+				if (precision == "sp" || precision == "tf32")
 					aux = "float";
 				else if (precision == "dp")
 					aux = "double";
-				else if (precision == "int")
+				else if (precision == "int" || precision == "int8" || precision == "int4" ||
+						 precision == "int1")
 					aux = "int";
-				else if (precision == "hp")
+				else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
 					aux = "half";
 				else if (precision == "bf16")
 					aux = "nv_bfloat16";
@@ -526,13 +528,14 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 				output << "#define STRIDE 32768 * 8L" << endl;
 			} else if (text == "// DEFINE PRECISION") {
 				string aux;
-				if (precision == "sp")
+				if (precision == "sp" || precision == "tf32")
 					aux = "float";
 				else if (precision == "dp")
 					aux = "double";
-				else if (precision == "int")
+				else if (precision == "int" || precision == "int8" || precision == "int4" ||
+						 precision == "int1")
 					aux = "int";
-				else if (precision == "hp")
+				else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
 					aux = "half";
 				else if (precision == "bf16")
 					aux = "nv_bfloat16";
@@ -573,13 +576,14 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 			output << text << endl;
 			if (text == "// DEFINE PRECISION") {
 				string aux;
-				if (precision == "sp")
+				if (precision == "sp" || precision == "tf32")
 					aux = "float";
 				else if (precision == "dp")
 					aux = "double";
-				else if (precision == "int")
+				else if (precision == "int" || precision == "int8" || precision == "int4" ||
+						 precision == "int1")
 					aux = "int";
-				else if (precision == "hp")
+				else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
 					aux = "half";
 				else if (precision == "bf16")
 					aux = "nv_bfloat16";
