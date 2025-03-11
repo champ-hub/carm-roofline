@@ -1,0 +1,10 @@
+__pycache__/
+.vscode/
+.clang-format
+*.pyc
+*.pyo
+bin/
+carm_results
+cache
+Bench/Bench
+config/auto_config/config.txt
