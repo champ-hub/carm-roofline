@@ -827,11 +827,11 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                 Gbps = [0] * len(test_sizes)
                 InstCycle = [0] * len(test_sizes)
 
-                os.system("make clean && make isa=" + isa)
+                os.system(f"make -C {script_dir} clean && make -C {script_dir} isa={isa}")
 
                 num_reps = int(int(l1_size)*1024/(tl1*2*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
 
-                os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
+                os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
                 
                 no_freq_measure = 0
 
@@ -851,7 +851,7 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                 for size in test_sizes:
                     num_reps = int(size*1024/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
 
-                    os.system("./Bench/Bench -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
+                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
                 
                     if(interleaved):
                         result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq_real), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
@@ -888,8 +888,8 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
 
                 if(os.path.isdir('Results') == False):
                     os.mkdir('Results')
-                if(os.path.isdir('carm_results/MemoryCurve') == False):
-                    os.mkdir('carm_results/MemoryCurve')
+                if(os.path.isdir('carm_results/memory_curve') == False):
+                    os.mkdir('carm_results/memory_curve')
 
                 ct = datetime.datetime.now()
                 date = ct.strftime('%Y-%m-%d %H:%M:%S')
@@ -1035,7 +1035,7 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                 elif verbose > 2 and isa in ["sve"]:
                     print("VLEN IS:", VLEN)
         
-                os.system("make clean && make isa=" + isa)
+                os.system(f"make -C {script_dir} clean && make -C {script_dir} isa={isa}")
                 if test_type == "mixedL1":
                     if l1_size > 0:
                         num_reps = int(int(l1_size)*1024/(tl1*2*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
@@ -1080,7 +1080,7 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                 else:
                     FP_factor = 1
 
-                os.system("./Bench/Bench -test MIXED -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -num_FP " + str(num_fp) + " -op " + inst + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
+                os.system(str(bench_ex) + " -test MIXED -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -num_FP " + str(num_fp) + " -op " + inst + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL))
 
                 if(interleaved):
                     result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)

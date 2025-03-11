@@ -384,12 +384,9 @@ if __name__ == "__main__":
     print("\n---------PMU RESULTS-----------")
     print("Total FP Operations:", run.custom_round(total_fp))
     print("Calculated Total Memory Bytes:", run.custom_round(memory_bytes))
-
     print("SP FLOP Ratio: " + str(run.custom_round(sp_ratio)) + " DP FLOP Ration: " + str(run.custom_round(dp_ratio)))
     print("Threads Used:", thread_count)
-
     print("\nExecution Time (seconds):",np.format_float_positional(run.custom_round(time_taken_seconds), trim='-'))
-    print("\nExecution Time (seconds):",time_taken_seconds)
     print("GFLOP/s: " + str(run.custom_round(gflops)))
     print("Bandwidth (GB/s): " + str(run.custom_round(bandwidth)))
     print("Arithmetic Intensity:", run.custom_round(ai))

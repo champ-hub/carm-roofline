@@ -1117,15 +1117,15 @@ if __name__ == "__main__":
     bandwidth = float((memory_bytes) / exec_time)
 
     print("\n---------DBI RESULTS-----------")
-    print("Total FP operations:", fp_ops)
-    print("Total memory bytes:", memory_bytes)
+    print("Total FP operations:", run.custom_round(fp_ops))
+    print("Total memory bytes:", run.custom_round(memory_bytes))
     if (not args.sde):
-        print("Total integer operations:", integer_ops)
+        print("Total integer operations:", run.custom_round(integer_ops))
 
-    print("\nExecution time (seconds):", time_taken_seconds)
-    print("GFLOP/s:", gflops)
-    print("Bandwidth (GB/s): " + str(bandwidth))
-    print("Arithmetic Intensity:", ai)
+    print("\nExecution time (seconds):", run.custom_round(time_taken_seconds))
+    print("GFLOP/s:", run.custom_round(gflops))
+    print("Bandwidth (GB/s): " + str(run.custom_round(bandwidth)))
+    print("Arithmetic Intensity:", run.custom_round(ai))
     print("------------------------------")
 
     ct = datetime.datetime.now()

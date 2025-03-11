@@ -432,9 +432,10 @@ app.layout = dbc.Container([
             html.P("Application Source Code must be Injected to Profile Region of Interest", className="mb-1", style={'color': 'black', 'text-align': 'center', 'fontSize': '14px'}),                
         ],
         style={'backgroundColor': '#e9ecef'},
+        id="modal-profile-body",
         ),
         dbc.ModalFooter([
-                dbc.Button("Run Application", id="submit-button", className="ms-auto", n_clicks=0, style={'margin-right': 'auto'}),
+                dbc.Button("Run Application", id="analysis-submit-button", className="ms-auto", n_clicks=0, style={'margin-right': 'auto'}),
                 dbc.Button("Close", id="close-modal-button", className="me-auto", n_clicks=0, style={'margin-left': 'auto'})
         ],
         className="w-100 d-flex",
@@ -494,7 +495,7 @@ app.layout = dbc.Container([
             ),
             ],
             style={'backgroundColor': '#e9ecef'},
-            id="modal-body",
+            id="dot-modal-body",
         ),
         dbc.ModalFooter([
             dbc.Button("Submit", id="dot-submit-button", className="ms-auto", n_clicks=0, style={'margin-right': 'auto'}),
@@ -536,94 +537,6 @@ app.layout = dbc.Container([
         ],
         id="library-modal",
         is_open=False
-    ),
-    dbc.Modal([
-        dbc.ModalHeader(dbc.ModalTitle("Application To Inject ROI Code", style={'text-align': 'center', 'color': 'white'}), style={'backgroundColor': '#6c757d'}),
-        dbc.ModalBody([
-            html.P("Application Analysis Method", className="mb-1", style={'color': 'black', 'text-align': 'center'}),
-            dbc.Card(
-                dbc.CardBody(
-                    html.Div([
-                        dbc.Checklist(
-                            options=[
-                                {"label": "DBI", "value": "dbi"},
-                                {"label": "PMU", "value": "pmu"}
-                            ],
-                            value=[],
-                            id="checklist-inject-pmu-dbi",
-                            inline=True,
-                            className="mb-2",
-                            style={'color': 'black'},
-                        )
-                        ],
-                        className="d-flex flex-column align-items-center"
-                    )
-                ),
-                style={'width': '200px', 'height': '60px', 'margin': '0px auto', 'padding': '0px', 'text-align': 'center'},
-                className="mb-3"
-            ),
-            html.P("Application Specification", className="mb-1", style={'color': 'black', 'text-align': 'center'}),
-            dbc.Card(
-                dbc.CardBody(
-                    html.Div([
-                        dbc.Input(id="file-path-input-inject", placeholder="Enter source code file path", type="text", className="mb-0"),
-                        html.Div(id="file-path-error", style={'color': 'red', 'textAlign': 'center', 'marginTop': '6px', 'marginBottom': '0px', 'fontSize': '15px'}),
-                        ],
-                        className="d-flex flex-column align-items-center"
-                    )
-                ),
-                style={'width': '100%', 'minHeight': '60px', 'margin': '0px auto', 'padding': '0px', 'text-align': 'center'},
-                className="mb-3"
-            ),
-            html.P("Region of Interest Flags Should be Present in Source Code", className="mb-1", style={'color': 'black', 'text-align': 'center'}),
-            dbc.Card(
-                dbc.CardBody([
-                    dbc.Row([
-                        dbc.Col(html.P("Region Start Flag:", className="mb-1", style={'color': 'black', 'text-align': 'right'}), width=6, align="center"),
-                        dbc.Col(dbc.Badge("//CARM ROI START", color="#6c757d", className="me-1"), width=6, align="center"),
-                        ],
-                        className="align-items-center"
-                    ),
-                    dbc.Row([
-                        dbc.Col(html.P("Region End Flag:", className="mb-0", style={'color': 'black', 'text-align': 'right'}), width=6, align="center"),
-                        dbc.Col(dbc.Badge("//CARM ROI END", color="#6c757d", className="mb-0"), width=6, align="center"),
-                        ],
-                        className="align-items-center"
-                    ),
-                ]),
-                style={'width': '100%', 'height': '80px', 'margin': '0px auto', 'padding': '0px', 'text-align': 'center'},
-                className="mb-1"
-            ),
-            dbc.Card(
-                dbc.CardBody([
-                    dbc.Checklist(
-                        options=[
-                            {"label": "Create new injected source file", "value": "True"}
-                        ],
-                        value=[],
-                        id="new-file-checklist",
-                        inline=True,
-                        className="mb-0",
-                        style={'color': 'black', "text-align": "center"},
-                    ),    
-                    ],
-                    className="d-flex align-items-center justify-content-center",
-                ),
-                style={'width': '100%', 'height': '60%', 'margin': '0', 'padding': '0px', 'text-align': 'center'}
-            )    
-            ],
-            style={'backgroundColor': '#e9ecef'}
-        ),
-        dbc.ModalFooter([
-            dbc.Button("Inject Code", id="submit-button-inject", className="ms-auto", n_clicks=0, style={'margin-right': 'auto'}),
-            dbc.Button("Close", id="close-modal-button-inject", className="me-auto", n_clicks=0, style={'margin-left': 'auto'}),
-            ],
-            className="w-100 d-flex",
-            style={'backgroundColor': '#6c757d'}
-        ),
-        ],
-        id="modal-inject",
-        is_open=False,
     ),
     ],
     fluid=True,
@@ -1209,19 +1122,18 @@ def toggle_editable(n_clicks, figure, config):
     Output("modal-profile", "is_open"),
     [Input("app-analysis-button", "n_clicks"),
      Input("close-modal-button", "n_clicks"),
-     Input("submit-button", "n_clicks"),
+     Input("analysis-submit-button", "n_clicks"),
      Input("invisible-output2", "children"),  #Output from file path validation
      Input("invisible-output3", "children")],  #Output from library modal
     [State("modal-profile", "is_open")],
     
 )
-def toggle_modal(open_clicks, close_clicks, submit_clicks, file_path_output, library_action, is_open):
+def toggle_app_analysis_modal(open_clicks, close_clicks, submit_clicks, file_path_output, library_action, is_open):
     ctx = callback_context
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
     if trigger_id == "close-modal-button":
         return False
-    elif trigger_id == "submit-button":
+    elif trigger_id == "analysis-submit-button":
         #Check for error messages or requirements to keep the modal open
         parts = file_path_output.split()
         if "Error" in parts[0]:
@@ -1241,7 +1153,7 @@ def toggle_modal(open_clicks, close_clicks, submit_clicks, file_path_output, lib
         Output("invisible-output3", "children")
     ],
     [
-        Input("submit-button", "n_clicks"),
+        Input("analysis-submit-button", "n_clicks"),
         Input("submit-library-path", "n_clicks"),
         Input("invisible-output2", "children"),
     ],
@@ -1260,7 +1172,7 @@ def handle_submit_library(submit_clicks, submit_library_clicks, file_path_output
         parts = file_path_output.split()
 
         checklist_values = parts[3]
-        if triggered_id == "submit-button":
+        if triggered_id == "analysis-submit-button":
             if "dbi" in checklist_values:
                 Dyno_path = ut.read_library_path("DYNO")
                 if not Dyno_path:
@@ -1283,10 +1195,10 @@ def handle_submit_library(submit_clicks, submit_library_clicks, file_path_output
 #Main profile submission
 @app.callback(
     [
-        Output("modal-body", "children"),
+        Output("modal-profile-body", "children"),
         Output("invisible-output2", "children")  #To carry error or success messages
     ],
-    Input("submit-button", "n_clicks"),
+    Input("analysis-submit-button", "n_clicks"),
     [
         State("checklist-pmu-dbi", "value"),
         State("machine-name-app", "value"),
@@ -1295,7 +1207,7 @@ def handle_submit_library(submit_clicks, submit_library_clicks, file_path_output
     ],
     prevent_initial_call=True,
 )
-def handle_submit(n_clicks, checklist_values, machine_name, file_path, exec_arguments):
+def handle_app_analysis_submit(n_clicks, checklist_values, machine_name, file_path, exec_arguments):
     if not n_clicks:
         return modal_content, "No action taken here"
 
@@ -1342,6 +1254,7 @@ def handle_submit(n_clicks, checklist_values, machine_name, file_path, exec_argu
     ]
 
     if error_message:
+        print(error_message)
         return modal_content, f"Error: {error_message}"
 
     modal_content_clear = [
@@ -1462,23 +1375,24 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
                 bandwidth = float((memory_bytes * 8) / exec_time)
 
                 print("\n---------DBI RESULTS-----------")
-                print("Total FP operations:", fp_ops)
-                print("Total memory bytes:", memory_bytes)
-                print("Total integer operations:", integer_ops)
+                print("Total FP operations:", run.custom_round(fp_ops))
+                print("Total memory bytes:", run.custom_round(memory_bytes))
 
-                print("\nExecution time (seconds):", time_taken_seconds)
-                print("GFLOP/s:", gflops)
-                print("Bandwidth (GB/s): " + str(bandwidth))
-                print("Arithmetic Intensity:", ai)
-                print("------------------------------\n")
+                print("\nExecution time (seconds):", run.custom_round(time_taken_seconds))
+                print("GFLOP/s:", run.custom_round(gflops))
+                print("Bandwidth (GB/s): " + str(run.custom_round(bandwidth)))
+                print("Arithmetic Intensity:", run.custom_round(ai))
+                print("------------------------------")
 
                 ct = datetime.datetime.now()
                 date = ct.strftime('%Y-%m-%d %H:%M:%S')
     
 
-                DBI_AI_Calculator.update_csv(machine_name, file_path, gflops, ai, bandwidth, time_taken_seconds, "", date, None, None, None, method, 1, 1)
+                DBI_AI_Calculator.update_csv(machine_name, file_path, gflops, ai, bandwidth, time_taken_seconds, "", date, None, None, 0, method, 1, 1)
             if str(checklist_values) == str(['pmu_roi']):
-                total_time_nsec, total_mem, total_sp, total_dp, thread_count = PMU_AI_Calculator.runPAPI(file_path, exec_arguments_list)
+                total_time_nsec, total_mem, total_sp, total_dp, thread_count = PMU_AI_Calculator.runPAPI(file_path, True, exec_arguments_list)
+                time_taken_seconds = float (total_time_nsec / 1e9)
+
                 total_fp = total_sp + total_dp
 
                 sp_ratio = float (total_sp / total_fp)
@@ -1493,25 +1407,21 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
                 else:
                     precision = "mixed"
 
-                
-
                 ai = float (total_fp / memory_bytes)
 
                 gflops = float(total_fp / total_time_nsec)
-                bandwidth = float((memory_bytes * 8) / total_time_nsec)
+                bandwidth = float((memory_bytes) / total_time_nsec)
 
                 print("\n---------PMU RESULTS-----------")
-                print("Total FP Operations:", total_fp)
-                print("Total Memory Bytes:", memory_bytes)
-                #print("Simple AI:", float(total_fp / total_mem))
-                print("SP FLOP Ratio: " + str(sp_ratio) + " DP FLOP Ration: " + str(dp_ratio))
+                print("Total FP Operations:", run.custom_round(total_fp))
+                print("Calculated Total Memory Bytes:", run.custom_round(memory_bytes))
+                print("SP FLOP Ratio: " + str(run.custom_round(sp_ratio)) + " DP FLOP Ration: " + str(run.custom_round(dp_ratio)))
                 print("Threads Used:", thread_count)
-
-                print("\nExecution Time (seconds):" + str(float(total_time_nsec / 1e9)))
-                print("GFLOP/s: " + str(gflops))
-                print("Bandwidth (GB/s): " + str(bandwidth))
-                print("Arithmetic Intensity:", ai)
-                print("------------------------------\n")
+                print("\nExecution Time (seconds):",np.format_float_positional(run.custom_round(time_taken_seconds), trim='-'))
+                print("GFLOP/s: " + str(run.custom_round(gflops)))
+                print("Bandwidth (GB/s): " + str(run.custom_round(bandwidth)))
+                print("Arithmetic Intensity:", run.custom_round(ai))
+                print("------------------------------")
 
                 ct = datetime.datetime.now()
 
@@ -1551,23 +1461,6 @@ def toggle_checklist_pmu_dbi(current_values, previous_values):
         return latest_selected if latest_selected else current_values[-1:]  #Keep the latest selected one
 
     return current_values
-@app.callback(
-    Output("checklist-inject-pmu-dbi", "value"),
-    [Input("checklist-inject-pmu-dbi", "value")],
-    [State("checklist-inject-pmu-dbi", "value")]
-)
-def toggle_checklist(current_values, previous_values):
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        return []
-    trigger_value = ctx.triggered[0]["value"]
-
-    if not current_values:
-        return []
-    if len(current_values) > 1:
-        latest_selected = list(set(current_values) - set(previous_values))
-        return latest_selected if latest_selected else current_values[-1:]
-    return current_values
 
 @app.callback(
     Output("checklist-only_ldst", "value"),
@@ -1588,48 +1481,16 @@ def toggle_checklist(current_values, previous_values):
     return current_values
 
 @app.callback(
-    Output("submit-button-inject", "disabled"),
-    [
-        Input("checklist-inject-pmu-dbi", "value"),
-        Input("file-path-input-inject", "value")
-    ]
-)
-def update_button_status_inject(pmu_dbi_values, file_path):
-    if pmu_dbi_values and file_path:
-        return False
-    return True
-
-@app.callback(
-    Output("submit-button", "disabled"),
+    Output("analysis-submit-button", "disabled"),
     [
         Input("checklist-pmu-dbi", "value"),
         Input("file-path-input", "value")
     ]
 )
-def update_button_status(pmu_dbi_values, file_path):
+def update_app_analysis_submit_button_status(pmu_dbi_values, file_path):
     if pmu_dbi_values and file_path:
         return False
     return True
-
-@app.callback(
-    [Output("file-path-valid", "children"),
-     Output("file-path-error", "children"),
-     ],
-    [Input("submit-button-inject", "n_clicks"),
-     Input("checklist-inject-pmu-dbi", "value"),
-     Input("new-file-checklist", "value"),],
-    [State("file-path-input-inject", "value")],
-    prevent_initial_call=True
-)
-def check_file_path(n_clicks, pmu_dbi, new_file, file_path):
-    if not file_path:
-        return False, ""
-
-    if not os.path.isfile(file_path) or (not file_path.endswith('.c') and not file_path.endswith('.cpp')):
-        return False, "The specified file was not found or is not a C/C++ source file."
-    return True, ""
-
-
 
 @app.callback(
     Output("invisible-output", "children"),
@@ -1700,7 +1561,7 @@ def execute_script1(n, name, l1_size, l2_size, l3_size, thread_set, interleaved,
         num_ld = 0
         num_st = 0
 
-    freq = 0
+    freq = 2
     inst = "add"
     num_ops = 32768
     test_type = "roofline"
@@ -1708,12 +1569,12 @@ def execute_script1(n, name, l1_size, l2_size, l3_size, thread_set, interleaved,
     set_freq = 0
     measure_freq = 0
     VLEN = 1
-    tl1 = 2
+    tl1 = 1
     tl2 = 2
     plot = 0
     
     try:
-        run.run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, thread_set, interleaved, num_ops, int(dram_bytes), dram_auto, test_type, verbose, set_freq, measure_freq, VLEN, tl1, tl2, plot, 1, "./Results")
+        run.run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, thread_set, interleaved, num_ops, int(dram_bytes), dram_auto, test_type, verbose, set_freq, measure_freq, VLEN, tl1, tl2, plot, 1, "./carm_results")
     except Exception as e:
         print("Task was interrupted:", e)
     return no_update
@@ -1925,7 +1786,7 @@ def update_application_dropdown(selected_file):
     df = pd.DataFrame(data_list)
  
     options = [{
-    'label': f"{row['Name']} ({row['Method']}) - {row['Date']} ({' '.join(filter(None, [row['ISA'], row['Precision'], ((str(row['Threads']) + ' Threads') if (row['Threads'] or row['Threads'] > 0) else None)]))}{' |' if any([row['ISA'], row['Precision'], row['Threads']]) else ''} AI: {row['AI']} Gflops: {row['GFLOPS']} Duration: {np.format_float_positional(row['Time'], trim='-')})",
+    'label': f"{row['Name']} ({row['Method']}) - {row['Date']} ({' '.join(filter(None, [row['ISA'], row['Precision'], ((str(row['Threads']) + ' Threads') if (row['Threads'] and int(row['Threads']) > 0) else ('No Thread Info'))]))}{' |' if any([row['ISA'], row['Precision'], row['Threads']]) else ''} AI: {row['AI']} | Gflops: {row['GFLOPS']} | Duration: {np.format_float_positional(row['Time'], trim='-')})",
     'value': f"{row['Name']}  {row['Method']}  {row['Date']}  {row['ISA']}  {row['Precision']}  {row['Threads']}  {row['AI']}  {row['GFLOPS']}  {np.format_float_positional(row['Time'], trim='-')}  {index}"
 } for index, row in df.iloc[::-1].iterrows()]
 
