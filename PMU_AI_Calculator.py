@@ -15,10 +15,11 @@ import sys
 import json
 import platform
 import threading
-import run
 import csv
 import shutil
 from decimal import Decimal
+
+import utils as ut
 
 #Define a global set to store the names of JSON files that have been read
 read_files = set()
@@ -319,10 +320,10 @@ def update_csv(machine, executable_path, exec_flops, exec_ai, bandwidth, time, n
         isa,
         precision,
         threads,
-        run.custom_round(exec_ai),
-        run.custom_round(exec_flops),
-        run.custom_round(bandwidth),
-        np.format_float_positional(run.custom_round(time), trim='-')
+        ut.custom_round(exec_ai),
+        ut.custom_round(exec_flops),
+        ut.custom_round(bandwidth),
+        np.format_float_positional(ut.custom_round(time), trim='-')
     ]
 
     headers = ['Date', 'Method', 'Name', 'ISA', 'Precision', 'Threads', 'AI', 'Gflops', 'Bandwidth', 'Time']
@@ -382,14 +383,14 @@ if __name__ == "__main__":
     bandwidth = float((memory_bytes) / total_time_nsec)
 
     print("\n---------PMU RESULTS-----------")
-    print("Total FP Operations:", run.custom_round(total_fp))
-    print("Calculated Total Memory Bytes:", run.custom_round(memory_bytes))
-    print("SP FLOP Ratio: " + str(run.custom_round(sp_ratio)) + " DP FLOP Ration: " + str(run.custom_round(dp_ratio)))
+    print("Total FP Operations:", ut.custom_round(total_fp))
+    print("Calculated Total Memory Bytes:", ut.custom_round(memory_bytes))
+    print("SP FLOP Ratio: " + str(ut.custom_round(sp_ratio)) + " DP FLOP Ration: " + str(ut.custom_round(dp_ratio)))
     print("Threads Used:", thread_count)
-    print("\nExecution Time (seconds):",np.format_float_positional(run.custom_round(time_taken_seconds), trim='-'))
-    print("GFLOP/s: " + str(run.custom_round(gflops)))
-    print("Bandwidth (GB/s): " + str(run.custom_round(bandwidth)))
-    print("Arithmetic Intensity:", run.custom_round(ai))
+    print("\nExecution Time (seconds):",np.format_float_positional(ut.custom_round(time_taken_seconds), trim='-'))
+    print("GFLOP/s: " + str(ut.custom_round(gflops)))
+    print("Bandwidth (GB/s): " + str(ut.custom_round(bandwidth)))
+    print("Arithmetic Intensity:", ut.custom_round(ai))
     print("------------------------------")
 
     ct = datetime.datetime.now()

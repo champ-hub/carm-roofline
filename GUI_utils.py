@@ -144,14 +144,18 @@ def calculate_roofline(values, min_ai):
     cache_levels = ['L1', 'L2', 'L3', 'DRAM']
     
     dots = {}
+    if values[5] > 0:
+        peak_flops = values[5]
+    else:
+        peak_flops = values[4]
 
     for cache_level in cache_levels:
         if values[cache_levels.index(cache_level)] > 0:
             aidots = [0, 0, 0]
             gflopdots = [0, 0, 0]
 
-            y_values = run.carm_eq(ai, values[cache_levels.index(cache_level)], values[5])
-            y_special = run.carm_eq(0.00390625, values[cache_levels.index(cache_level)], values[5])
+            y_values = run.carm_eq(ai, values[cache_levels.index(cache_level)], peak_flops)
+            y_special = run.carm_eq(0.00390625, values[cache_levels.index(cache_level)], peak_flops)
 
             #Find the point where y_values stops increasing or reaches a plateau
             for i in range(1, len(y_values)):
@@ -255,13 +259,16 @@ def plot_roofline(values, dots, name_suffix, ISA, line_legend, line_size, line_l
             legend_text = f'FP {values[6].upper()} {ISA.upper()}  Peak: {values[4]} GFLOP/s'
         else:
             legend_text = f'{values[6].upper()} {ISA.upper()}'
-
+        if values[5] == 0:
+            linedash = 'solid'
+        else:
+            linedash = 'dashdot'
         trace_inst = go.Scatter(
             x=aidots, y=gflopdots,
             mode='lines',
             text=[f'FP {ISA.upper()} {values[6].upper()} Peak Performance: {values[4]} GFLOP/s',f'FP {ISA.upper()} {values[6].upper()} Peak: {values[4]} GFLOP/s'],
             hovertemplate='<b>%{text}</b><br>(%{x}, %{y})<br><extra></extra>',
-            line=dict(color=color_inst, dash="dashdot", width=line_size),
+            line=dict(color=color_inst, dash=linedash, width=line_size),
             name=legend_text,
             showlegend=line_legend,
         )
@@ -390,7 +397,7 @@ def draw_annotation(values, lines, name_suffix, ISA, cache_level, graph_width, g
         annotation = go.layout.Annotation(
             x=math.log10(mid_ai),
             y=math.log10(mid_gflops),
-            text=f'FP {ISA} Peak: {values[4]} GFLOP/s',
+            text=f'FP {values[6].upper()} {ISA} Peak: {values[4]} GFLOP/s',
             showarrow=False,
             font=dict(
                 color=colors[0],

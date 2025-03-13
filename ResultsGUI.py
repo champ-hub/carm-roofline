@@ -265,7 +265,7 @@ sidebar2 = dbc.Offcanvas(
             ], title="Change Graph/Line/Font Sizes", style={"alignItems": "center"}
             ),
 
-        ],id='font-accordion', start_collapsed=False, always_open=True, flush=True, style={'backgroundColor': '#1a1a1a', "alignItems": "center"}, className="mb-2"
+        ],id='font-accordion', start_collapsed=True, always_open=True, flush=True, style={'backgroundColor': '#1a1a1a', "alignItems": "center"}, className="mb-2"
         ),
         dbc.Button("Edit Graph Text", id="button-CARM-edit", className="mb-2", style={'width': '100%'}, n_clicks=1),
         html.P("Notations Configuration", className="mb-2", 
@@ -1375,13 +1375,13 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
                 bandwidth = float((memory_bytes * 8) / exec_time)
 
                 print("\n---------DBI RESULTS-----------")
-                print("Total FP operations:", run.custom_round(fp_ops))
-                print("Total memory bytes:", run.custom_round(memory_bytes))
+                print("Total FP operations:", ut.custom_round(fp_ops))
+                print("Total memory bytes:", ut.custom_round(memory_bytes))
 
-                print("\nExecution time (seconds):", run.custom_round(time_taken_seconds))
-                print("GFLOP/s:", run.custom_round(gflops))
-                print("Bandwidth (GB/s): " + str(run.custom_round(bandwidth)))
-                print("Arithmetic Intensity:", run.custom_round(ai))
+                print("\nExecution time (seconds):", ut.custom_round(time_taken_seconds))
+                print("GFLOP/s:", ut.custom_round(gflops))
+                print("Bandwidth (GB/s): " + str(ut.custom_round(bandwidth)))
+                print("Arithmetic Intensity:", ut.custom_round(ai))
                 print("------------------------------")
 
                 ct = datetime.datetime.now()
@@ -1413,14 +1413,14 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
                 bandwidth = float((memory_bytes) / total_time_nsec)
 
                 print("\n---------PMU RESULTS-----------")
-                print("Total FP Operations:", run.custom_round(total_fp))
-                print("Calculated Total Memory Bytes:", run.custom_round(memory_bytes))
-                print("SP FLOP Ratio: " + str(run.custom_round(sp_ratio)) + " DP FLOP Ration: " + str(run.custom_round(dp_ratio)))
+                print("Total FP Operations:", ut.custom_round(total_fp))
+                print("Calculated Total Memory Bytes:", ut.custom_round(memory_bytes))
+                print("SP FLOP Ratio: " + str(ut.custom_round(sp_ratio)) + " DP FLOP Ration: " + str(ut.custom_round(dp_ratio)))
                 print("Threads Used:", thread_count)
-                print("\nExecution Time (seconds):",np.format_float_positional(run.custom_round(time_taken_seconds), trim='-'))
-                print("GFLOP/s: " + str(run.custom_round(gflops)))
-                print("Bandwidth (GB/s): " + str(run.custom_round(bandwidth)))
-                print("Arithmetic Intensity:", run.custom_round(ai))
+                print("\nExecution Time (seconds):",np.format_float_positional(ut.custom_round(time_taken_seconds), trim='-'))
+                print("GFLOP/s: " + str(ut.custom_round(gflops)))
+                print("Bandwidth (GB/s): " + str(ut.custom_round(bandwidth)))
+                print("Arithmetic Intensity:", ut.custom_round(ai))
                 print("------------------------------")
 
                 ct = datetime.datetime.now()
@@ -1572,9 +1572,10 @@ def execute_script1(n, name, l1_size, l2_size, l3_size, thread_set, interleaved,
     tl1 = 1
     tl2 = 2
     plot = 0
+    l3_bytes = 0
     
     try:
-        run.run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, thread_set, interleaved, num_ops, int(dram_bytes), dram_auto, test_type, verbose, set_freq, measure_freq, VLEN, tl1, tl2, plot, 1, "./carm_results")
+        run.run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, thread_set, interleaved, num_ops, l3_bytes, int(dram_bytes), dram_auto, test_type, verbose, set_freq, measure_freq, VLEN, tl1, tl2, plot, 1, "./carm_results")
     except Exception as e:
         print("Task was interrupted:", e)
     return no_update

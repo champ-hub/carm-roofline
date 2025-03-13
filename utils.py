@@ -1,5 +1,6 @@
 import os
 import math
+from decimal import Decimal
 
 CONFIG_FILE = "./config/auto_config/config.txt"
 
@@ -40,3 +41,29 @@ def ensure_list(marker_dict, attr_name, default_value, n_points):
             return val
         else:
             return [val] * n_points
+
+def custom_round(value, digits=4):
+    if value == 0:
+        return 0  #Directly return 0 if the value is 0
+    elif abs(value) >= 1:
+        #For numbers greater than or equal to 1, round normally
+        return round(value, digits)
+    else:
+        #For numbers less than 1, find the position of the first non-zero digit after the decimal
+        dec_val = Decimal(str(value))
+        str_val = format(dec_val, 'f')
+        if 'e' in str_val or 'E' in str_val:  #Check for scientific notation
+            return round(value, digits)
+        
+        #Count positions until first non-zero digit after the decimal
+        decimal_part = str_val.split('.')[1]
+        leading_zeros = 0
+        for char in decimal_part:
+            if char == '0':
+                leading_zeros += 1
+            else:
+                break
+        
+        #Adjust the number of digits based on the position of the first significant digit
+        total_digits = digits + leading_zeros
+        return round(value, total_digits)

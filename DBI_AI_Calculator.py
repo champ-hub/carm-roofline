@@ -14,7 +14,7 @@ import sys
 import platform
 import csv
 
-import run
+import utils as ut
 
 #FP OPERATIONS
 x86_Scalar_fp_operations = {
@@ -1021,10 +1021,10 @@ def update_csv(machine, executable_path, exec_flops, exec_ai, bandwidth, time, n
         isa,
         precision,
         threads,
-        run.custom_round(exec_ai),
-        run.custom_round(exec_flops),
-        run.custom_round(bandwidth),
-        run.custom_round(time)
+        ut.custom_round(exec_ai),
+        ut.custom_round(exec_flops),
+        ut.custom_round(bandwidth),
+        ut.custom_round(time)
     ]
 
     headers = ['Date', 'Method', 'Name', 'ISA', 'Precision', 'Threads', 'AI', 'Gflops', 'Bandwidth', 'Time']
@@ -1117,15 +1117,15 @@ if __name__ == "__main__":
     bandwidth = float((memory_bytes) / exec_time)
 
     print("\n---------DBI RESULTS-----------")
-    print("Total FP operations:", run.custom_round(fp_ops))
-    print("Total memory bytes:", run.custom_round(memory_bytes))
+    print("Total FP operations:", ut.custom_round(fp_ops))
+    print("Total memory bytes:", ut.custom_round(memory_bytes))
     if (not args.sde):
-        print("Total integer operations:", run.custom_round(integer_ops))
+        print("Total integer operations:", ut.custom_round(integer_ops))
 
-    print("\nExecution time (seconds):", run.custom_round(time_taken_seconds))
-    print("GFLOP/s:", run.custom_round(gflops))
-    print("Bandwidth (GB/s): " + str(run.custom_round(bandwidth)))
-    print("Arithmetic Intensity:", run.custom_round(ai))
+    print("\nExecution time (seconds):", ut.custom_round(time_taken_seconds))
+    print("GFLOP/s:", ut.custom_round(gflops))
+    print("Bandwidth (GB/s): " + str(ut.custom_round(bandwidth)))
+    print("Arithmetic Intensity:", ut.custom_round(ai))
     print("------------------------------")
 
     ct = datetime.datetime.now()
