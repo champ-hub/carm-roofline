@@ -104,7 +104,7 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
             print("L1 cache size:", auto_args[4], "KB" + (f" (Warning: User specified: {l1_size} KB)" if l1_size > 0 and l1_size != auto_args[4] else ""))
             print("L2 cache size:", auto_args[5], "KB" + (f" (Warning: User specified: {l2_size} KB)" if l2_size > 0 and l2_size != auto_args[5] else ""))
             print("L3 cache size:", auto_args[6], "KB" + (f" (Warning: User specified: {l3_size} KB)" if l3_size > 0 and l3_size != auto_args[6] else ""))
-        #uses cache sizes from probing if not present in config file
+        #uses cache sizes from probing if not present in config file or arguments
         if (l1_size == 0):
             l1_size = auto_args[4]
         if (l2_size == 0):
@@ -492,18 +492,26 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
            
 
                 #Calculate number of repetitions for each test
+                #L1 Reps
                 if (l1_size > 0) and test_type in ["L1", "roofline"]:
                     num_reps["L1"] = int(int(l1_size)*1024/(tl1*2*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
                     test_size["L1"] = (int(l1_size))/(tl1*2)
                 elif test_type in ["L1", "roofline"]:
-                    print("WARNING: No L1 Size Found, you can use the -l1 <l1_size> argument, or a configuration file to specify it.")
-
+                    print("ERROR: No L1 Size Found, you can use the -l1 <l1_size> argument, or a configuration file to specify it.")
+                    return
+                #L2 Reps
                 if (l2_size > 0) and test_type in ["L2", "roofline"]:
                     num_reps["L2"] = int(int(1024*int(l2_size)/tl2)/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
                     test_size["L2"] = int(int(l2_size)/tl2)
-                elif test_type in ["L2", "roofline"]:
+                elif test_type  == "roofline"  and verbose > 0:
                     print("WARNING: No L2 Size Found, you can use the -l2 <l2_size> argument, or a configuration file to specify it.")
-
+                elif test_type  == "L2":
+                    print("ERROR: No L2 Size Found, you can use the -l2 <l2_size> argument, or a configuration file to specify it.")
+                    return
+                #L3 Reps
+                if l3_size == 0 and test_type == "L3":
+                    print("ERROR: No L3 Size Found, you can use the -l3 <l3_size> argument, or a configuration file to specify it.")
+                    return
                 if l3_bytes > 0 and test_type in ["L3", "roofline"]:
                     num_reps["L3"] = l3_bytes*1024/(threads*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL)
                     test_size["L3"] = int(l3_bytes/(threads))
@@ -513,15 +521,15 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                 elif test_type in ["L3", "roofline"]:
                     num_reps["L3"] = int(1024*(int(l2_size*1.2))/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
                     test_size["L3"] = int(l2_size*1.2)
-                    if verbose > 0:
+                    if verbose > 0 and l3_size > 0:
                         print("WARNING: L3 size insuficient to give each thread a memory slice significantly larger than L2 without exceeding L3 size.\n"
                         "For a more detailed memory analysis run '--test MEM' to identify the most appropriate size for the L3 test.\n"
                         "Then use the argument '--l3_kbytes <test_size>' to enforce a custom test size")
-                if l3_size == 0 and test_type in ["L3", "roofline"] and verbose > 0:
+                if l3_size == 0 and test_type == "roofline" and verbose > 0:
                     print("WARNING: No L3 Size Found, you can use the -l3 <l3_size> argument, or a configuration file to specify it.")
                 if l3_size > 0 and test_type in ["L3", "roofline"] and verbose > 3:
-                    print(f"Total L3 Test Size: {test_size["L3"]*threads}Kb | L3 Size: {l3_size}kb | L3 Test Size per Thread: {test_size["L3"]}Kb | L2 Size: {l2_size}Kb")
-
+                    print(f"Total L3 Test Size: {test_size['L3']*threads}Kb | L3 Size: {l3_size}kb | L3 Test Size per Thread: {test_size['L3']}Kb | L2 Size: {l2_size}Kb")
+                #DRAM Reps
                 if (dram_auto and l3_size > 0 and dram_bytes/(threads) < (l3_size*2) and test_type in ["DRAM", "roofline"]):
                     num_reps["DRAM"] = int((int(l3_size)*2)*1024/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
                     test_size["DRAM"] = int((int(l3_size)*2))
@@ -807,9 +815,6 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                     print("Using the Following Precisions:", precision_set)
                 if verbose > 0:
                     print(f"Now Testing Memory with: {threads} {'Thread' if threads == 1 else 'Threads'} using {isa} with {precision}")
-                if verbose == 4:
-                    print("-------------------------------------------------")
-                    print("Debug output:")
                 
                 if VLEN_aux > 1 and precision == "dp":
                     VLEN = VLEN_aux
@@ -834,6 +839,10 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                     make_verb_flag = ""
                 else:
                     make_verb_flag = "-s"
+
+                if verbose == 4:
+                    print("-------------------------------------------------")
+                    print("Debug output:")
         
                 os.system(f"make {make_verb_flag} -C {script_dir} clean && make {make_verb_flag} -C {script_dir} isa={isa}")
 
@@ -901,8 +910,8 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                     if 1 < verbose < 4:
                         print("-------------------------------------------------")
 
-                if(os.path.isdir('Results') == False):
-                    os.mkdir('Results')
+                if(os.path.isdir('carm_results') == False):
+                    os.mkdir('carm_results')
                 if(os.path.isdir('carm_results/memory_curve') == False):
                     os.mkdir('carm_results/memory_curve')
 
@@ -1030,9 +1039,7 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                     print("Using the Following Precisions:", precision_set)
                 if verbose > 0:
                     print(f"Now Testing {test_type[0].upper()}{test_type[1:]} with: {threads} {'Thread' if threads == 1 else 'Threads'} using {isa} with {precision}")
-                if verbose == 4:
-                    print("-------------------------------------------------")
-                    print("Debug output:")
+                
 
                 
                 dram_bytes = dram_bytes_aux
@@ -1052,12 +1059,6 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                 elif verbose > 2 and isa in ["sve"]:
                     print("VLEN IS:", VLEN)
                 
-                if verbose > 3:
-                    make_verb_flag = ""
-                else:
-                    make_verb_flag = "-s"
-        
-                os.system(f"make {make_verb_flag} -C {script_dir} clean && make {make_verb_flag} -C {script_dir} isa={isa}")
                 if test_type == "mixedL1":
                     if l1_size > 0:
                         num_reps = int(int(l1_size)*1024/(tl1*2*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
@@ -1069,10 +1070,13 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                     if l2_size > 0:
                         num_reps = int(1024*int(l2_size)/tl2)/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL)
                         test_size = int(int(l2_size)/tl2)
-                    elif verbose > 0:
-                        print("WARNING: No L2 Size Found, you can use the -l2 <l2_size> argument, or a configuration file to specify it.")
+                    else:
+                        print("ERROR: No L2 Size Found, you can use the -l2 <l2_size> argument, or a configuration file to specify it.")
                         return
                 elif test_type == "mixedL3":
+                    if l3_size == 0:
+                        print("ERROR: No L3 Size Found, you can use the -l3 <l3_size> argument, or a configuration file to specify it.")
+                        return
                     if l3_bytes > 0:
                         num_reps = l3_bytes*1024/(threads*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL)
                         test_size = int(l3_bytes/(threads))
@@ -1086,12 +1090,11 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                             print("WARNING: L3 size insuficient to give each thread a memory slice significantly larger than L2 without exceeding L3 size.\n"
                             "For a more detailed memory analysis run '--test MEM' to identify the most appropriate size for the L3 test.\n"
                             "Then use the argument '--l3_kbytes <test_size>' to enforce a custom test size")
-                    if l3_size == 0 and verbose > 0:
-                        print("WARNING: No L3 Size Found, you can use the -l3 <l3_size> argument, or a configuration file to specify it.")
-                    elif verbose > 2:
+                    
+                    if verbose > 3:
                         print(f"Total L3 Test Size: {test_size*threads}Kb | L3 Size: {l3_size}kb | L3 Test Size per Thread: {test_size}Kb | L2 Size: {l2_size}Kb")
                 elif test_type == "mixedDRAM":
-                    if (dram_auto) and ((int(dram_bytes)/threads) < (int(l3_size)*2)):
+                    if (dram_auto) and l3_size > 0 and ((int(dram_bytes)/threads) < (int(l3_size)*2)):
                         num_reps = int((int(l3_size)*2)*1024/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
                         test_size = int((int(l3_size)*2))
                         dram_bytes = int(l3_size)*2*threads
@@ -1102,7 +1105,7 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                         if int(test_size) <= int(l3_size) and verbose > 0:
                             print("WARNING: DRAM test size per thread is not sufficient to guarantee best results, to guarantee best results consider changing the default test size.")
                             print("By using --dram_bytes", int(l3_size)*2*int(threads), "(", ut.custom_round(float((int(l3_size)*2*int(threads))/1048576)), "Gb) the minimum test size necessary for", threads, "threads is achieved, using the --dram_auto flag will automatically apply this adjustement.")
-                    if verbose > 2:
+                    if verbose > 3:
                         print("DRAM Test Size per Thread:", test_size, "Kb | L3 Size:", l3_size, "Kb | Total DRAM Test Size:", ut.custom_round(float((test_size*threads)/1048576)), "Gb")
 
                 if inst == "fma":
@@ -1110,6 +1113,16 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                 else:
                     FP_factor = 1
 
+                if verbose > 3:
+                    make_verb_flag = ""
+                else:
+                    make_verb_flag = "-s"
+
+                if verbose == 4:
+                    print("-------------------------------------------------")
+                    print("Debug output:")
+
+                os.system(f"make {make_verb_flag} -C {script_dir} clean && make {make_verb_flag} -C {script_dir} isa={isa}")
                 os.system(str(bench_ex) + " -test MIXED -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -num_FP " + str(num_fp) + " -op " + inst + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose))
 
                 if(interleaved):
