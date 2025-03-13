@@ -1183,7 +1183,7 @@ def main():
     parser.add_argument('--freq', default='2.0', nargs='?', type = float, help='Expected/Desired CPU frequency during test (if no_freq_measure or set_freq is enabled)')
     parser.add_argument('--set_freq',  dest='set_freq', action='store_const', const=1, default=0, help='Set Processor frequency to indicated one (x86 only, might require admin priviliges and might not work for certain systems)')
     parser.add_argument('--name', default='unnamed', nargs='?', type = str, help='Name for results file (if not using config file)')
-    parser.add_argument('-v', '--verbose', default=3, nargs='?', type = int, choices=[0, 1, 2, 3, 4], help='Level of terminal output (0 -> No Output 1 -> Only ISA/Configuration Errors and Test Specifications, 2 -> Test Results, 3 -> Configuration Values Selected/Detected, 4 -> Debug Output)')
+    parser.add_argument('-v', '--verbose', default=3, nargs='?', type = int, choices=[0, 1, 2, 3, 4], help='Level of terminal output details (0 -> No Output 1 -> Only ISA/Configuration Errors and Test Specifications, 2 -> Test Results, 3 -> Configuration Values Selected/Detected, 4 -> Debug Output)')
     parser.add_argument('--inst', default='add', nargs='?', choices=['add', 'mul', 'div', 'fma'], help='FP Instruction (Default: add), FMA performance is measured by default too.')
     parser.add_argument('-vl', '--vector_length',  default=1, nargs='?', type=positive_int, help='Vector Length in double-precision elements for RVV configuration (Default: 1)')
     parser.add_argument('-vlmul', '--vector_lmul', default=1, nargs='?', type = int, choices=[1, 2, 4, 8], help='Vector Register Grouping for RVV configuration (Default: 1)')
