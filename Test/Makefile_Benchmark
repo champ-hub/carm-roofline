@@ -21,4 +21,5 @@ else
 endif
 
 all:
+	mkdir -p ../bin
 	$(COMPILER) $(CFLAGS) main_test.c $(ASSEMBLY_FILE) -o ../bin/test -lm -Wno-unused-variable -Wno-unused-parameter

@@ -4,7 +4,7 @@
 //																					CREATE FP TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void create_benchmark_flops(char * op, char * precision, int long long fp, int Vlen, int LMUL){
+void create_benchmark_flops(char * op, char * precision, int long long fp, int Vlen, int LMUL, int verbose){
 	
 	int flops, check;
 	char * assembly_op_flops_1, * assembly_op_flops_2, * registr;
@@ -25,12 +25,19 @@ void create_benchmark_flops(char * op, char * precision, int long long fp, int V
 	if(strcmp(op,"mad") == 0) free(assembly_op_flops_2);
 
 	char cmd[8192];
+	const char *silence_flag;
+
+	if (verbose > 3){
+		silence_flag = "";
+	}else{
+		silence_flag = "-s";
+	}
 	#if defined (AVX512)
 		snprintf(cmd, sizeof(cmd), 
-		"make isa=avx512 -C %s/../Test -f Makefile_Benchmark", PROJECT_DIR);
+		"make %s isa=avx512 -C %s/../Test -f Makefile_Benchmark", silence_flag, PROJECT_DIR);
 	#else
 		snprintf(cmd, sizeof(cmd), 
-         "make -C %s/../Test -f Makefile_Benchmark", PROJECT_DIR);
+         "make %s -C %s/../Test -f Makefile_Benchmark", silence_flag, PROJECT_DIR);
 	#endif
 
 	check = system(cmd);
@@ -43,7 +50,7 @@ void create_benchmark_flops(char * op, char * precision, int long long fp, int V
 //																					CREATE MEM TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * precision, int Vlen, int LMUL){
+void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * precision, int Vlen, int LMUL, int verbose){
 	
 	char * assembly_op, * assembly_op_2, * registr;
 	int align, ops, check;
@@ -59,12 +66,19 @@ void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * 
 	free(assembly_op);
 	
 	char cmd[8192];
+	const char *silence_flag;
+
+	if (verbose > 3){
+		silence_flag = "";
+	}else{
+		silence_flag = "-s";
+	}
 	#if defined (AVX512)
 		snprintf(cmd, sizeof(cmd), 
-		"make isa=avx512 -C %s/../Test -f Makefile_Benchmark", PROJECT_DIR);
+		"make %s isa=avx512 -C %s/../Test -f Makefile_Benchmark", silence_flag, PROJECT_DIR);
 	#else
 		snprintf(cmd, sizeof(cmd), 
-         "make -C %s/../Test -f Makefile_Benchmark", PROJECT_DIR);
+         "make %s -C %s/../Test -f Makefile_Benchmark", silence_flag, PROJECT_DIR);
 	#endif
 
 	check = system(cmd);
@@ -77,7 +91,7 @@ void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * 
 //																					CREATE MIXED TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void create_benchmark_mixed(char * op, int long long num_rep, int num_ld, int num_st, int num_fp, char * precision, int Vlen, int LMUL){
+void create_benchmark_mixed(char * op, int long long num_rep, int num_ld, int num_st, int num_fp, char * precision, int Vlen, int LMUL, int verbose){
 	
 	char * assembly_op, * assembly_op_2, * registr;
 	int align, ops, check;
@@ -105,12 +119,19 @@ void create_benchmark_mixed(char * op, int long long num_rep, int num_ld, int nu
 	free(assembly_op);
 	
 	char cmd[8192];
+	const char *silence_flag;
+
+	if (verbose > 3){
+		silence_flag = "";
+	}else{
+		silence_flag = "-s";
+	}
 	#if defined (AVX512)
 		snprintf(cmd, sizeof(cmd), 
-		"make isa=avx512 -C %s/../Test -f Makefile_Benchmark", PROJECT_DIR);
+		"make %s isa=avx512 -C %s/../Test -f Makefile_Benchmark", silence_flag, PROJECT_DIR);
 	#else
 		snprintf(cmd, sizeof(cmd), 
-         "make -C %s/../Test -f Makefile_Benchmark", PROJECT_DIR);
+         "make %s -C %s/../Test -f Makefile_Benchmark", silence_flag, PROJECT_DIR);
 	#endif
 
 	check = system(cmd);
