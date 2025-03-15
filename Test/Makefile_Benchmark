@@ -11,11 +11,22 @@ ifeq ($(arch), x86_64)
 	CFLAGS += -march=native
 else ifeq ($(arch),aarch64)
 	ASSEMBLY_FILE = CoreClockCheckerARM.s
-	CFLAGS += -march=armv8-a+sve
+	ifeq ($(isa),sve)
+		CFLAGS += -march=armv8-a+sve
+	endif
 else ifeq ($(arch),riscv64)
-	ASSEMBLY_FILE = CoreClockCheckerRISCV.s
-	CFLAGS += -march=rv64g
+	ifeq ($(isa),rvv1.0)
+		CFLAGS += -march=rv64gcv
+	endif
+	ifeq ($(isa),rvv0.7)
+		CFLAGS += -march=rv64gcv0p7
+	endif
 #CFLAGS += -march=rv64gcv0p7 -menable-experimental-extensions
+	ifeq ($(isa),riscvscalar)
+		CFLAGS += -march=rv64g
+	endif
+	ASSEMBLY_FILE = CoreClockCheckerRISCV.s
+
 else
     $(error Unsupported architecture: $(arch))
 endif

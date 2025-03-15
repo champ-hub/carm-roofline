@@ -18,8 +18,7 @@ import sys
 import DBI_AI_Calculator
 import utils as ut
 
-riscv_vector_compiler_path = "gcc"
-SVE_compiler_path = "gcc"
+rvv_SVE_compiler_path = "gcc"
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 bench_ex = os.path.join(script_dir, 'Bench', 'Bench')
@@ -71,7 +70,8 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
 
             for item in isa_set:
                 if item in other_ISAs:
-                    print("WARNING: Selected ISA " + item + " was detected and removed since it is not supported by " + CPU_Type + " architectures.")
+                    if (verbose > 0):
+                        print("WARNING: Selected ISA " + item + " was detected and removed since it is not supported by " + CPU_Type + " architectures.")
                 else:
                     supported_isas.append(item)
             isa_set = supported_isas
@@ -80,16 +80,19 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
             for isa in isa_set:
                 #If user defines ISA, check support on the machine
                 if(isa == "avx512" and auto_args[0] != "avx512"):
-                    print("AVX512 not supported on this machine.")
+                    if (verbose > 0):
+                        print("WARNING: AVX512 not supported on this machine.")
                     continue
                 if((isa == "avx2" or isa == "avx") and auto_args[0] == "avx512" and auto_args[1] == "avx2"):
                     #To use more registers with avx2
                     isa = "avx2"
                 if ((isa == "avx2" or isa == "avx") and auto_args[1] != "avx2"):
-                    print("AVX2 not supported on this machine.")
+                    if (verbose > 0):
+                        print("WARNING: AVX2 not supported on this machine.")
                     continue
                 if (isa == "sse" and auto_args[2] != "sse"):
-                    print("SSE not supported on this machine.")
+                    if (verbose > 0):
+                        print("WARNING: SSE not supported on this machine.")
                     continue
                 supported_isas.append(isa)
             #If no ISA specified is valid, default to Scalar
@@ -113,59 +116,139 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
             l3_size = auto_args[6]
 
         if VLEN != 1:
-            print("WARNING: --vector_length (-vlen) argument is only used for RVV benchmarks.")
+            if (verbose > 0):
+                print("WARNING: --vector_length (-vl) argument is only used for RVV benchmarks.")
             VLEN = 1
         if LMUL != 1:
-            print("WARNING: --vector_lmul (-vlmul) argument is only used for RVV benchmarks.")
+            if (verbose > 0):
+                print("WARNING: --vector_lmul (-vlmul) argument is only used for RVV benchmarks.")
             LMUL = 1
         
         return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
 
     elif CPU_Type == "aarch64":
+        auto_args = autoconf(freq*1000000, set_freq)
         #if we have an ARM CPU
         supported_isas = []
-
         for item in isa_set:
             if item in ["sse", "avx2", "avx512", "rvv1.0", "rvv0.7", "riscvscalar"]:
-                print("WARNING: Selected ISA " + item + " was detected and removed since it is not supported by " + CPU_Type + " architectures.")
+                if (verbose > 0):
+                    print("WARNING: Selected ISA " + item + " was detected and removed since it is not supported by " + CPU_Type + " architectures.")
             else:
                 supported_isas.append(item)
+        if LMUL != 1:
+            if (verbose > 0):
+                print("WARNING: --vector_lmul (-vlmul) argument is only used for RVV benchmarks.")
+            LMUL = 1
+        if (verbose > 2):
+            print("-----------------CPU INFORMATION-----------------")
+            print("CPU ISA: ARM")
         isa_set = supported_isas
         if len(isa_set) == 0:
             isa_set.append("auto")
-
-        if VLEN != 1:
-            print("WARNING: --vector_length (-vlen) argument is only used for RVV benchmarks.")
-            VLEN = 1
-        if LMUL != 1:
-            print("WARNING: --vector_lmul (-vlmul) argument is only used for RVV benchmarks.")
-            LMUL = 1
-        isa_set = ["armscalar" if x == "scalar" else x for x in isa_set]
-
-        if (isa_set[0] == "auto" or "sve" in isa_set):
-            subprocess.run([SVE_compiler_path, "-o", "./config/auto_config/SVE_Vector", "./config/auto_config/SVE_Vector.c", "-march=armv8-a+sve"])
-            result = subprocess.run(["./config/auto_config/SVE_Vector"], stdout=subprocess.PIPE)
-            VLEN_Check = int(result.stdout.decode('utf-8'))
-            VLEN = (VLEN_Check/8)
-
-            print("SVE Vector with " + str(VLEN) + " elements (dp).")
-
-            if (isa_set[0] == "auto"):
-                isa_set[0] = "sve"
+        #If in auto mode
+        if (isa_set[0] == "auto"):
+            #If Neon is supported we move on to SVE check
+            if (auto_args[0]=="neon"):
                 isa_set.append("neon")
                 isa_set.append("armscalar")
-            elif not "sve" in isa_set:
-                isa_set.append("sve")
+            #If Neon is not supported we switch to scalar
+            else:
+                isa_set[0] = "armscalar"
+                if (verbose > 2):
+                    print("No Vector Instruction ISAs Supported")
+                if VLEN != 1:
+                    if (verbose > 0):
+                        print("WARNING: --vector_length (-vl) argument is only used for SVE benchmarks.")
+                VLEN = 1
+                return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
+        #If user specified an ISA
+        else:
+            #If there is no NEON support, then there is also no SVE support, switch to scalar
+            if (auto_args[0]!="neon"):
+                if (verbose > 0):
+                    if ("neon" in isa_set):
+                        print("WARNING: NEON not supported on this machine.")
+                    if ("sve" in isa_set):
+                        print("WARNING: SVE not supported on this machined")
+                isa_set.clear()
+                isa_set.append("armscalar")
+                if (verbose > 2):
+                    print("No Vector Instruction ISAs Supported")
+                if VLEN != 1:
+                    if (verbose > 0):
+                        print("WARNING: --vector_length (-vl) argument is only used for SVE benchmarks.")
+                VLEN = 1
+                return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
 
+        isa_set = ["armscalar" if x == "scalar" else x for x in isa_set]
+
+        #Now we check for SVE
+        sve_source = os.path.join(config_dir, 'SVE_Vector.c')
+        sve_ex = os.path.join(config_dir, 'SVE_Vector')
+        try:
+            subprocess.run([rvv_SVE_compiler_path, "-o", sve_ex, sve_source, "-march=armv8-a+sve"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError as e:
+            print("SVE Compiler Error Output:", e.stderr.decode("utf-8"))
+        if not os.path.exists(sve_ex):
+            if (verbose > 2):
+                print("Vector Instruction ISAs Supported: NEON")
+            if "sve" in isa_set:
+                if (verbose>0):
+                    print("WARNING: Compilation of SVE vector length detection program failed please check your compiler support.\n"
+                "Compiler used: ", rvv_SVE_compiler_path)
+                isa_set.remove("sve")
+            if VLEN != 1:
+                if (verbose > 0):
+                    print("WARNING: --vector_length (-vl) argument is only used for SVE benchmarks.")
+            VLEN = 1
+            if "auto" in isa_set:
+                isa_set.remove("auto")
             return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
-        return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
+        else:
+            try:
+                result = subprocess.run([sve_ex], stdout=subprocess.PIPE)
+            except subprocess.CalledProcessError as e:
+                print("SVE Execution Error Output:", e.stderr.decode("utf-8"))
+
+            VLEN_Check = int(result.stdout.decode('utf-8'))
+            os.remove(sve_ex)
+            if (verbose > 2):
+                print("Vector Instruction ISAs Supported: NEON SVE")
+            
+            if VLEN < VLEN_Check:
+                if VLEN == 1:
+                    VLEN = VLEN_Check
+            else:
+                if verbose > 0:
+                    print("WARNING: Requested SVE Vector Length Not Supported")
+            VLEN = VLEN_Check
+            if verbose > 0:
+                print("WARNING: Custom SVE Vector Length Not Supported")
+            if (verbose > 2):
+                if "dp" in precision:
+                    print("Maximum vector size allows " + str(VLEN_Check) + " double precision elements.")
+                if "sp" in precision:
+                    print("Maximum vector size allows " + str(VLEN_Check*2) + " single precision elements.")
+            if isa_set[0] == "auto":
+                isa_set.clear()
+                isa_set.append("sve")
+                isa_set.append("neon")
+                isa_set.append("armscalar")
+                
+            return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
+        
     elif CPU_Type == "riscv64":
         #if we have a RISCV CPU
         supported_isas = []
+        if (verbose > 2):
+            print("-----------------CPU INFORMATION-----------------")
+            print("CPU ISA: RISC-V")
 
         for item in isa_set:
-            if item in ["neon", "armscalar", "sse", "avx2", "avx512"]:
-                print("WARNING: Selected ISA " + item + " was detected and removed since it is not supported by " + CPU_Type + " architectures.")
+            if item in ["sve", "neon", "armscalar", "sse", "avx2", "avx512"]:
+                if (verbose > 0):
+                    print("WARNING: Selected ISA " + item + " was detected and removed since it is not supported by " + CPU_Type + " architectures.")
             else:
                 supported_isas.append(item)
         isa_set = supported_isas
@@ -174,44 +257,138 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
         
         isa_set = ["riscvscalar" if x == "scalar" else x for x in isa_set]
         if (isa_set[0] == "auto" or "rvv0.7" in isa_set or "rvv1.0" in isa_set):
-            rvv_source = os.path.join(config_dir, 'RISCV_Vector.c')
-            rvv_ex = os.path.join(config_dir, 'RISCV_Vector')
-            if "rvv0.7" in isa_set:
-                subprocess.run([riscv_vector_compiler_path, "-o", rvv_ex, rvv_source, "-march=rv64gcv0p7"])
+            rvv07_source = os.path.join(config_dir, 'RISCV07_Vector.c')
+            rvv10_source = os.path.join(config_dir, 'RISCV10_Vector.c')
+            rvv07_ex = os.path.join(config_dir, 'RISCV07_Vector')
+            rvv10_ex = os.path.join(config_dir, 'RISCV10_Vector')
+            rvv10_compilation = True
+            rvv07_compilation = True
+            rvv10_execution = True
+            rvv07_execution = True
+
+            #Check if RVV1.0 compilation works
+            try:
+                subprocess.run([rvv_SVE_compiler_path, "-o", rvv10_ex, rvv10_source, "-march=rv64gcv"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            except subprocess.CalledProcessError as e:
+                print("RVV1.0 Compiler Error Output:", e.stderr.decode("utf-8"))
+            if not os.path.exists(rvv10_ex):
+                rvv10_compilation = False
+                rvv10_execution = False
+                if "rvv1.0" in isa_set:
+                    if (verbose>0):
+                        print("WARNING: Compilation of RVV vector length detection program failed for RVV1.0, please check your compiler support.\n"
+                    "Compiler used: ", rvv_SVE_compiler_path)
+                    isa_set.clear()
+                    isa_set.append("riscvscalar")
+                    VLEN = LMUL = 1
+                    return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
+ 
+            #Check if RVV0.7 compilation works
+            try:
+                subprocess.run([rvv_SVE_compiler_path, "-o", rvv07_ex, rvv07_source, "-march=rv64gcv0p7"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
                 #For Clang -menable-experimental-extensions is sometimes needed
                 #subprocess.run([riscv_vector_compiler_path, "-o", rvv_ex, rvv_source, "-march=rv64gcv0p7", "-menable-experimental-extensions"])
-            elif "rvv1.0" in isa_set:
-                subprocess.run([riscv_vector_compiler_path, "-o", rvv_ex, rvv_source, "-march=rv64gcv"])
-            result = subprocess.run([rvv_ex, "dp"], stdout=subprocess.PIPE)
+            except subprocess.CalledProcessError as e:
+                print("RVV0.7 Compiler Error Output:", e.stderr.decode("utf-8"))
+            if not os.path.exists(rvv07_ex):
+                rvv07_compilation = False
+                rvv07_execution = False
+                if "rvv0.7" in isa_set:
+                    if (verbose>0):
+                        print("WARNING: Compilation of RVV vector length detection program failed for RVV0.7, please check your compiler support.\n"
+                    "Compiler used: ", rvv_SVE_compiler_path)
+                    isa_set.clear()
+                    isa_set.append("riscvscalar")
+                    VLEN = LMUL = 1
+                    return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
+            #If both RVV1.0 and RVV0.7 compilation fail, go for scalar
+            if not rvv10_compilation and not rvv07_compilation:
+                isa_set.clear()
+                isa_set.append("riscvscalar")
+                VLEN = LMUL = 1
+                if (verbose>0):
+                    print("WARNING: Compilation of RVV vector length detection program failed for both RVV0.7 and RVV1.0, please check your compiler support.\n"
+                    "Compiler used: ", rvv_SVE_compiler_path)
+                return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
+            
+            #Check if execution with RVV1.0 works
+            if ("rvv1.0" in isa_set or "auto" in isa_set) and rvv10_compilation:
+                try:
+                    result = subprocess.run([rvv10_ex], stdout=subprocess.PIPE)
+                except subprocess.CalledProcessError as e:
+                    print("RVV1.0 Execution Error Output:", e.stderr.decode("utf-8"))
+                    rvv10_execution = False
+                    if "auto" not in isa_set:
+                        if (verbose>0):
+                            print("WARNING: Execution of RVV vector length program failed for RVV1.0, please check your CPU RVV support.")
+                        isa_set.clear()
+                        isa_set.append("riscvscalar")
+                        VLEN = LMUL = 1
+                        return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
+                if (verbose > 2):
+                    print("Vector Instruction ISAs Supported: RVV1.0")
+            #Check if execution with RVV0.7 works
+            if ("rvv0.7" in isa_set or "auto" in isa_set) and rvv07_compilation:
+                try:
+                    result = subprocess.run([rvv07_ex], stdout=subprocess.PIPE)
+                except subprocess.CalledProcessError as e:
+                    print("RVV0.7 Compiler Error Output:", e.stderr.decode("utf-8"))
+                    rvv07_execution = False
+                    if "auto" not in isa_set:
+                        if (verbose>0):
+                            print("WARNING: Execution of RVV vector length program failed for RVV0.7, please check your CPU RVV support.")
+                        isa_set.clear()
+                        isa_set.append("riscvscalar")
+                        VLEN = LMUL = 1
+                        return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
+                if (verbose > 2):
+                    print("Vector Instruction ISAs Supported: RVV0.7")
+            #If both RVV1.0 and RVV0.7 executions fail, go for scalar
+            if not rvv10_execution and not rvv07_execution:
+                isa_set.clear()
+                isa_set.append("riscvscalar")
+                VLEN = LMUL = 1
+                if (verbose>0):
+                    print("WARNING: Execution of RVV vector length detection program failed for both RVV0.7 and RVV1.0, please check CPU RVV support.")
+                return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
+
             VLEN_Check = int(result.stdout.decode('utf-8'))
-            os.remove(rvv_ex)
+            if rvv10_compilation:
+                os.remove(rvv10_ex)
+            if rvv07_compilation:
+                os.remove(rvv07_ex)
             if VLEN < VLEN_Check:
                 if VLEN == 1:
                     VLEN = VLEN_Check
-                if (verbose > 2):
-                    print("RISCV Vector with " + str(VLEN) + " elements (dp).")
-                if "riscvscalar" not in isa_set and isa_set[0] == "auto":
-                    isa_set.append("riscvscalar")
-                if "rvv0.7" not in isa_set and "rvv1.0" not in isa_set:
-                    print("WARNING: Automatic detection of RVV version not available yet, please specify RVV version using the --isa argument.")
             else:
-                print("WARNING: RISCV Vector Support Not Detected in the System")
-                isa_set[0] = "riscvscalar"
-                if VLEN != 1:
-                    print("WARNING: --vector_length (-vlen) argument is only used for RVV benchmarks.")
-                    VLEN = 1
-                if LMUL != 1:
-                    print("WARNING: --vector_lmul (-vlmul) argument is only used for RVV benchmarks.")
-                    LMUL = 1
+                if verbose >0:
+                    print("WARNING: Requested RVV Vector Length Not Supported")
+                VLEN = VLEN_Check
+            if (verbose > 2):
+                if "dp" in precision:
+                    print("Maximum vector size allows " + str(VLEN_Check) + " double precision elements.")
+                if "sp" in precision:
+                    print("Maximum vector size allows " + str(VLEN_Check*2) + " single precision elements.")
+            if isa_set[0] == "auto":
+                isa_set.clear()
+                if rvv10_execution:
+                    isa_set.append("rvv1.0")
+                if rvv07_execution:
+                    isa_set.append("rvv0.7")
+                isa_set.append("riscvscalar")
+                
             return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
         else:
             if VLEN != 1:
-                print("WARNING: --vector_length (-vlen) argument is only used for RVV benchmarks.")
+                if (verbose > 0):
+                    print("WARNING: --vector_length (-vl) argument is only used for RVV benchmarks.")
                 VLEN = 1
             if LMUL != 1:
-                print("WARNING: --vector_lmul (-vlmul) argument is only used for RVV benchmarks.")
+                if (verbose > 0):
+                    print("WARNING: --vector_lmul (-vlmul) argument is only used for RVV benchmarks.")
                 LMUL = 1
-            isa_set[0] = "riscvscalar"
+            isa_set.clear()
+            isa_set.append("riscvscalar")
             return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
     else:
         print("ERROR: Unsupported architecture " + CPU_Type + " detected. Exiting Program.")
@@ -229,7 +406,7 @@ def autoconf(new_max_freq, set_freq):
     if (set_freq == 0):
         new_max_freq = 0
         
-    result = subprocess.run([output_bin, str(new_max_freq)], stdout=subprocess.PIPE)
+    result = subprocess.run([output_bin, str(new_max_freq), str(set_freq)], stdout=subprocess.PIPE)
     arguments = result.stdout.decode('utf-8').split('\n')
 
     os.remove(output_bin)
@@ -411,10 +588,10 @@ def print_results(isa, test_type, test_data, data_cycles, num_reps, test_size, i
     print("Instructions per Cycle:", ut.custom_round(data_cycles))
 
     if test_type not in ["FP", "FP_FMA"]:
-        print("Bytes per Cycle:", ut.custom_round(data_cycles*mem_inst_size[isa][precision]*VLEN))
+        print("Bytes per Cycle:", ut.custom_round(data_cycles*mem_inst_size[isa][precision]*VLEN*LMUL))
         print("Bandwidth (GB/s):", ut.custom_round(test_data))
     else:
-        print("Flops per Cycle:", ut.custom_round(data_cycles*ops_fp[isa][precision]*FP_factor*VLEN))
+        print("Flops per Cycle:", ut.custom_round(data_cycles*ops_fp[isa][precision]*FP_factor*VLEN*LMUL))
         print("GFLOP/s:", ut.custom_round(test_data))
     if isa in x86_ISAs:
         print("Max Recorded Frequency (GHz):", ut.custom_round(freq_real), "| Nominal Frequency (GHz):", ut.custom_round(freq_nominal), "| Actual Frequency to Nominal Frequency Ratio:", ut.custom_round(float(freq_real/freq_nominal)))
@@ -455,6 +632,13 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
         print(f"Running {test_type[0].upper()}{test_type[1:]} Benchmarks for the Following Thread Counts: {threads_set}")
         print("On the Following ISA extensions: ", isa_set)
         print("Using the Following Precisions:", precision_set)
+        if "rvv0.7" in isa_set or "rvv1.0" in isa_set or "sve" in isa_set:
+            if "dp" in precision_set:
+                print("Vector with " + str(VLEN) + " double precision elements will be used for vector benchmark.")
+            if "sp" in precision_set:
+                print("Vector with " + str(VLEN*2) + " single precision elements will be used for vector benchmark.")
+        if "rvv0.7" in isa_set or "rvv1.0" in isa_set:
+            print(f"Register grouping (-vlmul) of {LMUL} will be used for RVV benchmark.")
         print("-------------------------------------------------")
         
 
@@ -466,8 +650,6 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                     print(f"Running {test_type[0].upper()}{test_type[1:]} Benchmarks for the Following Thread Counts: {threads_set}")
                     print("On the Following ISA extensions: ", isa_set)
                     print("Using the Following Precisions:", precision_set)
-                if verbose > 0:
-                    print(f"Now Testing {test_type[0].upper()}{test_type[1:]} with: {threads} {'Thread' if threads == 1 else 'Threads'} using {isa} with {precision}")
                 dram_bytes = dram_bytes_aux
                 if inst == "fma":
                     FP_factor = 2
@@ -485,11 +667,15 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                     LMUL = 1
                 if isa in ["sve"]:
                     LMUL = 1
-                if verbose > 2 and isa in ["rvv0.7", "rvv1.0"]:
-                    print("VLEN IS:", VLEN, "| LMUL IS:", LMUL)
-                elif verbose > 2 and isa in ["sve"]:
-                    print("VLEN IS:", VLEN)
-           
+                if verbose > 0:
+                    print(f"Now Testing {test_type[0].upper()}{test_type[1:]} with: {threads} {'Thread' if threads == 1 else 'Threads'} using {isa} with {precision}")
+                    if isa in vector_agnostic_ISA:
+                        if precision == "dp":
+                            print("Vector with " + str(VLEN) + " double precision elements will be used.")
+                        if precision == "sp":
+                            print("Vector with " + str(VLEN) + " single precision elements will be used.")
+                    if isa in ["rvv0.7", "rvv1.0"]:
+                        print(f"Register grouping (-vlmul) of {LMUL} will be used.")
 
                 #Calculate number of repetitions for each test
                 #L1 Reps
@@ -579,7 +765,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                         time_ms = float (cycles / (freq_nominal * 1e6))
                     else:
                         time_ms = float(out[0])
-                        data['L1'] = (float((threads*num_reps["L1"]*(num_ld+num_st)*mem_inst_size[isa][precision]*VLEN*inner_loop_reps)/(1000000000))/((time_ms/1000)))
+                        data['L1'] = (float((threads*num_reps["L1"]*(num_ld+num_st)*mem_inst_size[isa][precision]*VLEN*LMUL*inner_loop_reps)/(1000000000))/((time_ms/1000)))
                         data_cycles['L1'] = float((threads*num_reps["L1"]*(num_ld+num_st)*inner_loop_reps)/((time_ms/1000)*freq_real*1000000000))
                     
                     if (verbose > 1):
@@ -614,7 +800,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                         time_ms = float (cycles / (freq_nominal * 1e6))
                     else:
                         time_ms = float(out[0])
-                        data['L2'] = (float((threads*num_reps["L2"]*(num_ld+num_st)*mem_inst_size[isa][precision]*VLEN*inner_loop_reps)/(1000000000))/((time_ms/1000)))
+                        data['L2'] = (float((threads*num_reps["L2"]*(num_ld+num_st)*mem_inst_size[isa][precision]*VLEN*LMUL*inner_loop_reps)/(1000000000))/((time_ms/1000)))
                         data_cycles['L2'] = float((threads*num_reps["L2"]*(num_ld+num_st)*inner_loop_reps)/((time_ms/1000)*freq_real*1000000000))
                     if (verbose > 1):
                         print_results(isa, "L2", data["L2"], data_cycles["L2"], num_reps["L2"], test_size["L2"], inner_loop_reps, freq_real, cycles, freq_nominal, time_ms, threads, num_ld, num_st, inst, FP_factor, precision, VLEN, interleaved, LMUL, verbose)
@@ -648,7 +834,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                         time_ms = float (cycles / (freq_nominal * 1e6))
                     else:
                         time_ms = float(out[0])
-                        data['L3'] = (float((threads*num_reps["L3"]*(num_ld+num_st)*mem_inst_size[isa][precision]*VLEN*inner_loop_reps)/(1000000000))/((time_ms/1000)))
+                        data['L3'] = (float((threads*num_reps["L3"]*(num_ld+num_st)*mem_inst_size[isa][precision]*VLEN*LMUL*inner_loop_reps)/(1000000000))/((time_ms/1000)))
                         data_cycles['L3'] = float((threads*num_reps["L3"]*(num_ld+num_st)*inner_loop_reps)/((time_ms/1000)*freq_real*1000000000))
                     if (verbose > 1):
                         print_results(isa, "L3", data["L3"], data_cycles["L3"], num_reps["L3"], test_size["L3"], inner_loop_reps, freq_real, cycles, freq_nominal, time_ms, threads, num_ld, num_st, inst, FP_factor, precision, VLEN, interleaved, LMUL, verbose)
@@ -682,7 +868,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                         time_ms = float (cycles / (freq_nominal * 1e6))
                     else:
                         time_ms = float(out[0])
-                        data['DRAM'] = (float((threads*num_reps["DRAM"]*(num_ld+num_st)*mem_inst_size[isa][precision]*VLEN*inner_loop_reps)/(1000000000))/((time_ms/1000)))
+                        data['DRAM'] = (float((threads*num_reps["DRAM"]*(num_ld+num_st)*mem_inst_size[isa][precision]*VLEN*LMUL*inner_loop_reps)/(1000000000))/((time_ms/1000)))
                         data_cycles['DRAM'] = float((threads*num_reps["DRAM"]*(num_ld+num_st)*inner_loop_reps)/((time_ms/1000)*freq_real*1000000000))
                     if (verbose > 1):
                         print_results(isa, "DRAM", data["DRAM"], data_cycles["DRAM"], num_reps["DRAM"], test_size["DRAM"], inner_loop_reps, freq_real, cycles, freq_nominal, time_ms, threads, num_ld, num_st, inst, FP_factor, precision, VLEN, interleaved, LMUL, verbose)
@@ -717,7 +903,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                         
                     else:
                         time_ms = float(out[0])
-                        data['FP'] = float((threads*num_reps["FP"]*FP_factor*ops_fp[isa][precision]*inner_loop_reps*VLEN)/(1000000000))/((time_ms/1000))
+                        data['FP'] = float((threads*num_reps["FP"]*FP_factor*ops_fp[isa][precision]*inner_loop_reps*VLEN*LMUL)/(1000000000))/((time_ms/1000))
                         data_cycles['FP'] = float((threads*num_reps["FP"]*inner_loop_reps)/((time_ms/1000)*freq_real*1000000000))
                     if (verbose > 1):
                         print_results(isa, "FP", data["FP"], data_cycles["FP"], num_reps["FP"], 0, inner_loop_reps, freq_real, cycles, freq_nominal, time_ms, threads, num_ld, num_st, inst, FP_factor, precision, VLEN, interleaved, LMUL, verbose)
@@ -756,7 +942,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                         time_ms = float (cycles / (freq_nominal * 1e6))
                     else:
                         time_ms = float(out[0])
-                        data['FP_FMA'] = float((threads*num_reps["FP_FMA"]*FP_factor*ops_fp[isa][precision]*inner_loop_reps*VLEN)/(1000000000))/((time_ms/1000))
+                        data['FP_FMA'] = float((threads*num_reps["FP_FMA"]*FP_factor*ops_fp[isa][precision]*inner_loop_reps*VLEN*LMUL)/(1000000000))/((time_ms/1000))
                         data_cycles['FP_FMA'] = float((threads*num_reps["FP_FMA"]*inner_loop_reps)/((time_ms/1000)*freq_real*1000000000))
                     if (verbose > 1):
                         print_results(isa, "FP_FMA", data["FP_FMA"], data_cycles["FP_FMA"], num_reps["FP_FMA"], 0, inner_loop_reps, freq_real, cycles, freq_nominal, time_ms, threads, num_ld, num_st, inst_fma, FP_factor, precision, VLEN, interleaved, LMUL, verbose)
@@ -802,6 +988,13 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
         print("Running Memory Benchmarks for the Following Thread Counts:", threads_set)
         print("On the Following ISA extensions: ", isa_set)
         print("Using the Following Precisions:", precision_set)
+        if "rvv0.7" in isa_set or "rvv1.0" in isa_set or "sve" in isa_set:
+            if "dp" in precision_set:
+                print("Vector with " + str(VLEN) + " double precision elements will be used for vector benchmark.")
+            if "sp" in precision_set:
+                print("Vector with " + str(VLEN*2) + " single precision elements will be used for vector benchmark.")
+        if "rvv0.7" in isa_set or "rvv1.0" in isa_set:
+            print(f"Register grouping (-vlmul) of {LMUL} will be used for RVV benchmark.")
         print("-------------------------------------------------")
         
 
@@ -813,8 +1006,6 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                     print("Running Memory Benchmarks for the Following Thread Counts:", threads_set)
                     print("On the Following ISA extensions: ", isa_set)
                     print("Using the Following Precisions:", precision_set)
-                if verbose > 0:
-                    print(f"Now Testing Memory with: {threads} {'Thread' if threads == 1 else 'Threads'} using {isa} with {precision}")
                 
                 if VLEN_aux > 1 and precision == "dp":
                     VLEN = VLEN_aux
@@ -827,10 +1018,15 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                     LMUL = 1
                 if isa in ["sve"]:
                     LMUL = 1
-                if verbose > 2 and isa in ["rvv0.7", "rvv1.0"]:
-                    print("VLEN IS:", VLEN, "| LMUL IS:", LMUL)
-                elif verbose > 2 and isa in ["sve"]:
-                    print("VLEN IS:", VLEN)
+                if verbose > 0:
+                    print(f"Now Testing Memory with: {threads} {'Thread' if threads == 1 else 'Threads'} using {isa} with {precision}")
+                    if isa in vector_agnostic_ISA:
+                        if precision == "dp":
+                            print("Vector with " + str(VLEN) + " double precision elements will be used.")
+                        if precision == "sp":
+                            print("Vector with " + str(VLEN) + " single precision elements will be used.")
+                    if isa in ["rvv0.7", "rvv1.0"]:
+                        print(f"Register grouping (-vlmul) of {LMUL} will be used.")
                     
                 Gbps = [0] * len(test_sizes)
                 InstCycle = [0] * len(test_sizes)
@@ -1026,6 +1222,13 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
         print(f"Running {test_type[0].upper()}{test_type[1:]} Benchmarks for the Following Thread Counts: {threads_set}")
         print("On the Following ISA extensions: ", isa_set)
         print("Using the Following Precisions:", precision_set)
+        if "rvv0.7" in isa_set or "rvv1.0" in isa_set or "sve" in isa_set:
+            if "dp" in precision_set:
+                print("Vector with " + str(VLEN) + " double precision elements will be used for vector benchmark.")
+            if "sp" in precision_set:
+                print("Vector with " + str(VLEN*2) + " single precision elements will be used for vector benchmark.")
+        if "rvv0.7" in isa_set or "rvv1.0" in isa_set:
+            print(f"Register grouping (-vlmul) of {LMUL} will be used for RVV benchmark.")
         print("-------------------------------------------------")
         
 
@@ -1037,10 +1240,6 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                     print(f"Running {test_type[0].upper()}{test_type[1:]} Benchmarks for the Following Thread Counts: {threads_set}")
                     print("On the Following ISA extensions: ", isa_set)
                     print("Using the Following Precisions:", precision_set)
-                if verbose > 0:
-                    print(f"Now Testing {test_type[0].upper()}{test_type[1:]} with: {threads} {'Thread' if threads == 1 else 'Threads'} using {isa} with {precision}")
-                
-
                 
                 dram_bytes = dram_bytes_aux
                 if VLEN_aux > 1 and precision == "dp":
@@ -1054,10 +1253,15 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                     LMUL = 1
                 if isa in ["sve"]:
                     LMUL = 1
-                if verbose > 2 and isa in ["rvv0.7", "rvv1.0"]:
-                    print("VLEN IS:", VLEN, "| LMUL IS:", LMUL)
-                elif verbose > 2 and isa in ["sve"]:
-                    print("VLEN IS:", VLEN)
+                if verbose > 0:
+                    print(f"Now Testing {test_type[0].upper()}{test_type[1:]} with: {threads} {'Thread' if threads == 1 else 'Threads'} using {isa} with {precision}")
+                    if isa in vector_agnostic_ISA:
+                        if precision == "dp":
+                            print("Vector with " + str(VLEN) + " double precision elements will be used.")
+                        if precision == "sp":
+                            print("Vector with " + str(VLEN) + " single precision elements will be used.")
+                    if isa in ["rvv0.7", "rvv1.0"]:
+                        print(f"Register grouping (-vlmul) of {LMUL} will be used.")
                 
                 if test_type == "mixedL1":
                     if l1_size > 0:
@@ -1198,7 +1402,7 @@ def main():
     parser.add_argument('--name', default='unnamed', nargs='?', type = str, help='Name for results file (if not using config file)')
     parser.add_argument('-v', '--verbose', default=3, nargs='?', type = int, choices=[0, 1, 2, 3, 4], help='Level of terminal output details (0 -> No Output 1 -> Only ISA/Configuration Errors and Test Specifications, 2 -> Test Results, 3 -> Configuration Values Selected/Detected, 4 -> Debug Output)')
     parser.add_argument('--inst', default='add', nargs='?', choices=['add', 'mul', 'div', 'fma'], help='FP Instruction (Default: add), FMA performance is measured by default too.')
-    parser.add_argument('-vl', '--vector_length',  default=1, nargs='?', type=positive_int, help='Vector Length in double-precision elements for RVV configuration (Default: 1)')
+    parser.add_argument('-vl', '--vector_length',  default=1, nargs='?', type=positive_int, help='Vector Length in double/single precision elements (if running dp and sp in one run, double precision elements will be assumed) for RVV configuration (Default: Max available)')
     parser.add_argument('-vlmul', '--vector_lmul', default=1, nargs='?', type = int, choices=[1, 2, 4, 8], help='Vector Register Grouping for RVV configuration (Default: 1)')
     parser.add_argument('--isa', default=['auto'], nargs='+', choices=['avx512', 'avx2', 'sse', 'scalar', 'neon', 'armscalar', 'sve', 'riscvscalar', 'rvv0.7', 'rvv1.0', 'auto'], help='set of ISAs to test, if auto will test all available ISAs (Default: auto)')
     parser.add_argument('-p', '--precision', default=['dp'], nargs='+', choices=['dp', 'sp'], help='Data Precision (Default: dp)')
@@ -1236,6 +1440,9 @@ def main():
         name, l1_size, l2_size, l3_size = read_config(args.config)
 
     freq = args.freq
+    verbose = args.verbose
+    precision_set = args.precision
+    vlen = args.vector_length
     
     #uses name from arguments if not present in config file
     if (name == ''):
@@ -1262,15 +1469,22 @@ def main():
         print("ERROR: Only one RVV version must be specified. Exiting Program.")
         sys.exit(1)
     if 'auto' in isa_set and len(isa_set) > 1:
-        print("WARNING: When using auto ISA detection do not specify additional ISAs, setting ISA argument to just auto and removing additional ISAs.")
+        if (verbose > 0):
+            print("WARNING: When using auto ISA detection do not specify additional ISAs, setting ISA argument to just auto and removing additional ISAs.")
         isa_set = ["auto"]
-
+    if ("sp" in precision_set and "dp" not in precision_set):
+        if (vlen%2 == 0):
+            vlen = vlen/2
+        else:
+            if (verbose > 0):
+                print("WARNING: Please specify an even number for --vector_length (-vl) argument when using single precision.")
+        
     if args.test in ["mixedL1", "mixedL2", "mixedL3", "mixedDRAM"]:
-        run_mixed(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, args.precision, num_ld, num_st, num_fp, args.threads, args.interleaved, args.num_ops, args.l3_kbytes, args.dram_kbytes, args.dram_auto, args.test, args.verbose, args.set_freq, args.no_freq_measure, args.vector_length, args.threads_per_l1,  args.threads_per_l2, args.vector_lmul)
+        run_mixed(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, precision_set, num_ld, num_st, num_fp, args.threads, args.interleaved, args.num_ops, args.l3_kbytes, args.dram_kbytes, args.dram_auto, args.test, verbose, args.set_freq, args.no_freq_measure, vlen, args.threads_per_l1,  args.threads_per_l2, args.vector_lmul)
     elif args.test == 'MEM':
-        run_memory(name, freq, args.set_freq, l1_size, l2_size, l3_size, isa_set, args.precision, num_ld, num_st, args.threads, args.interleaved, args.verbose, args.no_freq_measure, args.vector_length, args.threads_per_l1, args.plot, args.vector_lmul)
+        run_memory(name, freq, args.set_freq, l1_size, l2_size, l3_size, isa_set, precision_set, num_ld, num_st, args.threads, args.interleaved, verbose, args.no_freq_measure, vlen, args.threads_per_l1, args.plot, args.vector_lmul)
     else:
-        run_roofline(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, args.precision, num_ld, num_st, args.threads, args.interleaved, args.num_ops, args.l3_kbytes, args.dram_kbytes, args.dram_auto, args.test, args.verbose, args.set_freq, args.no_freq_measure, args.vector_length, args.threads_per_l1,  args.threads_per_l2, args.plot, args.vector_lmul, args.output)
+        run_roofline(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, precision_set, num_ld, num_st, args.threads, args.interleaved, args.num_ops, args.l3_kbytes, args.dram_kbytes, args.dram_auto, args.test, verbose, args.set_freq, args.no_freq_measure, vlen, args.threads_per_l1,  args.threads_per_l2, args.plot, args.vector_lmul, args.output)
 
 if __name__ == "__main__":
     main()
