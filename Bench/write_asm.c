@@ -397,7 +397,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 				fprintf(file,"\t\t\"ptrue p0.d\\n\\t\"\n");
 			}
 			else{
-				int bump = Vlen * 8 * 8;
+				int bump = Vlen * 4 * 8;
 				fprintf(file,"\t\t\"mov x2, %d\\n\\t\"\n", bump);
 				fprintf(file,"\t\t\"ptrue p0.s\\n\\t\"\n");
 			}
@@ -525,7 +525,11 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 		#elif defined(ASCALAR) || defined(NEON) || defined(SVE)
 			//ARM SVE SECTION
 			#if defined(SVE)
-				fprintf(file,"\t\t\"add x3, x3,  #%d\\n\\t\"\n",Vlen*offset*8);
+				if(strcmp(precision, "dp") == 0){
+					fprintf(file,"\t\t\"add x3, x3,  #%d\\n\\t\"\n",Vlen*offset*8);
+				}else{
+					fprintf(file,"\t\t\"add x3, x3,  #%d\\n\\t\"\n",Vlen*offset*4);
+				}
 			#else
 				fprintf(file,"\t\t\"add x3, x3, #%d\\n\\t\"\n",offset);
 			#endif

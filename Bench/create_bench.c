@@ -32,13 +32,8 @@ void create_benchmark_flops(char * op, char * precision, int long long fp, int V
 	}else{
 		silence_flag = "-s";
 	}
-	#if defined (AVX512)
-		snprintf(cmd, sizeof(cmd), 
-		"make %s isa=avx512 -C %s/../Test -f Makefile_Benchmark", silence_flag, PROJECT_DIR);
-	#else
-		snprintf(cmd, sizeof(cmd), 
-         "make %s -C %s/../Test -f Makefile_Benchmark", silence_flag, PROJECT_DIR);
-	#endif
+	snprintf(cmd, sizeof(cmd), 
+	"make %s isa=%s -C %s/../Test -f Makefile_Benchmark", silence_flag, ISA, PROJECT_DIR);
 
 	check = system(cmd);
 		if (check == -1) {
@@ -73,13 +68,8 @@ void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * 
 	}else{
 		silence_flag = "-s";
 	}
-	#if defined (AVX512)
-		snprintf(cmd, sizeof(cmd), 
-		"make %s isa=avx512 -C %s/../Test -f Makefile_Benchmark", silence_flag, PROJECT_DIR);
-	#else
-		snprintf(cmd, sizeof(cmd), 
-         "make %s -C %s/../Test -f Makefile_Benchmark", silence_flag, PROJECT_DIR);
-	#endif
+	snprintf(cmd, sizeof(cmd), 
+	"make %s isa=%s -C %s/../Test -f Makefile_Benchmark", silence_flag, ISA, PROJECT_DIR);
 
 	check = system(cmd);
 		if (check == -1) {
@@ -126,13 +116,8 @@ void create_benchmark_mixed(char * op, int long long num_rep, int num_ld, int nu
 	}else{
 		silence_flag = "-s";
 	}
-	#if defined (AVX512)
-		snprintf(cmd, sizeof(cmd), 
-		"make %s isa=avx512 -C %s/../Test -f Makefile_Benchmark", silence_flag, PROJECT_DIR);
-	#else
-		snprintf(cmd, sizeof(cmd), 
-         "make %s -C %s/../Test -f Makefile_Benchmark", silence_flag, PROJECT_DIR);
-	#endif
+	snprintf(cmd, sizeof(cmd), 
+	"make %s isa=%s -C %s/../Test -f Makefile_Benchmark", silence_flag, ISA, PROJECT_DIR);
 
 	check = system(cmd);
 		if (check == -1) {
