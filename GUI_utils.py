@@ -4,26 +4,7 @@ import math
 import plotly.graph_objects as go
 import numpy as np
 
-import run
-
-CONFIG_FILE = "./config/auto_config/config.txt"
-
-def read_library_path(tag):
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as file:
-            for line in file:
-                if line.strip() == "":
-                    continue
-                parts = line.strip().split("=")
-                if len(parts) == 2:
-                    key, value = parts
-                    if key == tag:
-                        return value
-    return None
-
-def write_library_path(tag, path):
-    with open(CONFIG_FILE, "a") as file:
-        file.write(f"{tag}={path}\n")
+import utils as ut
 
 def read_csv_file(file_path):
     data_list = []
@@ -154,8 +135,8 @@ def calculate_roofline(values, min_ai):
             aidots = [0, 0, 0]
             gflopdots = [0, 0, 0]
 
-            y_values = run.carm_eq(ai, values[cache_levels.index(cache_level)], peak_flops)
-            y_special = run.carm_eq(0.00390625, values[cache_levels.index(cache_level)], peak_flops)
+            y_values = ut.carm_eq(ai, values[cache_levels.index(cache_level)], peak_flops)
+            y_special = ut.carm_eq(0.00390625, values[cache_levels.index(cache_level)], peak_flops)
 
             #Find the point where y_values stops increasing or reaches a plateau
             for i in range(1, len(y_values)):
@@ -182,7 +163,7 @@ def calculate_roofline(values, min_ai):
             top_roof = values[i]
             break
 
-    y_values = run.carm_eq(ai, top_roof, values[4])
+    y_values = ut.carm_eq(ai, top_roof, values[4])
 
     for i in range(1, len(y_values)):
         if(y_values[i-1] == y_values[i]):
@@ -347,7 +328,7 @@ def draw_annotation(values, lines, name_suffix, ISA, cache_level, graph_width, g
     if cache_level in cache_levels and values[cache_levels.index(cache_level)] > 0:
         if cache_level in lines:
             aidots[0] = 0.00390625
-            y_values = run.carm_eq(ai, values[cache_levels.index(cache_level)], values[5])
+            y_values = ut.carm_eq(ai, values[cache_levels.index(cache_level)], values[5])
             gflopdots[0]= y_values[0]
             for i in range(1, len(y_values)):
                 if(y_values[i-1] == y_values[i]):
