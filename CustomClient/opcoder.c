@@ -306,7 +306,7 @@ static void
 event_exit(void)
 {
 #ifdef SHOW_RESULTS
-file_t file = dr_open_file("output.txt", DR_FILE_WRITE_OVERWRITE);
+file_t file = dr_open_file("carm_dbi_output.txt", DR_FILE_WRITE_OVERWRITE);
     char msg[NUM_COUNT_SHOW * 80];
     int len, i, j, index;
     size_t sofar = 0;
@@ -610,6 +610,17 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst
                                 DRX_COUNTER_64BIT | DRX_COUNTER_REL_ACQ);
                     }
                 }
+            #elif defined(RISCV64)
+                drx_insert_counter_update(drcontext, bb, instr,
+                                      /* We're using drmgr, so these slots
+                                       * here won't be used: drreg's slots will be.
+                                       */
+                                      SPILL_SLOT_MAX + 1,
+                                      IF_AARCHXX_OR_RISCV64_(SPILL_SLOT_MAX + 1) &
+                                          count[isa_idx][instr_get_opcode(ins)],
+                                      1,
+                                      /* DRX_COUNTER_LOCK is not yet supported on ARM */
+                                      IF_X86_ELSE(DRX_COUNTER_LOCK, 0));
             #else
                 int size = 0;
                 int j;

@@ -3,6 +3,9 @@ import csv
 import platform
 import datetime
 import logging
+import math
+import copy
+from copy import deepcopy
 
 #Third Party Libraries
 #Run: pip install dash dash-bootstrap-components plotly numpy pandas diskcache
@@ -15,12 +18,15 @@ import dash
 import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
-from dash import Input, Output, State, html, dcc, no_update, DiskcacheManager, callback_context
+from dash import Input, Output, State, html, ALL, dcc, no_update, DiskcacheManager, callback_context
+import dash_daq as daq
 
 #Local Python Scripts
 import run
 import PMU_AI_Calculator
 import DBI_AI_Calculator
+import GUI_utils as gut
+import utils as ut
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
@@ -28,8 +34,24 @@ log.setLevel(logging.ERROR)
 cache = diskcache.Cache("./cache")
 background_callback_manager = DiskcacheManager(cache)
 
-CONFIG_FILE = "./config/auto_config/config.txt"
-pathway = './Results/Roofline'
+
+pathway = './carm_results/roofline'
+lines_origin = {}
+lines_origin2 = {}
+
+#Default graph values
+DEFAULTS = {
+    'graph-width': 1900,
+    'graph-height': 690,
+    'line-size': 3,
+    'dot-size': 10,
+    'title-size': 20,
+    'axis-size': 20,
+    'legend-size': 13,
+    'tick-size': 18,
+    'annotation-size': 12,
+    'tooltip-size': 14,
+}
 
 #Filter the list of files to only include CSV files
 if os.path.exists(pathway):
@@ -50,103 +72,18 @@ if CPU_Type == "x86_64":
     ]
 elif CPU_Type == "aarch64":
     isa_options = [
+        {"label": "SVE", "value": "sve"},
         {"label": "NEON", "value": "neon"},
         {"label": "Scalar", "value": "scalar"}
     ]
 elif CPU_Type == "riscv64":
     isa_options = [
-        {"label": "RVV", "value": "rvv"},
+        {"label": "RVV1.0", "value": "rvv1.0"},
+        {"label": "RVV0.7", "value": "rvv0.7"},
         {"label": "Scalar", "value": "scalar"}
     ]
 else:
     isa_options = []
-
-def read_library_path(tag):
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as file:
-            for line in file:
-                if line.strip() == "":
-                    continue
-                parts = line.strip().split("=")
-                if len(parts) == 2:
-                    key, value = parts
-                    if key == tag:
-                        return value
-    return None
-
-def write_library_path(tag, path):
-    with open(CONFIG_FILE, "a") as file:
-        file.write(f"{tag}={path}\n")
-
-def read_csv_file(file_path):
-    data_list = []
-    with open(file_path, newline='') as csvfile:
-        reader = csv.reader(csvfile)
-        header = next(reader)
-        machine_name = header[1]
-        l1_size = int(header[3])
-        l2_size = int(header[5])
-        l3_size = int(header[7])
-
-        header2 = next(reader)
-        for row in reader:
-            if not row or not ''.join(row).strip():
-                continue
-            data = {}
-            data['Date'] = row[0]
-            data['ISA'] = row[1]
-            data['Precision'] = row[2]
-            data['Threads'] = int(row[3])
-            data['Loads'] = int(row[4])
-            data['Stores'] = int(row[5])
-            data['Interleaved'] = row[6]
-            data['DRAMBytes'] = int(row[7])
-            data['FPInst'] = row[8]
-            data['L1'] = float(row[9])
-            data['L2'] = float(row[11])
-            data['L3'] = float(row[13])
-            data['DRAM'] = float(row[15])
-            data['FP'] = float(row[17])
-            data['FP_FMA'] = float(row[19])
-            data_list.append(data)
-
-    return machine_name, l1_size, l2_size, l3_size, data_list
-
-def read_application_csv_file(file_path):
-    if not os.path.exists(file_path):
-        print("Application file does not exist:", file_path)
-        return False
-
-    data_list = []
-    try:
-        with open(file_path, newline='') as csvfile:
-            reader = csv.reader(csvfile)
-            header = next(reader, None)
-
-            if header is None:
-                print("File is empty:", file_path)
-                return False
-            
-            for row in reader:
-                if row:
-                    data = {
-                        'Date': row[0],
-                        'Method': row[1],
-                        'Name': row[2],
-                        'ISA': row[3],
-                        'Precision': row[4],
-                        'Threads': row[5],
-                        'AI': float(row[6]),
-                        'GFLOPS': float(row[7]),
-                        'Bandwidth': float(row[8]),
-                        'Time': float(row[9])
-                    }
-                    data_list.append(data)
-
-    except Exception as e:
-        print("Failed to read the file:", file_path, "Error:", e)
-        return False
-    return data_list if data_list else False
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True, background_callback_manager=background_callback_manager)
 
@@ -214,12 +151,139 @@ sidebar = dbc.Offcanvas(
             ])
         ], className="mb-3", style={'backgroundColor': '#6c757d'}),
         dbc.Button("Run Application Analysis", id="app-analysis-button", className="mb-2", style={'width': '100%'}),
-        #dbc.Button("Run Application ROI Code Injection", id="app-inject-button", className="mb-2", style={'width': '100%', 'display': 'none'}),
         dbc.Button("Stop Benchmark/Analysis", id="cancel-button", className="mb-2", style={'width': '100%'}),
     ], style={'backgroundColor': '#1a1a1a'}),
     id="offcanvas",
     title=html.H5("CARM Tool Functions", style={'color': 'white', 'fontsize': '30px'}),
     is_open=False,
+    style={'backgroundColor': '#1a1a1a'},
+)
+
+sidebar2 = dbc.Offcanvas(
+    html.Div([
+        html.P("Graph Customization", className="mb-2", 
+            style={
+                'color': 'white',
+                'textAlign': 'center',
+                'fontSize': '20px'
+            }),
+        dbc.Card(
+        dbc.CardBody([
+            html.Div([
+                    dbc.Label("Use Exponent Notation", html_for="exponent-switch", 
+                            style={"marginRight": "40px"}),
+                    dbc.Switch(
+                        id="exponent-switch",
+                        label="",
+                        value=True
+                    )
+                    ],
+                    style={"display": "flex", "alignItems": "center"}
+                ),
+                html.Div([
+                    dbc.Label("Show Lines Legend", html_for="line-legend-switch", 
+                            style={"marginRight": "70px"}),
+                    dbc.Switch(
+                        id="line-legend-switch",
+                        label="",
+                        value=True
+                    )
+                    ],
+                    style={"display": "flex", "alignItems": "left"}
+                ),
+                html.Div([
+                    dbc.Label("Detailed Lines Legend", html_for="detail-legend-switch", 
+                            style={"marginRight": "48px"}),
+                    dbc.Switch(
+                        id="detail-legend-switch",
+                        label="",
+                        value=False
+                    )
+                    ],
+                    style={"display": "flex", "alignItems": "left"}
+                ),
+        
+        ]),
+        style={'backgroundColor': 'white', "alignItems": "center"},
+        className="mb-2"
+    ),
+    dbc.Accordion([
+            dbc.AccordionItem([
+                dbc.Row(
+                [
+                    html.P("Graph Width:", className="mb-1 text-center", style={'color': 'black', 'margin-right': '10px', 'flex': '1'}),
+                    html.P("Graph Height:", className="mb-1 text-center", style={'color': 'black', 'margin-right': '10px', 'flex': '1'}),
+                ], justify="center", align="center"),
+                dbc.Row(
+                [
+                    dcc.Input(id='graph-width', type='number', className="mb-2 text-center", min=10, max=5000,step=10, value=DEFAULTS['graph-width'], style={'width': 120, 'margin-right': '55px'}),
+                    dcc.Input(id='graph-height', type='number', className="mb-2 text-center", min=10, max=5000,step=10, value=DEFAULTS['graph-height'], style={'width': 120,  'margin-right': '5px'}),
+                ], justify="center", align="center"),
+                dbc.Row(
+                [
+                    html.P("Lines Width:", className="mb-1 text-center", style={'color': 'black', 'margin-right': '10px', 'flex': '1'}),
+                    html.P("Dots Size:", className="mb-1 text-center", style={'color': 'black', 'margin-right': '10px', 'flex': '1'}),
+                ], justify="center", align="center"),
+                dbc.Row(
+                [
+                    dcc.Input(id='line-size', type='number', min=1, className="mb-2", max=100,step=1, value=DEFAULTS['line-size'], style={'width': 120, 'margin-right': '55px'}),
+                    dcc.Input(id='dot-size', type='number', min=1, className="mb-2", max=100,step=1, value=DEFAULTS['dot-size'], style={'width': 120, 'margin-right': '5px'}),
+                ], justify="center", align="center"),
+
+                dbc.Row(
+                [
+                    html.P("Title Font:", className="mb-1 text-center", style={'color': 'black', 'margin-right': '10px', 'flex': '1'}),
+                    html.P("Axis Font:", className="mb-1 text-center", style={'color': 'black', 'margin-right': '10px', 'flex': '1'}),
+                ], justify="center", align="center"),
+                dbc.Row(
+                [
+                    dcc.Input(id='title-size', type='number', className="mb-2", min=1, max=100,step=1, value=DEFAULTS['title-size'], style={'width': 120, 'margin-right': '55px'}),    
+                    dcc.Input(id='axis-size', type='number', className="mb-2", min=1, max=100,step=1, value=DEFAULTS['axis-size'], style={'width': 120, 'margin-right': '5px'}),
+                ], justify="center", align="center"),
+                dbc.Row(
+                [
+                    html.P("Legend Font:", className="mb-1 text-center", style={'color': 'black', 'margin-right': '10px', 'flex': '1'}),
+                    html.P("Ticks Font:", className="mb-1 text-center", style={'color': 'black', 'margin-right': '10px', 'flex': '1'}),
+                ], justify="center", align="center"),
+                dbc.Row(
+                [
+                    dcc.Input(id='legend-size', type='number', className="mb-2", min=1, max=100,step=1, value=DEFAULTS['legend-size'], style={'width': 120, 'margin-right': '55px'}),
+                    dcc.Input(id='tick-size', type='number', className="mb-2", min=1, max=100,step=1, value=DEFAULTS['tick-size'], style={'width': 120, 'margin-right': '5px'}),
+                ], justify="center", align="center"),
+                dbc.Row(
+                [
+                    html.P("Annotations:", className="mb-1 text-center", style={'color': 'black', 'margin-right': '10px', 'flex': '1'}),
+                    html.P("Tooltip Font:", className="mb-1 text-center", style={'color': 'black', 'margin-right': '10px', 'flex': '1'}),
+                ], justify="center", align="center"),
+                dbc.Row(
+                [
+                    dcc.Input(id='annotation-size', type='number', className="mb-3", min=1, max=50,step=1, value=DEFAULTS['annotation-size'], style={'width': 120, 'margin-right': '55px'}),    
+                    dcc.Input(id='tooltip-size', type='number', className="mb-3", min=1, max=50,step=1, value=DEFAULTS['tooltip-size'], style={'width': 120, 'margin-right': '5px'}),
+                ], justify="center", align="center"),
+                dbc.Button("Reset Changes", id="button-CARM-reset", className="mb-1", style={'width': '100%'}, n_clicks=1),
+                        
+            ], title="Change Graph/Line/Font Sizes", style={"alignItems": "center"}
+            ),
+
+        ],id='font-accordion', start_collapsed=True, always_open=True, flush=True, style={'backgroundColor': '#1a1a1a', "alignItems": "center"}, className="mb-2"
+        ),
+        dbc.Button("Edit Graph Text", id="button-CARM-edit", className="mb-2", style={'width': '100%'}, n_clicks=1),
+        html.P("Notations Configuration", className="mb-2", 
+            style={
+                'color': 'white',
+                'textAlign': 'center',
+                'fontSize': '20px'
+            }),
+        html.Div([
+            dbc.Accordion([], id='annotation-accordion', start_collapsed=True, always_open=True, flush=True, style={'backgroundColor': '#1a1a1a'})
+        ], id='angle-inputs-container', style={'marginBottom': '15px'}),
+        dbc.Button("Create Annotation", id="create-annotation-button", className="mb-2", style={'width': '100%'}),
+        dbc.Button("Disable Annotations", id="disable-annotation-button", className="mb-2", style={'width': '100%'}),
+    ], style={'backgroundColor': '#1a1a1a'}),
+    id="offcanvas2",
+    title=html.H5("Graph Options", style={'color': 'white', 'fontsize': '30px'}),
+    is_open=False,
+    placement= "end",
     style={'backgroundColor': '#1a1a1a'},
 )
 
@@ -235,7 +299,7 @@ app.layout = dbc.Container([
                 style={'border': 'none', 'background': 'transparent', 'padding': '0', 'margin': '0'}
             ),
             width="auto",
-            style={'padding-right': '5px', 'padding-left': '5'}
+            style={'padding-right': '5px', 'padding-left': '5px'}
         ),
         dbc.Col(
             dcc.Dropdown(
@@ -246,18 +310,53 @@ app.layout = dbc.Container([
             ),
             width=True
         ),
+        dbc.Col(
+            dbc.Button(
+                html.Img(src="/assets/CARM_icon.svg", height="30px"),
+                id="open-offcanvas2",
+                n_clicks=0,
+                className="btn-sm",
+                style={'border': 'none', 'background': 'transparent', 'padding': '0', 'margin': '0', 'display': 'none'}
+            ),
+            width="auto",
+            style={'padding-right': '5px', 'padding-left': '0px'}
+        ),
     ],
     align="center", 
     style={'margin-top': '1px'}
     ),
+    html.Div([
     dbc.Row([
         dbc.Col([
             html.Div(id='additional-dropdowns', style={'margin-top': '10px'}),
             html.Div(id='additional-dropdowns2'),
             html.Div(id='application-dropdown-container'),
-            dcc.Graph(id='graphs', style={'display': 'none'})
+            dcc.Graph(id='graphs', style={'display': 'block'}, config={'toImageButtonOptions': {'format': 'svg', 'filename': 'CARM_Tool'},
+                    'editable': False,
+                    'displaylogo': False,
+                    'edits': {
+                        'annotationPosition': True,
+                    }
+                }), 
             ])
         ]),
+    ],
+        id="slider-components",
+        style={"display": "none"}
+    ),
+    html.Div(id='graph-size-data', style={'whiteSpace': 'pre-wrap', 'display': 'none'}),
+    html.Div(id='graph-size-update', style={'whiteSpace': 'pre-wrap', 'display': 'none'}),
+    dcc.Store(id='store-dimensions'),
+    dcc.Store(id='graph-lines'),
+    dcc.Store(id='graph-lines2'),
+    dcc.Store(id='graph-values'),
+    dcc.Store(id='graph-values2'),
+    dcc.Store(id='graph-isa'),
+    dcc.Store(id='graph-xrange'),
+    dcc.Store(id='graph-yrange'),
+    dcc.Store(id='change-annon'),
+    dcc.Store(id='clicked-point-index', data=-1),
+    dcc.Store(id="clicked-trace-index", data=-1),
     dbc.Row([
         dbc.Col([
             html.Div(
@@ -273,7 +372,7 @@ app.layout = dbc.Container([
                 html.Img(
                     src="/assets/CHAMP_logo.svg",
                     id="initial-image",
-                    style={'width': '99%', 'display': 'block', 'background': 'transparent', 'marginLeft': '40px'}
+                    style={'width': '99%', 'height': '92%','display': 'block', 'background': 'transparent', 'marginLeft': '40px'}
                 ),
                 href="https://github.com/champ-hub",
                 target="_blank"
@@ -283,11 +382,12 @@ app.layout = dbc.Container([
     ], id="initial-content", justify="center", style={'backgroundColor': '#e9ecef', 'textAlign': 'center'}),
     dcc.Store(id='machine-selected', data=False),
     sidebar,
-    html.Div(id="invisible-output", style={"display": "none"}),  #Invisible Div to satisfy callback output
-    html.Div(id="invisible-output2", style={"display": "none"}),  #Invisible Div to satisfy callback output
-    html.Div(id="invisible-output3", style={"display": "none"}),  #Invisible Div to satisfy callback output
-    html.Div(id="invisible-output-final", style={"display": "none"}),  #Invisible Div to satisfy callback output
-    html.Div(id="file-path-valid", style={"display": "none"}), #Invisible Div to satisfy callback output
+    sidebar2,
+    html.Div(id="invisible-output", style={"display": "none"}),
+    html.Div(id="invisible-output2", style={"display": "none"}),
+    html.Div(id="invisible-output3", style={"display": "none"}),
+    html.Div(id="invisible-output-final", style={"display": "none"}),
+    html.Div(id="file-path-valid", style={"display": "none"}),
     dbc.Modal([
         dbc.ModalHeader(dbc.ModalTitle("Application To Profile", style={'text-align': 'center', 'color': 'white'}), style={'backgroundColor': '#6c757d'}),
         dbc.ModalBody([
@@ -332,10 +432,10 @@ app.layout = dbc.Container([
             html.P("Application Source Code must be Injected to Profile Region of Interest", className="mb-1", style={'color': 'black', 'text-align': 'center', 'fontSize': '14px'}),                
         ],
         style={'backgroundColor': '#e9ecef'},
-        id="modal-body"
+        id="modal-profile-body",
         ),
         dbc.ModalFooter([
-                dbc.Button("Run Application", id="submit-button", className="ms-auto", n_clicks=0, style={'margin-right': 'auto'}),
+                dbc.Button("Run Application", id="analysis-submit-button", className="ms-auto", n_clicks=0, style={'margin-right': 'auto'}),
                 dbc.Button("Close", id="close-modal-button", className="me-auto", n_clicks=0, style={'margin-left': 'auto'})
         ],
         className="w-100 d-flex",
@@ -346,10 +446,87 @@ app.layout = dbc.Container([
     is_open=False,
     ),
     dbc.Modal([
+        dbc.ModalHeader(dbc.ModalTitle("Edit Point Style", style={'text-align': 'center', 'color': 'white'}), style={'backgroundColor': '#6c757d'}),
+        dbc.ModalBody([
+            daq.ColorPicker(
+                label=' ',
+                id="dot-color-picker",
+                value={"hex": "#0000FF"},  #default blue
+            ),
+            html.Hr(),
+            dbc.Col([
+                html.Div([
+                    html.Label("Size:", style={"marginRight": "10px"}),  
+                    dcc.Input(
+                        id="dot-size-input",
+                        type="number",
+                        value=10,
+                        min=1,
+                        max=40,
+                        step=1,
+                        style={
+                            "marginRight": "20px",
+                            "width": "45px"
+                        },
+                    ),
+                    html.Label("Shape:", style={"marginRight": "10px"}),
+                    dcc.Dropdown(
+                        id="dot-symbol-dropdown",
+                        options=[
+                            {"label": "Circle", "value": "circle"},
+                            {"label": "Square", "value": "square"},
+                            {"label": "Diamond", "value": "diamond"},
+                            {"label": "Cross", "value": "cross"},
+                            {"label": "X", "value": "x"},
+                            {"label": "Triangle-Up", "value": "triangle-up"},
+                            {"label": "Triangle-Down", "value": "triangle-down"},
+                        ],
+                        value="circle",
+                        style={"width": "170px"}
+                    ),
+                    ],
+                    style={
+                        "display": "flex",
+                        "alignItems": "center"
+                    }
+                )
+                ],
+                width="auto",
+            ),
+            ],
+            style={'backgroundColor': '#e9ecef'},
+            id="dot-modal-body",
+        ),
+        dbc.ModalFooter([
+            dbc.Button("Submit", id="dot-submit-button", className="ms-auto", n_clicks=0, style={'margin-right': 'auto'}),
+            dbc.Button("Close", id="close-dot-modal", className="me-auto", n_clicks=0, style={'margin-left': 'auto'}),
+            ],
+            className="w-100 d-flex",
+            style={'backgroundColor': '#6c757d'}
+        ),
+        ],
+        id="point-edit-modal",
+        is_open=False,
+        style={"width": "auto", "centered": "true"},
+    ),
+    dbc.Modal([
+        dbc.ModalHeader("Create a New Annotation"),
+        dbc.ModalBody([
+            dbc.Label("Annotation Text"),
+            dbc.Input(type="text", id="annotation-text-input", placeholder="Enter annotation text"),
+        ]),
+        dbc.ModalFooter(
+            dbc.Button("Submit", id="submit-annotation", className="ms-auto", n_clicks=0)
+        ),
+        ],
+        id="annotation-modal",
+        is_open=False,
+    ),
+    dcc.Store(id='annotations-store', data=[]),
+    dbc.Modal([
         dbc.ModalHeader(dbc.ModalTitle("Enter Path to DynamoRIO Folder", style={'text-align': 'center', 'color': 'white'}), style={'backgroundColor': '#6c757d'}),
-        dbc.ModalBody(
-            [
-                dbc.Input(id="library-path-input", placeholder="Enter the DynamoRIO path here...", type="text")
+        dbc.ModalBody([
+            dbc.Input(id="library-path-input", placeholder="Enter the DynamoRIO path here...", type="text")
             ],
             id="library-modal-body",
             style={'backgroundColor': '#e9ecef'},
@@ -357,110 +534,539 @@ app.layout = dbc.Container([
         dbc.ModalFooter(
             dbc.Button("Submit Path", id="submit-library-path", className="ms-auto", n_clicks=0),style={'backgroundColor': '#6c757d'},
         )
-    ],
-    id="library-modal",
-    is_open=False
+        ],
+        id="library-modal",
+        is_open=False
     ),
-    dbc.Modal([
-            dbc.ModalHeader(dbc.ModalTitle("Application To Inject ROI Code", style={'text-align': 'center', 'color': 'white'}), style={'backgroundColor': '#6c757d'}),
-            dbc.ModalBody([
-                html.P("Application Analysis Method", className="mb-1", style={'color': 'black', 'text-align': 'center'}),
-                dbc.Card(
-                    dbc.CardBody(
-                        html.Div([
-                            dbc.Checklist(
-                                options=[
-                                    {"label": "DBI", "value": "dbi"},
-                                    {"label": "PMU", "value": "pmu"}
-                                ],
-                                value=[],
-                                id="checklist-inject-pmu-dbi",
-                                inline=True,
-                                className="mb-2",
-                                style={'color': 'black'},
-                            )
-                        ],
-                        className="d-flex flex-column align-items-center"
-                        )
-                    ),
-                    style={'width': '200px', 'height': '60px', 'margin': '0px auto', 'padding': '0px', 'text-align': 'center'},
-                    className="mb-3"
-                ),
-                html.P("Application Specification", className="mb-1", style={'color': 'black', 'text-align': 'center'}),
-                dbc.Card(
-                    dbc.CardBody(
-                        html.Div([
-                            dbc.Input(id="file-path-input-inject", placeholder="Enter source code file path", type="text", className="mb-0"),
-                            html.Div(id="file-path-error", style={'color': 'red', 'textAlign': 'center', 'marginTop': '6px', 'marginBottom': '0px', 'fontSize': '15px'}),
-                            ],
-                            className="d-flex flex-column align-items-center"
-                        )
-                    ),
-                    style={'width': '100%', 'minHeight': '60px', 'margin': '0px auto', 'padding': '0px', 'text-align': 'center'},
-                    className="mb-3"
-                        ),
-                html.P("Region of Interest Flags Should be Present in Source Code", className="mb-1", style={'color': 'black', 'text-align': 'center'}),
-                dbc.Card(
-                            dbc.CardBody([
-                                        dbc.Row(
-                                                [
-                                                    dbc.Col(html.P("Region Start Flag:", className="mb-1", style={'color': 'black', 'text-align': 'right'}), width=6, align="center"),
-                                                    dbc.Col(dbc.Badge("//CARM ROI START", color="#6c757d", className="me-1"), width=6, align="center"),
-                                                ],
-                                                className="align-items-center"
-                                            ),
-                                        dbc.Row(
-                                                [
-                                                    dbc.Col(html.P("Region End Flag:", className="mb-0", style={'color': 'black', 'text-align': 'right'}), width=6, align="center"),
-                                                    dbc.Col(dbc.Badge("//CARM ROI END", color="#6c757d", className="mb-0"), width=6, align="center"),
-                                                ],
-                                                className="align-items-center"
-                                            ),
-                                        ]),
-                            style={'width': '100%', 'height': '80px', 'margin': '0px auto', 'padding': '0px', 'text-align': 'center'},
-                            className="mb-1"
-                        ),
-            
-                    dbc.Card(
-                                dbc.CardBody(
-                                    [
-
-                                                    dbc.Checklist(
-                                                        options=[
-                                                            {"label": "Create new injected source file", "value": "True"}
-                                                        ],
-                                                        value=[],
-                                                        id="new-file-checklist",
-                                                        inline=True,
-                                                        className="mb-0",
-                                                        style={'color': 'black', "text-align": "center"},
-                                                    ),
-                                        
-                                    ],
-                                    className="d-flex align-items-center justify-content-center",
-                                ),
-                                style={'width': '100%', 'height': '60%', 'margin': '0', 'padding': '0px', 'text-align': 'center'}
-                            )    
-            ],
-            style={'backgroundColor': '#e9ecef'}
-            ),
-            dbc.ModalFooter(
-                [
-                    dbc.Button("Inject Code", id="submit-button-inject", className="ms-auto", n_clicks=0, style={'margin-right': 'auto'}),
-                    dbc.Button("Close", id="close-modal-button-inject", className="me-auto", n_clicks=0, style={'margin-left': 'auto'}),
-                ],
-                className="w-100 d-flex",
-                style={'backgroundColor': '#6c757d'}
-            ),
     ],
-    id="modal-inject",
-    is_open=False,
-    ),
-],
-fluid=True,
-className="p-3",
-style={'backgroundColor': '#e9ecef'}
+    fluid=True,
+    className="p-3",
+    style={'backgroundColor': '#e9ecef'}
 )
+
+@app.callback(
+    Output('graph-width', 'value'),
+    Output('graph-height', 'value'),
+    Output('line-size', 'value'),
+    Output('dot-size', 'value'),
+    Output('title-size', 'value'),
+    Output('axis-size', 'value'),
+    Output('legend-size', 'value'),
+    Output('tick-size', 'value'),
+    Output('annotation-size', 'value'),
+    Output('tooltip-size', 'value'),
+    Input('button-CARM-reset', 'n_clicks'),
+    prevent_initial_call=True,
+)
+def reset_inputs(n_clicks):
+    if n_clicks is None:
+        raise PreventUpdate
+
+    return (
+        DEFAULTS['graph-width'],
+        DEFAULTS['graph-height'],
+        DEFAULTS['line-size'],
+        DEFAULTS['dot-size'],
+        DEFAULTS['title-size'],
+        DEFAULTS['axis-size'],
+        DEFAULTS['legend-size'],
+        DEFAULTS['tick-size'],
+        DEFAULTS['annotation-size'],
+        DEFAULTS['tooltip-size'],
+    )
+
+@app.callback(
+    Output("slider-components", "style"),
+     Input('graph-lines', 'data'),
+     Input("filename", "value"),
+)
+def toggle_components(lines, selected_file):
+    #If no file is selected, hide the components.
+    #Otherwise, show them.
+    if not selected_file:
+        return {'display': 'none'}
+    else:
+        return {'display': 'block'}
+    
+@app.callback(
+    Output("open-offcanvas2", "style"),
+    Input("graph-lines", "data"),
+    Input("filename", "value"),
+)
+def toggle_sidebar_button(graph_lines, selected_file):
+    #If no file is selected, hide the sidebar button
+    if not selected_file:
+        return {'border': 'none', 'background': 'transparent', 'padding': '0', 'margin': '0', 'display': 'none'}
+    #Otherwise, show the sidebar button
+    return {'border': 'none', 'background': 'transparent', 'padding': '0', 'margin': '0', 'display': 'block'}
+    
+@app.callback(
+    [Output("point-edit-modal", "is_open"),
+     Output("clicked-trace-index", "data"),
+     Output("clicked-point-index", "data")],
+    [
+     Input("graphs", "clickData"),
+     Input("close-dot-modal", "n_clicks"),
+     Input("dot-submit-button", "n_clicks")
+    ],
+    [State("point-edit-modal", "is_open")]
+)
+def open_modal_on_click(click_data, close_clicks, submit_clicks, is_open):
+    #If user clicks Close or Submit, close the modal & reset index.
+    #If user clicks a point, open the modal & set that point's index.
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    if trigger_id in ["dot-submit-button", "close-dot-modal"]:
+        return False, -1, -1
+
+    #If a point was clicked in the graph
+    if click_data:
+        trace_idx = click_data["points"][0]["curveNumber"]
+        point_idx = click_data["points"][0]["pointIndex"]
+        return True, trace_idx, point_idx
+
+    return is_open, -1, -1
+
+#Callback to modify the point style directly in the figure
+@app.callback(
+    [Output('graphs', 'figure', allow_duplicate=True),
+     Output('point-edit-modal', 'is_open', allow_duplicate=True)],
+    [Input('dot-submit-button', 'n_clicks')],
+    [
+        State('dot-color-picker', 'value'),
+        State('dot-size-input', 'value'),
+        State('dot-symbol-dropdown', 'value'),
+        State('clicked-trace-index', 'data'),
+        State('clicked-point-index', 'data'),
+        State('graphs', 'figure'),
+    ],
+    prevent_initial_call=True
+)
+def update_point_style(n_submit, chosen_color, chosen_size, chosen_symbol, trace_idx, point_idx, current_fig):
+
+    if not n_submit:
+        raise PreventUpdate
+    if trace_idx < 0 or point_idx < 0:
+        raise PreventUpdate
+
+    trace_data = current_fig["data"][trace_idx]
+    markers = trace_data["marker"]
+
+    x_vals = trace_data["x"]
+    n_points = len(x_vals) if x_vals else 0
+
+    if n_points == 0:
+        raise PreventUpdate
+    
+    #Convert color, size, symbol to lists if needed
+    color_array = ut.ensure_list(markers, "color", "blue", n_points)
+    size_array = ut.ensure_list(markers, "size", 10, n_points)
+    symbol_array = ut.ensure_list(markers, "symbol", "circle", n_points)
+
+    #Update the single clicked point
+    color_array[point_idx] = chosen_color["hex"]
+    size_array[point_idx] = chosen_size
+    symbol_array[point_idx] = chosen_symbol
+
+    #Write them back to the trace
+    trace_data["marker"]["color"] = color_array
+    trace_data["marker"]["size"] = size_array
+    trace_data["marker"]["symbol"] = symbol_array
+
+    return current_fig, False
+
+# Callback to open the modal
+@app.callback(
+    Output("annotation-modal", "is_open"),
+    [Input("create-annotation-button", "n_clicks"), 
+     Input("submit-annotation", "n_clicks")],
+    [State("annotation-modal", "is_open")],
+)
+def toggle_modal(n1, n2, is_open):
+    if n1 or n2:
+        return not is_open
+    return is_open
+
+@app.callback(
+    [Output('graphs', 'figure', allow_duplicate=True),
+     Output('annotations-store', 'data')],
+    [Input('submit-annotation', 'n_clicks')],
+    [State('annotation-text-input', 'value'),
+     State('graphs', 'figure'),
+     State('annotations-store', 'data')],
+    prevent_initial_call=True
+)
+def add_annotations(n_clicks, text, figure, annotations):
+    ctx = callback_context
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    if not trigger_id in ["graphs", "annotation-store"]:
+        if n_clicks and text:
+            #Initial annotation position
+            x = math.log10(1)
+            y = math.log10(1)
+
+            #Create the new annotation
+            new_annotation = {
+                'x': x,
+                'y': y,
+                'xref': 'x',
+                'yref': 'y',
+                'text': text,
+                'showarrow': False,
+                'bgcolor': "white",
+                'bordercolor': 'black',
+                'borderwidth': 1,
+            }
+
+            #Append the new annotation to the existing annotations in the figure
+            if 'annotations' in figure['layout']:
+                figure['layout']['annotations'].append(new_annotation)
+            else:
+                figure['layout']['annotations'] = [new_annotation]
+
+            #Update the annotations store
+            if annotations is None:
+                annotations = []
+            annotations.append(new_annotation)
+            return figure, annotations
+
+        raise PreventUpdate
+    else:
+        raise PreventUpdate
+
+@app.callback(
+    [Output("graphs", "figure", allow_duplicate=True), 
+     Output("disable-annotation-button", "children"),
+     Output('change-annon', 'data', allow_duplicate=True),],
+    [Input("disable-annotation-button", "n_clicks"),
+     Input("disable-annotation-button", "children")],
+    [State("graphs", "figure")],
+    prevent_initial_call=True
+)
+def toggle_annotations(n_clicks, button_text, current_fig):
+    if not n_clicks:
+        return current_fig, "Disable Annotations"
+    
+    #If figure has annotations, remove them
+    if "annotations" in current_fig["layout"] and current_fig["layout"]["annotations"]:
+        current_fig["layout"]["annotations"] = []
+
+    if button_text == "Disable Annotations":
+        button_text = "Enable Annotations"
+    else:
+        #If no annotations, do nothing to the figure.
+        button_text = "Disable Annotations"
+
+    return current_fig, button_text, 1
+
+@app.callback(
+    Output('annotation-accordion', 'children'),
+    Input('graphs', 'figure'),
+    prevent_initial_call=True
+)
+def generate_angle_inputs(graph):
+    if not graph or 'annotations' not in graph['layout']:
+        return []  #No annotations, return no inputs
+
+    annotations = graph['layout']['annotations']
+    
+    group_suffixes = ['_1', '_2']
+    grouped_annotations = {suffix: [] for suffix in group_suffixes}
+    ungrouped_annotations = []
+    accordion_items = []
+
+    #Group annotations based on the suffix
+    for i, ann in enumerate(annotations):
+        name = ann.get('name', '')
+        matched = False
+        for suffix in group_suffixes:
+            if name.endswith(suffix):
+                grouped_annotations[suffix].append((i, ann))
+                matched = True
+                break
+        if not matched:
+            #Collect annotations without the specified suffixes
+            ungrouped_annotations.append((i, ann))
+
+    for suffix, anns in grouped_annotations.items():
+        if not anns:
+            continue
+        #Create cards for each annotation in the group
+        cards = []
+        for i, ann in anns:
+            card = dbc.Card(
+                [
+                    dbc.CardHeader(
+                        f"{ann.get('text')}",
+                        style={
+                            'color': 'white',
+                            'fontWeight': 'bold',
+                            'margin': '0px',
+                            'padding': '2px 0px 0px 2px'
+                        }
+                    ),
+                    dbc.CardBody(
+                        [
+                            dbc.Row(
+                                [
+                                    html.Div(
+                                        [
+                                            html.Div(
+                                                [
+                                                    html.Div(
+                                                        "Plot:",
+                                                        style={
+                                                            'color': 'white',
+                                                            'marginRight': '10px',
+                                                            'alignSelf': 'center'
+                                                        }
+                                                    ),
+                                                    dbc.Checkbox(
+                                                        id={'type': 'annotation-enable', 'index': i},
+                                                        className="mb-0",
+                                                        style={'alignSelf': 'center'},
+                                                        value=ann.get('opacity', 1) == 1
+                                                    ),
+                                                ],
+                                                style={'display': 'flex', 'alignItems': 'center'}
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Div(
+                                                        "Angle:",
+                                                        style={
+                                                            'color': 'white',
+                                                            'marginRight': '10px',
+                                                            'marginLeft': '30px',
+                                                            'alignSelf': 'center'
+                                                        }
+                                                    ),
+                                                    dbc.Input(
+                                                        type="number",
+                                                        placeholder="Angle",
+                                                        value=round(ann.get('textangle', 0)),
+                                                        id={'type': 'angle-input', 'index': i},
+                                                        style={'width': '80px', 'height': '25px'}
+                                                    ),
+                                                ],
+                                                style={
+                                                    'display': 'flex',
+                                                    'alignItems': 'center',
+                                                    'marginRight': '30px'
+                                                }
+                                            ),
+                                        ],
+                                        style={
+                                            'display': 'flex',
+                                            'alignItems': 'center',
+                                            'justifyContent': 'flex-start'
+                                        }
+                                    ),
+                                ],
+                                className="mb-0",
+                                align="center"
+                            ),
+                        ],
+                        style={'margin': '0px', 'padding': '0px 0px 2px 2px'}
+                    ),
+                ],
+                className="mb-1",
+                style={
+                    'margin': '0px',
+                    'padding': '0px 0px 2px 2px',
+                    'backgroundColor': '#6c757d',
+                    'Color': ann.get('bordercolor')
+                }
+            )
+            cards.append(card)
+
+        group_title = f"CARM Results {suffix[-1]}"
+        accordion_item = dbc.AccordionItem(
+            title=group_title,
+            children=cards,
+            item_id=f"group_{suffix}",
+        )
+        accordion_items.append(accordion_item)
+
+    if ungrouped_annotations:
+        cards = []
+        for i, ann in ungrouped_annotations:
+            card = dbc.Card(
+                [
+                    dbc.CardHeader(
+                        f"{ann.get('text')}",
+                        style={
+                            'color': 'white',
+                            'fontWeight': 'bold',
+                            'margin': '0px',
+                            'padding': '2px 0px 0px 2px'
+                        }
+                    ),
+                    dbc.CardBody(
+                        [
+                            dbc.Row(
+                                [
+                                    html.Div(
+                                        [
+                                            html.Div(
+                                                [
+                                                    html.Div(
+                                                        "Plot:",
+                                                        style={
+                                                            'color': 'white',
+                                                            'marginRight': '10px',
+                                                            'alignSelf': 'center'
+                                                        }
+                                                    ),
+                                                    dbc.Checkbox(
+                                                        id={'type': 'annotation-enable', 'index': i},
+                                                        className="mb-0",
+                                                        style={'alignSelf': 'center'},
+                                                        value=ann.get('opacity', 1) == 1
+                                                    ),
+                                                ],
+                                                style={'display': 'flex', 'alignItems': 'center'}
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Div(
+                                                        "Angle:",
+                                                        style={
+                                                            'color': 'white',
+                                                            'marginRight': '10px',
+                                                            'marginLeft': '30px',
+                                                            'alignSelf': 'center'
+                                                        }
+                                                    ),
+                                                    dbc.Input(
+                                                        type="number",
+                                                        placeholder="Angle",
+                                                        value=round(ann.get('textangle', 0)),
+                                                        id={'type': 'angle-input', 'index': i},
+                                                        style={'width': '80px', 'height': '25px'}
+                                                    ),
+                                                ],
+                                                style={
+                                                    'display': 'flex',
+                                                    'alignItems': 'center',
+                                                    'marginRight': '30px'
+                                                }
+                                            ),
+                                        ],
+                                        style={
+                                            'display': 'flex',
+                                            'alignItems': 'center',
+                                            'justifyContent': 'flex-start'
+                                        }
+                                    ),
+                                ],
+                                className="mb-0",
+                                align="center"
+                            ),
+                        ],
+                        style={'margin': '0px', 'padding': '0px 0px 2px 2px'}
+                    ),
+                ],
+                className="mb-1",
+                style={
+                    'margin': '0px',
+                    'padding': '0px 0px 2px 2px',
+                    'backgroundColor': '#6c757d',
+                    'Color': ann.get('bordercolor')
+                }
+            )
+            cards.append(card)
+
+        accordion_item = dbc.AccordionItem(
+            title='Custom Annotations',
+            children=cards,
+            item_id='other_annotations'
+        )
+        accordion_items.append(accordion_item)
+
+    return accordion_items
+
+
+
+@app.callback(
+    Output('graphs', 'figure', allow_duplicate=True),
+    [Input({'type': 'annotation-enable', 'index': ALL}, 'value')],
+    [State('graphs', 'figure')],
+    prevent_initial_call=True
+)
+def update_annotations_visibility(checkbox_values, figure):
+    fig = go.Figure(figure)
+    annotations = fig['layout']['annotations']
+
+    if annotations:
+        for i, ann in enumerate(annotations):
+            if i < len(checkbox_values):
+                if checkbox_values[i]:
+                    ann['opacity'] = 1  # Visible
+                else:
+                    ann['opacity'] = 0  # Hidden
+        fig.update_layout(annotations=annotations)
+
+    return fig
+
+
+@app.callback(
+    Output('graphs', 'figure', allow_duplicate=True),
+    [Input('annotation-size', 'value')],
+    [State('graphs', 'figure')],
+    prevent_initial_call=True
+)
+def update_annotations_font(font_size, figure):
+    fig = go.Figure(figure)
+    annotations = fig['layout']['annotations']
+
+    if annotations:
+        for i, ann in enumerate(annotations):
+            ann['font']['size'] = font_size
+        fig.update_layout(annotations=annotations)
+
+    return fig
+
+@app.callback(
+    Output('graphs', 'figure', allow_duplicate=True),
+    [Input({'type': 'angle-input', 'index': ALL}, 'value')],
+    State('graphs', 'figure'),
+    prevent_initial_call=True
+)
+def update_annotation_angles(input_angles, figure):
+    #Callback to control annotations angle individually
+    if not figure or not input_angles:
+        raise dash.exceptions.PreventUpdate
+
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    annotations = figure.get('layout', {}).get('annotations', [])
+
+    for i, angle in enumerate(input_angles):
+        if i < len(annotations):
+            annotations[i]['textangle'] = angle
+    
+    new_figure = deepcopy(figure)
+    new_figure['layout']['annotations'] = annotations
+
+    return new_figure
+
+#Toggle visibility of the sidebar
+@app.callback(
+    Output("offcanvas2", "is_open"),
+    [Input("open-offcanvas2", "n_clicks")],
+    [State("offcanvas2", "is_open")]
+)
+def toggle_offcanvas2(n, is_open):
+    if n:
+        return not is_open
+    return is_open
+
 #Callback to update the machine-selected state
 @app.callback(
     Output('machine-selected', 'data'),
@@ -480,7 +1086,7 @@ def update_machine_selected(filename):
 def toggle_initial_content(machine_selected):
     if machine_selected:
         return {'display': 'none'}, {'display': 'none'}
-    return {'width': '99%', 'display': 'block', 'background': 'transparent', 'marginLeft': '40px'}, {'text-align': 'center', 'margin-top': '10px'}
+    return {'width': '99%', 'height': '92%', 'display': 'block', 'background': 'transparent', 'marginLeft': '40px'}, {'text-align': 'center', 'margin-top': '10px'}
 
 #Toggle visibility of the sidebar
 @app.callback(
@@ -494,22 +1100,40 @@ def toggle_offcanvas(n, is_open):
     return is_open
 
 @app.callback(
+    [Output('graphs', 'figure', allow_duplicate=True),
+     Output('graphs', 'config', allow_duplicate=True),
+     Output('button-CARM-edit', 'children'),
+     ],
+    [Input('button-CARM-edit', 'n_clicks')],
+    [State('graphs', 'figure'),
+     State('graphs', 'config')],
+     prevent_initial_call=True
+)
+def toggle_editable(n_clicks, figure, config):
+    new_figure = copy.deepcopy(figure)
+    if n_clicks % 2 == 0:
+        config['editable'] = True
+        return new_figure, config, "Save Text Changes"
+    else:
+        config['editable'] = False
+        return new_figure, config, "Edit Graph Text"
+
+@app.callback(
     Output("modal-profile", "is_open"),
     [Input("app-analysis-button", "n_clicks"),
      Input("close-modal-button", "n_clicks"),
-     Input("submit-button", "n_clicks"),
+     Input("analysis-submit-button", "n_clicks"),
      Input("invisible-output2", "children"),  #Output from file path validation
      Input("invisible-output3", "children")],  #Output from library modal
     [State("modal-profile", "is_open")],
     
 )
-def toggle_modal(open_clicks, close_clicks, submit_clicks, file_path_output, library_action, is_open):
+def toggle_app_analysis_modal(open_clicks, close_clicks, submit_clicks, file_path_output, library_action, is_open):
     ctx = callback_context
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
     if trigger_id == "close-modal-button":
         return False
-    elif trigger_id == "submit-button":
+    elif trigger_id == "analysis-submit-button":
         #Check for error messages or requirements to keep the modal open
         parts = file_path_output.split()
         if "Error" in parts[0]:
@@ -529,7 +1153,7 @@ def toggle_modal(open_clicks, close_clicks, submit_clicks, file_path_output, lib
         Output("invisible-output3", "children")
     ],
     [
-        Input("submit-button", "n_clicks"),
+        Input("analysis-submit-button", "n_clicks"),
         Input("submit-library-path", "n_clicks"),
         Input("invisible-output2", "children"),
     ],
@@ -548,9 +1172,9 @@ def handle_submit_library(submit_clicks, submit_library_clicks, file_path_output
         parts = file_path_output.split()
 
         checklist_values = parts[3]
-        if triggered_id == "submit-button":
+        if triggered_id == "analysis-submit-button":
             if "dbi" in checklist_values:
-                Dyno_path = read_library_path("DYNO")
+                Dyno_path = ut.read_library_path("DYNO")
                 if not Dyno_path:
                     #Return state indicating library input is needed
                     return True, dbc.Input(id="library-path-input", placeholder="Enter the DynamoRIO path here...", type="text"), "need_input"
@@ -558,7 +1182,7 @@ def handle_submit_library(submit_clicks, submit_library_clicks, file_path_output
 
         elif triggered_id == "submit-library-path":
             if library_path and DBI_AI_Calculator.check_client_exists(library_path):
-                write_library_path("DYNO", library_path)
+                ut.write_library_path("DYNO", library_path)
                 return False, dbc.Input(id="library-path-input", placeholder="Enter the DynamoRIO path here...", type="text"), "Library path saved"
             else:
                 return True, [
@@ -571,10 +1195,10 @@ def handle_submit_library(submit_clicks, submit_library_clicks, file_path_output
 #Main profile submission
 @app.callback(
     [
-        Output("modal-body", "children"),
+        Output("modal-profile-body", "children"),
         Output("invisible-output2", "children")  #To carry error or success messages
     ],
-    Input("submit-button", "n_clicks"),
+    Input("analysis-submit-button", "n_clicks"),
     [
         State("checklist-pmu-dbi", "value"),
         State("machine-name-app", "value"),
@@ -583,7 +1207,7 @@ def handle_submit_library(submit_clicks, submit_library_clicks, file_path_output
     ],
     prevent_initial_call=True,
 )
-def handle_submit(n_clicks, checklist_values, machine_name, file_path, exec_arguments):
+def handle_app_analysis_submit(n_clicks, checklist_values, machine_name, file_path, exec_arguments):
     if not n_clicks:
         return modal_content, "No action taken here"
 
@@ -630,6 +1254,7 @@ def handle_submit(n_clicks, checklist_values, machine_name, file_path, exec_argu
     ]
 
     if error_message:
+        print(error_message)
         return modal_content, f"Error: {error_message}"
 
     modal_content_clear = [
@@ -718,7 +1343,7 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
                 exec_arguments_list = None
             if str(checklist_values) == str(['dbi']) or str(checklist_values) == str(['dbi_roi']):
                 method = "DR"
-                Dyno_path = read_library_path("DYNO")
+                Dyno_path = ut.read_library_path("DYNO")
                 DBI_AI_Calculator.check_client_exists(Dyno_path)
                 if str(checklist_values) == str(['dbi']):
                     
@@ -750,23 +1375,24 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
                 bandwidth = float((memory_bytes * 8) / exec_time)
 
                 print("\n---------DBI RESULTS-----------")
-                print("Total FP operations:", fp_ops)
-                print("Total memory bytes:", memory_bytes)
-                print("Total integer operations:", integer_ops)
+                print("Total FP operations:", ut.custom_round(fp_ops))
+                print("Total memory bytes:", ut.custom_round(memory_bytes))
 
-                print("\nExecution time (seconds):", time_taken_seconds)
-                print("GFLOP/s:", gflops)
-                print("Bandwidth (GB/s): " + str(bandwidth))
-                print("Arithmetic Intensity:", ai)
-                print("------------------------------\n")
+                print("\nExecution time (seconds):", ut.custom_round(time_taken_seconds))
+                print("GFLOP/s:", ut.custom_round(gflops))
+                print("Bandwidth (GB/s): " + str(ut.custom_round(bandwidth)))
+                print("Arithmetic Intensity:", ut.custom_round(ai))
+                print("------------------------------")
 
                 ct = datetime.datetime.now()
                 date = ct.strftime('%Y-%m-%d %H:%M:%S')
     
 
-                DBI_AI_Calculator.update_csv(machine_name, file_path, gflops, ai, bandwidth, time_taken_seconds, "", date, None, None, None, method, 1, 1)
+                DBI_AI_Calculator.update_csv(machine_name, file_path, gflops, ai, bandwidth, time_taken_seconds, "", date, None, None, 0, method, 1, 1)
             if str(checklist_values) == str(['pmu_roi']):
-                total_time_nsec, total_mem, total_sp, total_dp, thread_count = PMU_AI_Calculator.runPAPI(file_path, exec_arguments_list)
+                total_time_nsec, total_mem, total_sp, total_dp, thread_count = PMU_AI_Calculator.runPAPI(file_path, True, exec_arguments_list)
+                time_taken_seconds = float (total_time_nsec / 1e9)
+
                 total_fp = total_sp + total_dp
 
                 sp_ratio = float (total_sp / total_fp)
@@ -781,25 +1407,21 @@ def execute_profiling(file_path_status, library_path_status, machine_name, file_
                 else:
                     precision = "mixed"
 
-                
-
                 ai = float (total_fp / memory_bytes)
 
                 gflops = float(total_fp / total_time_nsec)
-                bandwidth = float((memory_bytes * 8) / total_time_nsec)
+                bandwidth = float((memory_bytes) / total_time_nsec)
 
                 print("\n---------PMU RESULTS-----------")
-                print("Total FP Operations:", total_fp)
-                print("Total Memory Bytes:", memory_bytes)
-                #print("Simple AI:", float(total_fp / total_mem))
-                print("SP FLOP Ratio: " + str(sp_ratio) + " DP FLOP Ration: " + str(dp_ratio))
+                print("Total FP Operations:", ut.custom_round(total_fp))
+                print("Calculated Total Memory Bytes:", ut.custom_round(memory_bytes))
+                print("SP FLOP Ratio: " + str(ut.custom_round(sp_ratio)) + " DP FLOP Ration: " + str(ut.custom_round(dp_ratio)))
                 print("Threads Used:", thread_count)
-
-                print("\nExecution Time (seconds):" + str(float(total_time_nsec / 1e9)))
-                print("GFLOP/s: " + str(gflops))
-                print("Bandwidth (GB/s): " + str(bandwidth))
-                print("Arithmetic Intensity:", ai)
-                print("------------------------------\n")
+                print("\nExecution Time (seconds):",np.format_float_positional(ut.custom_round(time_taken_seconds), trim='-'))
+                print("GFLOP/s: " + str(ut.custom_round(gflops)))
+                print("Bandwidth (GB/s): " + str(ut.custom_round(bandwidth)))
+                print("Arithmetic Intensity:", ut.custom_round(ai))
+                print("------------------------------")
 
                 ct = datetime.datetime.now()
 
@@ -839,23 +1461,6 @@ def toggle_checklist_pmu_dbi(current_values, previous_values):
         return latest_selected if latest_selected else current_values[-1:]  #Keep the latest selected one
 
     return current_values
-@app.callback(
-    Output("checklist-inject-pmu-dbi", "value"),
-    [Input("checklist-inject-pmu-dbi", "value")],
-    [State("checklist-inject-pmu-dbi", "value")]
-)
-def toggle_checklist(current_values, previous_values):
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        return []
-    trigger_value = ctx.triggered[0]["value"]
-
-    if not current_values:
-        return []
-    if len(current_values) > 1:
-        latest_selected = list(set(current_values) - set(previous_values))
-        return latest_selected if latest_selected else current_values[-1:]
-    return current_values
 
 @app.callback(
     Output("checklist-only_ldst", "value"),
@@ -876,78 +1481,16 @@ def toggle_checklist(current_values, previous_values):
     return current_values
 
 @app.callback(
-    Output("submit-button-inject", "disabled"),
-    [
-        Input("checklist-inject-pmu-dbi", "value"),
-        Input("file-path-input-inject", "value")
-    ]
-)
-def update_button_status_inject(pmu_dbi_values, file_path):
-    if pmu_dbi_values and file_path:
-        return False
-    return True
-
-@app.callback(
-    Output("submit-button", "disabled"),
+    Output("analysis-submit-button", "disabled"),
     [
         Input("checklist-pmu-dbi", "value"),
         Input("file-path-input", "value")
     ]
 )
-def update_button_status(pmu_dbi_values, file_path):
+def update_app_analysis_submit_button_status(pmu_dbi_values, file_path):
     if pmu_dbi_values and file_path:
         return False
     return True
-
-"""
-@app.callback(
-    Output("modal-inject", "is_open"),
-    [Input("app-inject-button", "n_clicks"),
-     Input("close-modal-button-inject", "n_clicks"),
-     Input("submit-button-inject", "n_clicks"),
-     Input("file-path-valid", "children")],
-    [State("modal-inject", "is_open")]
-)
-def toggle_modal_inject(open_clicks, close_clicks, submit_clicks, file_path_valid, is_open):
-    ctx = callback_context
-    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
-    if trigger_id == "close-modal-button-inject":
-        return False
-    elif trigger_id == "submit-button-inject":
-        #Closing if the file path is valid
-        if file_path_valid:
-            return False
-        return True
-    elif trigger_id == "app-inject-button":
-        return not is_open
-
-    return is_open
-"""
-
-@app.callback(
-    [Output("file-path-valid", "children"),
-     Output("file-path-error", "children"),
-     ],
-    [Input("submit-button-inject", "n_clicks"),
-     Input("checklist-inject-pmu-dbi", "value"),
-     Input("new-file-checklist", "value"),],
-    [State("file-path-input-inject", "value")],
-    prevent_initial_call=True
-)
-def check_file_path(n_clicks, pmu_dbi, new_file, file_path):
-    if not file_path:
-        return False, ""
-
-    if not os.path.isfile(file_path) or (not file_path.endswith('.c') and not file_path.endswith('.cpp')):
-        return False, "The specified file was not found or is not a C/C++ source file."
-    #injected = CodeInject.inject_code(file_path, pmu_dbi, new_file)
-
-    #if not injected:
-        #return False, "Region of Interest Flags not Found."
-    return True, ""
-
-
 
 @app.callback(
     Output("invisible-output", "children"),
@@ -1018,7 +1561,7 @@ def execute_script1(n, name, l1_size, l2_size, l3_size, thread_set, interleaved,
         num_ld = 0
         num_st = 0
 
-    freq = 0
+    freq = 2
     inst = "add"
     num_ops = 32768
     test_type = "roofline"
@@ -1026,12 +1569,13 @@ def execute_script1(n, name, l1_size, l2_size, l3_size, thread_set, interleaved,
     set_freq = 0
     measure_freq = 0
     VLEN = 1
-    tl1 = 2
+    tl1 = 1
     tl2 = 2
     plot = 0
+    l3_bytes = 0
     
     try:
-        run.run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, thread_set, interleaved, num_ops, int(dram_bytes), dram_auto, test_type, verbose, set_freq, measure_freq, VLEN, tl1, tl2, plot, 1, "./Results")
+        run.run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, thread_set, interleaved, num_ops, l3_bytes, int(dram_bytes), dram_auto, test_type, verbose, set_freq, measure_freq, VLEN, tl1, tl2, plot, 1, "./carm_results")
     except Exception as e:
         print("Task was interrupted:", e)
     return no_update
@@ -1041,107 +1585,182 @@ def execute_script1(n, name, l1_size, l2_size, l3_size, thread_set, interleaved,
     [Input('filename', 'value')]
 )
 def update_additional_dropdowns(selected_file):
-    if not selected_file:
-        return html.Div([])
-
-    _, _, _, _, data_list = read_csv_file(selected_file)
-    df = pd.DataFrame(data_list)
-    
-    if df.empty:
-        return html.Div([])
+    if selected_file:
+        _, _, _, _, data_list = gut.read_csv_file(selected_file)
+        df = pd.DataFrame(data_list)
 
     fields = ['ISA', 'Precision', 'Threads', 'Loads', 'Stores', 'Interleaved', 'DRAM Bytes', 'FP Inst', 'Date']
     dropdowns = []
 
     for field in fields:
-        if field == "Date":
-            unique_values = sorted(df[field.replace(" ", "")].unique(), reverse=True)  
+        if selected_file:
+            if not df.empty:
+                if field == "Date":
+                    unique_values = sorted(df[field.replace(" ", "")].unique(), reverse=True)  
+                else:
+                    unique_values = sorted(df[field.replace(" ", "")].unique())  
+                options = [{'label': value, 'value': value} for value in unique_values]
+                display = "flex"
+            else:
+                options = {}
+                display = "none"
         else:
-            unique_values = sorted(df[field.replace(" ", "")].unique())  
-            
-        options = [{'label': value, 'value': value} for value in unique_values]
+            options = {}
+            display = "none"
 
         if field == "Date":
-            width = '275px'
+            width = 250
         elif field == "ISA":
-            width = '230px'
-        else: 
-            width = '161px'
-
-        dropdown_style = {'display': 'inline-block', 'width': width, 'margin': '5px'}
-        dropdown = html.Div([
-            dcc.Dropdown(
-                id=f'{field.lower().replace(" ", "")}-dynamic-dropdown',
-                placeholder=field,
-                options=options,
-                multi=False
-            )
-        ], 
-        style=dropdown_style)
+            width = 200
+        else:
+            width = 160
         
-        dropdowns.append(dropdown)
+        dropdowns.append(
+            html.Div(
+                dcc.Dropdown(
+                    id=f'{field.lower().replace(" ", "")}-dynamic-dropdown',
+                    placeholder=field,
+                    options=options,
+                    multi=False
+                ),
+                style = {
+                'flex': '1 0 auto',
+                'minWidth': width,
+                'margin': '5px',
+            }
+            )
+        )
     
     return dbc.Card(
-    dbc.CardBody([
-        html.Div([
-            html.Div("CARM Results 1:", style={'height': '100%', 'margin-right': '10px', 'align-self': 'center'}),
-            html.Div(dropdowns, style={'height': '130%', 'display': 'flex', 'justify-content': 'center'})
-        ], style={'display': 'flex', 'align-items': 'center', 'height': '130%'})
-    ]),
-    style={'height': '60px', 'margin': '0px auto 10px auto', 'padding': '0px', 'text-align': 'center'},
-)
+        dbc.CardBody([
+            html.Div(
+                [
+                    html.Div(
+                        "CARM Results 1:", 
+                        style={
+                            'marginRight': '10px', 
+                            'alignSelf': 'center', 
+                            'fontWeight': 'bold',
+                            'minWidth': '125px', 
+                        }
+                    ),
+                    html.Div(
+                        dropdowns, 
+                        style={
+                            'display': 'flex',
+                            'width': '100%',
+                            'justifyContent': 'space-between',
+                            'alignItems': 'center',
+                        }
+                    )
+                ],
+                style={
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'margin': '-10px auto auto auto'
+                }
+            )
+        ]),
+        style={
+            'margin': '0px auto 10px auto',
+            'padding': '0px',
+            'textAlign': 'center',
+            'display': 'flex',
+            'height': '60px'
+        }
+    )
+
 
 @app.callback(
     Output('additional-dropdowns2', 'children'),
     [Input('filename', 'value')]
 )
 def update_additional_dropdowns2(selected_file):
-    if not selected_file:
-        return html.Div([])
-
-    _, _, _, _, data_list = read_csv_file(selected_file)
-    df = pd.DataFrame(data_list)
-    
-    if df.empty:
-        return html.Div([])
+    if selected_file:
+        _, _, _, _, data_list = gut.read_csv_file(selected_file)
+        df = pd.DataFrame(data_list)
 
     fields = ['ISA', 'Precision', 'Threads', 'Loads', 'Stores', 'Interleaved', 'DRAM Bytes', 'FP Inst', 'Date']
     dropdowns = []
 
     for field in fields:
-        if field == "Date":
-            unique_values = sorted(df[field.replace(" ", "")].unique(), reverse=True)  
+        if selected_file:
+            if not df.empty:
+                if field == "Date":
+                    unique_values = sorted(df[field.replace(" ", "")].unique(), reverse=True)  
+                else:
+                    unique_values = sorted(df[field.replace(" ", "")].unique())  
+                options = [{'label': value, 'value': value} for value in unique_values]
+                display = "flex"
+            else:
+                options = {}
+                display = "none"
         else:
-            unique_values = sorted(df[field.replace(" ", "")].unique())  
-        options = [{'label': value, 'value': value} for value in unique_values]
-        if field == "Date":
-            width = '275px'
-        elif field == "ISA":
-            width = '230px'
-        else: 
-            width = '161px'
+            options = {}
+            display = "none"
 
-        dropdown_style = {'display': 'inline-block', 'width': width, 'margin': '5px'}
-        dropdown = html.Div([
-            dcc.Dropdown(
-                id=f'{field.lower().replace(" ", "")}-dynamic-dropdown2',
-                placeholder=field,
-                options=options,
-                multi=False
-            )
-        ], style=dropdown_style)
+        if field == "Date":
+            width = 250
+        elif field == "ISA":
+            width = 200
+        else:
+            width = 160
         
-        dropdowns.append(dropdown)
+        dropdowns.append(
+            html.Div(
+                dcc.Dropdown(
+                    id=f'{field.lower().replace(" ", "")}-dynamic-dropdown2',
+                    placeholder=field,
+                    options=options,
+                    multi=False
+                ),
+                style = {
+                'flex': '1 0 auto',
+                'minWidth': width,
+                'margin': '5px',
+            }
+            )
+        )
     
     return dbc.Card(
-    dbc.CardBody([
-        html.Div([
-            html.Div("CARM Results 2:", style={'height': '100%', 'margin-right': '10px', 'align-self': 'center'}),
-            html.Div(dropdowns, style={'height': '130%', 'display': 'flex', 'justify-content': 'center'})
-        ], style={'display': 'flex', 'align-items': 'center', 'height': '130%'})
-    ]),
-    style={'height': '60px', 'margin': '0px auto', 'padding': '0px', 'text-align': 'center'},
-)
+        dbc.CardBody([
+            html.Div(
+                [
+                    html.Div(
+                        "CARM Results 2:", 
+                        style={
+                            'marginRight': '10px', 
+                            'alignSelf': 'center', 
+                            'fontWeight': 'bold',
+                            'color': 'red',
+                            'minWidth': '125px', 
+                        }
+                    ),
+                    html.Div(
+                        dropdowns, 
+                        style={
+                            'display': 'flex',
+                            'width': '100%',
+                            'justifyContent': 'space-between',
+                            'alignItems': 'center',
+                        }
+                    )
+                ],
+                style={
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'margin': '-10px auto auto auto'
+                }
+            )
+        ]),
+        style={
+            'margin': '0px auto 10px auto',
+            'padding': '0px',
+            'textAlign': 'center',
+            'display': 'flex',
+            'height': '60px'
+        }
+    )
 
 @app.callback(
     [
@@ -1152,12 +1771,12 @@ def update_additional_dropdowns2(selected_file):
 )
 def update_application_dropdown(selected_file):
     if not selected_file:
-        return [[], {'display': 'none'}]
+        return [html.Div(id="application-dropdown", style={"display": "none"}), {'display': 'none'}]
 
  
-    application_file_path = selected_file.replace("Roofline", "Applications")
+    application_file_path = selected_file.replace("roofline", "applications")
     #Read the CSV file and extract data
-    data_list = read_application_csv_file(application_file_path)
+    data_list = gut.read_application_csv_file(application_file_path)
     
     if not data_list:
         df = None
@@ -1168,8 +1787,8 @@ def update_application_dropdown(selected_file):
     df = pd.DataFrame(data_list)
  
     options = [{
-    'label': f"{row['Name']} ({row['Method']}) - {row['Date']} ({' '.join(filter(None, [row['ISA'], row['Precision'], (str(row['Threads']) + ' Threads' if row['Threads'] else None)]))}{' |' if any([row['ISA'], row['Precision'], row['Threads']]) else ''} AI: {row['AI']} Gflops: {row['GFLOPS']})",
-    'value': f"{row['Name']}  {row['Method']}  {row['Date']}  {row['ISA']}  {row['Precision']}  {row['Threads']}  {row['AI']}  {row['GFLOPS']}  {index}"
+    'label': f"{row['Name']} ({row['Method']}) - {row['Date']} ({' '.join(filter(None, [row['ISA'], row['Precision'], ((str(row['Threads']) + ' Threads') if (row['Threads'] and int(row['Threads']) > 0) else ('No Thread Info'))]))}{' |' if any([row['ISA'], row['Precision'], row['Threads']]) else ''} AI: {row['AI']} | Gflops: {row['GFLOPS']} | Duration: {np.format_float_positional(row['Time'], trim='-')})",
+    'value': f"{row['Name']}  {row['Method']}  {row['Date']}  {row['ISA']}  {row['Precision']}  {row['Threads']}  {row['AI']}  {row['GFLOPS']}  {np.format_float_positional(row['Time'], trim='-')}  {index}"
 } for index, row in df.iloc[::-1].iterrows()]
 
     dropdown = dcc.Dropdown(
@@ -1203,7 +1822,7 @@ def chained_callback_ISA(Precision, Threads, Loads, Stores, Interleaved, DRAMByt
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1248,7 +1867,7 @@ def chained_callback_Precision(ISA, Threads, Loads, Stores, Interleaved, DRAMByt
         return []
 
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
     if df.empty:
         return []
@@ -1294,7 +1913,7 @@ def chained_callback_Threads(ISA, Precision, Loads, Stores, Interleaved, DRAMByt
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1338,7 +1957,7 @@ def chained_callback_Loads(ISA, Precision, Threads, Stores, Interleaved, DRAMByt
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1382,7 +2001,7 @@ def chained_callback_Stores(ISA, Precision, Threads, Loads, Interleaved, DRAMByt
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1426,7 +2045,7 @@ def chained_callback_Interleaved(ISA, Precision, Threads, Loads, Stores, DRAMByt
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1470,7 +2089,7 @@ def chained_callback_DRAMBytes(ISA, Precision, Threads, Loads, Stores, Interleav
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1514,7 +2133,7 @@ def chained_callback_FPInst(ISA, Precision, Threads, Loads, Stores, Interleaved,
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1558,7 +2177,7 @@ def chained_callback_Date(ISA, Precision, Threads, Loads, Stores, Interleaved, D
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1602,7 +2221,7 @@ def chained_callback_ISA2(Precision, Threads, Loads, Stores, Interleaved, DRAMBy
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1647,7 +2266,7 @@ def chained_callback_Precision2(ISA, Threads, Loads, Stores, Interleaved, DRAMBy
         return []
 
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
     if df.empty:
         return []
@@ -1693,7 +2312,7 @@ def chained_callback_Threads2(ISA, Precision, Loads, Stores, Interleaved, DRAMBy
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1737,7 +2356,7 @@ def chained_callback_Loads2(ISA, Precision, Threads, Stores, Interleaved, DRAMBy
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1781,7 +2400,7 @@ def chained_callback_Stores2(ISA, Precision, Threads, Loads, Interleaved, DRAMBy
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1825,7 +2444,7 @@ def chained_callback_Interleaved2(ISA, Precision, Threads, Loads, Stores, DRAMBy
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1869,7 +2488,7 @@ def chained_callback_DRAMBytes2(ISA, Precision, Threads, Loads, Stores, Interlea
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1913,7 +2532,7 @@ def chained_callback_FPInst2(ISA, Precision, Threads, Loads, Stores, Interleaved
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1957,7 +2576,7 @@ def chained_callback_Date2(ISA, Precision, Threads, Loads, Stores, Interleaved, 
     if not selected_file:
         return html.Div([])
     #Read the CSV file and extract data
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
 
     query_conditions = []
@@ -1988,7 +2607,15 @@ def chained_callback_Date2(ISA, Precision, Threads, Loads, Stores, Interleaved, 
 @app.callback(
     [
     Output(component_id='graphs', component_property='figure'),
-    Output('graphs', 'style'),
+    Output('graph-size-update', 'children'),
+    Output('graph-lines', 'data'),
+    Output('graph-lines2', 'data'),
+    Output('graph-values', 'data'),
+    Output('graph-values2', 'data'),
+    Output('graph-isa', 'data'),
+    Output('graph-xrange', 'data'),
+    Output('graph-yrange', 'data'),
+    Output('change-annon', 'data'),
     ],
     [
     Input("isa-dynamic-dropdown", "value"),
@@ -2010,18 +2637,55 @@ def chained_callback_Date2(ISA, Precision, Threads, Loads, Stores, Interleaved, 
     Input("fpinst-dynamic-dropdown2", "value"),
     Input("date-dynamic-dropdown2", "value"),
     Input("filename", "value"),
-    Input("application-dropdown", "value")
+    Input("application-dropdown", "value"),
+    Input('exponent-switch', 'value'),
+    Input('line-legend-switch', 'value'),
+    Input('detail-legend-switch', 'value'),
+    Input('line-size', 'value'),
+    Input('title-size', 'value'),
+    Input('axis-size', 'value'),
+    Input('tick-size', 'value'),
+    Input('tooltip-size', 'value'),
+    Input('legend-size', 'value'),
+    Input('dot-size', 'value'),
+    Input('graph-width', 'value'),
+    Input('graph-height', 'value'),
     ],
+    State('graphs', 'figure'),
     prevent_initial_call=True
 )
 def analysis(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPInst, Date,
-             ISA2, Precision2, Threads2, Loads2, Stores2, Interleaved2, DRAMBytes2, FPInst2, Date2, selected_file, selected_applications):
+             ISA2, Precision2, Threads2, Loads2, Stores2, Interleaved2, DRAMBytes2, FPInst2, Date2, selected_file, selected_applications, exponant, line_legend, line_legend_detailed, line_size, title_size, axis_size, tick_size, tooltip_size, legend_size, dot_size, g_width, g_height, figure):
+    
+    global lines_origin
+    global lines_origin2
+    
     if not selected_file:
-        return go.Figure(), {'display': 'none'}
+        return go.Figure(),  "", None, None, None, None, None, [0, 0], [0, 0], None
+
+    #Get trigger-id
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    annotations = {}
+    if not figure is None:
+        fig = go.Figure(figure)
+        annotations = fig['layout']['annotations']
+
+    if trigger_id not in ['graphs']:
+        figure = go.Figure()
 
     #Read data and create DataFrame
-    _, _, _, _, data_list = read_csv_file(selected_file)
+    _, _, _, _, data_list = gut.read_csv_file(selected_file)
     df = pd.DataFrame(data_list)
+    top_flops = 0
+    top_flops2 = 0
+    smallest_ai = 1000
+    smallest_gflops = 1000
+    smallest_gflops2 = 1000
+    change_annotation = 0
 
 
     #Get queries for both sets of inputs
@@ -2031,98 +2695,295 @@ def analysis(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPI
     #Filter data based on queries
     filtered_df1 = df.query(query1) if query1 else df
     filtered_df2 = df.query(query2) if query2 and any([ISA2, Precision2, Threads2, Loads2, Stores2, Interleaved2, DRAMBytes2, FPInst2, Date2]) else pd.DataFrame()
-
-
-    #Generate traces for both datasets
-    figure = go.Figure()
-    if not filtered_df1.empty:
-        values1 = filtered_df1.iloc[-1][['L1', 'L2', 'L3', 'DRAM', 'FP', 'FP_FMA', 'FPInst']].tolist()
-        figure.add_traces(plot_roofline(values1, '', ISA))
-    if not filtered_df2.empty and not query2 == None:
-        values2 = filtered_df2.iloc[-1][['L1', 'L2', 'L3', 'DRAM', 'FP', 'FP_FMA', 'FPInst']].tolist()
-        figure.add_traces(plot_roofline(values2, '2', ISA2))
-
+    
     #Plot the selected application as a dot
     if selected_applications:
         for selected_application in selected_applications:
-            parts = selected_application.rsplit('  ', 8)
-            if len(parts) >= 8:
-                name, method, date, isa, precision, threads, ai, gflops, index_start = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], float(parts[6]), float(parts[7]), int(parts[8])
+            parts = selected_application.rsplit('  ', 9)
+            if len(parts) >= 9:
+                name, method, date, isa, precision, threads, ai, gflops, time, index_start = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], float(parts[6]), float(parts[7]), parts[8], int(parts[9])
                 #Add trace for each application
+                smallest_gflops = min(smallest_gflops, gflops)
+                smallest_ai = min (smallest_ai, ai)
+
                 figure.add_trace(go.Scatter(
                         x=[ai], 
                         y=[gflops], 
-                        mode='markers', 
-                        name=f'{name} ({date})', 
-                        marker=dict(size=10)
+                        mode='markers',
+                        text=[f'{name} | {threads} threads | Duration: {time} </b><br> ({date})'],
+                        name=f'{name}',
+                        marker=dict(size=dot_size),
+                        hovertemplate='<b>%{text} (AI: %{x}, GFLOP/s: %{y})<br><extra></extra>',
                     ))
-                if method == "Paraver_TimeStamp":
-                    application_file_path = selected_file.replace("Roofline", "Applications")
-                    #Read the CSV file and extract data
-                    data_list = read_application_csv_file(application_file_path)
-                    df_app = pd.DataFrame(data_list)
-                    for index, row in df_app.iloc[index_start+1:].iterrows():
-                        if row["Method"] == method:
-                            if row["Date"] == date:
-                                figure.add_trace(go.Scatter(
-                                    x=[row["AI"]], 
-                                    y=[row["GFLOPS"]], 
-                                    mode='markers', 
-                                    name=f'{row["Name"]}', 
-                                    marker=dict(size=10)
-                                ))
+    if trigger_id not in ['graphs']:
+        figure.update_layout(
+            hoverlabel={
+                    'font_size': tooltip_size,
+                },
+            title={
+                'text': 'Cache Aware Roofline Model',
+                'y': 0.95,
+                'x': 0.5,
+                'xanchor': 'center',
+                'yanchor': 'top',
+                'font': {
+                    'family': "Arial",
+                    'size': title_size,
+                    'color': "black"
+                }
+            },
+            xaxis={
+                'title':{
+                    'text': 'Arithmetic Intensity (flop/byte)',
+                    'font': {
+                        'family': "Arial",
+                        'size': axis_size,
+                        'color': "black"
+                    },
+                },
+                'type': 'log',
+                'dtick': '0.30102999566',
+                'title_standoff': 0,
+                'automargin': True,
+                'tickfont_size': tick_size,
+            },
+            yaxis={
+                'title':{
+                    'text': 'Performance (GFLOP/s)',
+                    'font': {
+                        'family': "Arial",
+                        'size': axis_size,
+                        'color': "black"
+                    },
+                },
+                'type': 'log',
+                'dtick': '0.30102999566',
+                'title_standoff': 0,
+                'automargin': True,
+                'tickfont_size': tick_size,
+            },
+            legend={
+                'font': {'size': legend_size},
+                'orientation': 'h',
+                'x': 0.5,
+                'y': 0,
+                'xanchor': 'center',
+                'yanchor': 'bottom',
+                'yref': 'container',
+            },
+            showlegend=True,
+            height=g_height,
+            width=g_width,
+            margin=dict(t=60, l=80, b=20, r=40),
+            plot_bgcolor='#e9ecef',
+            paper_bgcolor='#e9ecef',
+            clickmode='event',
+        )
+        figure.update_xaxes(showspikes=True)
+        figure.update_yaxes(showspikes=True)
 
-    figure.update_layout(
-    title={
-        'text': 'Cache Aware Roofline Model',
-        'y': 0.95,
-        'x': 0.5,
-        'xanchor': 'center',
-        'yanchor': 'top',
-        'font': {
-            'family': "Arial",
-            'size': 20,
-            'color': "black"
-        }
-    },
-    xaxis={
-        'title': 'Arithmetic Intensity (flop/byte)',
-        'type': 'log',
-        'dtick': '0.30102999566',
-        'range': [np.log(0.18), np.log(11.2)],
-        'title_standoff': 0,
-        'automargin': True
-    },
-    yaxis={
-        'title': 'Performance (GFLOP/s)',
-        'type': 'log',
-        'dtick': '0.30102999566',
-        'range': [np.log(0.25), np.log(25)],
-        #'range': [np.log(0.5), np.log(12.5)],
-        'title_standoff': 0,
-        'automargin': True
-    },
-    legend={
-        'font': {'size': 12},
-        'orientation': 'h',
-        'x': 0.5,
-        'y': -0.1,
-        #'y': -0.15,
-        'xanchor': 'center',
-        'yanchor': 'top'
-    },
-    font={'size': 18},
-    showlegend=True,
-    height=675,
-    #height=720,
-    width=1900,
-    #width=950,
-    margin=dict(t=60, l=80, b=20, r=40),
-    plot_bgcolor='#e9ecef',
-    paper_bgcolor='#e9ecef'
+    if not filtered_df1.empty:
+        values1 = filtered_df1.iloc[-1][['L1', 'L2', 'L3', 'DRAM', 'FP', 'FP_FMA', 'FPInst']].tolist()
+        ISA = filtered_df1.iloc[-1][['ISA']].tolist()
+        lines = gut.calculate_roofline(values1, smallest_ai/5)
+        if lines != lines_origin and len(lines_origin) > 0 and trigger_id != 'interval-component':
+            change_annotation = 1
+            annotations = {}
+        lines_origin = lines
+        top_flops = lines['L1']['ridge'][1]
+        smallest_gflops_aux = min(
+            line['start'][1] for line in lines.values()
+            if 'start' in line and isinstance(line['start'], (list, tuple)) and len(line['start']) > 1
+        )
+        smallest_gflops = min(smallest_gflops_aux, smallest_gflops)
+        #If its just a zoom we dont plot the lines again, just re-calculate the angles for the annotations
+        if not trigger_id in ['graphs', 'interval-component']:
+            figure.add_traces(gut.plot_roofline(values1, lines, '', ISA[0], line_legend, int(line_size), line_legend_detailed))
+        
+    lines2 = {}
+    values2 = []
+    if not filtered_df2.empty and not query2 == None:
+        values2 = filtered_df2.iloc[-1][['L1', 'L2', 'L3', 'DRAM', 'FP', 'FP_FMA', 'FPInst']].tolist()
+        ISA.append(filtered_df2.iloc[-1][['ISA']].tolist()[0])
+        lines2 = gut.calculate_roofline(values2, smallest_ai/5)
+
+        if lines2 != lines_origin2 and trigger_id != 'interval-component':
+            change_annotation = 1
+            annotations = {}
+        lines_origin2 = lines2
+
+        top_flops2 = lines2['L1']['ridge'][1]
+        smallest_gflops2 = min(
+            line['start'][1] for line in lines2.values()
+            if 'start' in line and isinstance(line['start'], (list, tuple)) and len(line['start']) > 1
+        )
+        if not trigger_id in ['graphs', 'interval-component']:
+            figure.add_traces(gut.plot_roofline(values2, lines2, '2', ISA[1], line_legend, int(line_size), line_legend_detailed))
+    else:
+        if lines2 != lines_origin2 and trigger_id != 'interval-component':
+            change_annotation = 1
+            annotations = {} 
+        lines_origin2 = lines2
+    
+    #Grab the axis range of the plot, after its reset or not
+    xaxis_range = figure.layout.xaxis.range
+    if xaxis_range:
+        x_min_angle = 10**xaxis_range[0]
+        x_max_angle = 10**xaxis_range[1]
+    else:
+        x_min_angle = min(0.00390625, smallest_ai/5)
+        x_max_angle = 256
+
+    #Extract the current y-axis range if available, otherwise use the data's min/max
+    yaxis_range = figure.layout.yaxis.range
+    
+    if yaxis_range:
+        y_min_angle = 10**yaxis_range[0]
+        y_max_angle = 10**yaxis_range[1]
+    else:
+        y_min_angle = min(smallest_gflops,smallest_gflops2)*0.5
+        y_max_angle = max(top_flops2,top_flops)*2
+
+    if exponant:
+        xaxis_range = figure.layout.xaxis.range
+        x_min = min(0.00390625, smallest_ai/5)
+        x_max = 256
+
+        #Extract the current y-axis range if available, otherwise use the data's min/max
+        yaxis_range = figure.layout.yaxis.range
+        y_min = min(smallest_gflops,smallest_gflops2)
+        y_max = max(top_flops2,top_flops)*1.3
+
+        x_tickvals, x_ticktext = ut.make_power_of_two_ticks(x_min, x_max)
+        y_tickvals, y_ticktext = ut.make_power_of_two_ticks(y_min, y_max)
+
+        #Update axes to show 2^X notation
+        figure.update_xaxes(tickmode='array', tickvals=x_tickvals, ticktext=x_ticktext)
+        figure.update_yaxes(tickmode='array', tickvals=y_tickvals, ticktext=y_ticktext)
+    else:
+        #Revert to normal formatting
+        figure.update_yaxes(exponentformat=None, tickformat=None)
+        figure.update_xaxes(exponentformat=None, tickformat=None)
+
+    timestamp = datetime.datetime.now().isoformat()
+    if annotations:
+        figure['layout']['annotations'] = annotations
+    return figure, f"Update: {timestamp}", lines, lines2, values1, values2, ISA, [x_min_angle, x_max_angle], [y_min_angle, y_max_angle], change_annotation#, 'width': '100%', 'height' : '100%'}
+
+@app.callback(
+    [Output(component_id='graphs', component_property='figure', allow_duplicate=True),
+     Output('change-annon', 'data', allow_duplicate=True)],
+    [
+    Input('graph-size-data', 'children'),
+    
+    Input('graph-lines', 'data'),
+    Input('graph-lines2', 'data'),
+    Input('graph-values', 'data'),
+    Input('graph-values2', 'data'),
+    Input('graph-isa', 'data'),
+    Input('graph-xrange', 'data'),
+    Input('graph-yrange', 'data'),
+    Input('graphs', 'relayoutData'),
+    Input('change-annon', 'data'),
+    Input("disable-annotation-button", "children"),
+    Input('annotation-size', 'value'),
+    Input('filename', 'value'),
+    ],
+    State('graphs', 'figure'),
+    prevent_initial_call=True,
 )
+def angle_updater(size, lines, lines2, values1, values2, ISA, xrange, yrange, relayout_data, change_anon, disable_anon, anon_size, filename, figure):
+    #Callback to update the annotations angles when the graph scale/zoom changes
+    if disable_anon != "Enable Annotations" and ISA:
+        figure = go.Figure(figure)
+        if figure:
+            x_range = getattr(figure.layout.xaxis, 'range', None)
+            if x_range is not None:
+                xaxis_range = figure.layout.xaxis.range
+            else:
+                xaxis_range = [math.log10(xrange[0]), math.log10(xrange[1])]
 
-    return figure, {'display': 'block'}#, 'width': '100%', 'height' : '100%'}
+            y_range = getattr(figure.layout.yaxis, 'range', None)
+            if y_range is not None:
+                yaxis_range = figure.layout.yaxis.range
+            else:
+                yaxis_range = [math.log10(yrange[0]), math.log10(yrange[1])]
+        
+        new_figure = go.Figure(figure)
+
+        timestamp = datetime.datetime.now().isoformat()
+        #Get trigger-id
+        ctx = callback_context
+        if not ctx.triggered:
+            raise PreventUpdate
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        if trigger_id == "filename":
+            new_figure['layout']['annotations'] = []
+
+        if size and len(size) >= 2:
+            liner = size.split('\n')
+            width = float(liner[0].replace('Plot area width:', '').replace('px','').strip())
+            height = float(liner[1].replace('Plot area height:', '').replace('px','').strip())
+        
+            annotations = new_figure['layout']['annotations']
+            cache_levels = ['L1', 'L2', 'L3', 'DRAM']
+            angle_degrees = {}
+            angle_degrees2 = {}
+            new_angle = {}
+            group_suffixes = ['_1', '_2']
+            cache_level_suffix = ['L1_1', 'L2_1', 'L3_1', 'DRAM_1', 'FP_1', 'FP_FMA_1', 'L1_2', 'L2_2', 'L3_2', 'DRAM_2', 'FP_2', 'FP_FMA_2']
+            for ann in annotations:
+                    ann_name = ann["name"]
+
+                    if ann_name in cache_level_suffix:
+                        ann_vis = ann['opacity']
+                        if ann_name[:-2] in cache_levels:
+                            if ann_name[-1] == '1':
+                                liner = lines
+                            elif ann_name[-1] == '2' and lines2:
+                                liner = lines2
+                            else:
+                                continue
+                            log_x1, log_x2 = math.log10(liner[ann_name[:-2]]['start'][0]), math.log10(liner[ann_name[:-2]]['ridge'][0])
+                            log_y1, log_y2 = math.log10(liner[ann_name[:-2]]['start'][1]), math.log10(liner[ann_name[:-2]]['ridge'][1])
+
+                            log_xmin, log_xmax = xaxis_range[0], xaxis_range[1]
+                            log_ymin, log_ymax = yaxis_range[0], yaxis_range[1]
+
+                            #Compute pixel coordinates based on log scale
+                            x1_pixel = ( (log_x1 - log_xmin) / (log_xmax - log_xmin) ) * width
+                            x2_pixel = ( (log_x2 - log_xmin) / (log_xmax - log_xmin) ) * width
+                            y1_pixel = height - ( (log_y1 - log_ymin) / (log_ymax - log_ymin) ) * height
+                            y2_pixel = height - ( (log_y2 - log_ymin) / (log_ymax - log_ymin) ) * height
+
+                            #Pixel slope
+                            pixel_slope = (y2_pixel - y1_pixel) / (x2_pixel - x1_pixel)
+                            ann['textangle'] = round(math.degrees(math.atan(pixel_slope)), 2)
+            if not annotations or change_anon == 1:
+                new_figure.layout.annotations = [
+                    annotation for annotation in new_figure.layout.annotations
+                    if annotation and not (hasattr(annotation, 'name') and annotation.name.endswith('_1'))
+                ]
+                for cache_level in ['L1', 'L2', 'L3', 'DRAM', 'FP', 'FMA']:
+                    annotation = gut.draw_annotation(values1, lines, '1', ISA[0], cache_level, width, height, anon_size, x_range=[xaxis_range[0], xaxis_range[1]], y_range=[yaxis_range[0], yaxis_range[1]])
+                    if annotation:
+                        new_figure.add_annotation(annotation)
+                
+                new_figure.layout.annotations = [
+                        annotation for annotation in new_figure.layout.annotations
+                        if annotation != None and not (hasattr(annotation, 'name') and annotation.name.endswith('_2'))
+                    ]
+                if len(lines2) > 0:
+                    
+                    for cache_level in ['L1', 'L2', 'L3', 'DRAM', 'FP', 'FMA']:
+                        annotation = gut.draw_annotation(values2, lines2, '2', ISA[1], cache_level, width, height, anon_size, x_range=[xaxis_range[0], xaxis_range[1]], y_range=[yaxis_range[0], yaxis_range[1]])
+                        if annotation:
+                            new_figure.add_annotation(annotation)
+            if change_anon == 1:
+                change_anon = 0
+            return go.Figure(new_figure), change_anon
+    else:
+        return go.Figure(figure), change_anon
 
 
 def construct_query(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMBytes, FPInst, Date):
@@ -2147,46 +3008,55 @@ def construct_query(ISA, Precision, Threads, Loads, Stores, Interleaved, DRAMByt
         query_parts.append(f"Date == '{Date}'")
 
     return " and ".join(query_parts) if query_parts else None
-    
-def plot_roofline(values, name_suffix, ISA):
-    import numpy as np
-    ai = np.linspace(0.00390625, 256, num=200000)
-    traces = []
-    cache_levels = ['L1', 'L2', 'L3', 'DRAM']
-    if name_suffix == "":
-        colors = ['black', 'black', 'black', 'black']
-        color_inst = 'black'
-    else:
-        colors = ['red', 'red', 'red', 'red']
-        color_inst = 'red'
-    linestyles = ['solid', 'solid', 'dash', 'dot']
 
-    for cache_level, color, linestyle in zip(cache_levels, colors, linestyles):
-        if values[cache_levels.index(cache_level)] > 0:
-            y_values = run.carm_eq(ai, values[cache_levels.index(cache_level)], values[5])
-            trace = go.Scatter(
-                x=ai, y=y_values,
-                mode='lines',
-                line=dict(color=color, dash=linestyle),
-                name=f'{cache_level} {ISA} ({values[cache_levels.index(cache_level)]} GB/s)'
-            )
-            traces.append(trace)
+app.clientside_callback(
+    """
+    function(relayoutData) {
+        // If no relayoutData, don't update
+        if (!relayoutData) {
+            return window.dash_clientside.no_update;
+        }
 
-    for i in range(4):
-        if values[i]:
-            top_roof = values[i]
-            break
+        function getPlotSize(attempts) {
+            const graphDiv = document.getElementById('graphs');
+            if (!graphDiv) return null;
 
-    y_values = run.carm_eq(ai, top_roof, values[4])
-    trace_inst = go.Scatter(
-        x=ai, y=y_values,
-        mode='lines',
-        line=dict(color=color_inst, dash="dashdot"),
-        name=f'{values[6]} {ISA}'
-    )
-    traces.append(trace_inst)
-    
-    return traces
+            const plotRect = graphDiv.querySelector('rect.nsewdrag[data-subplot="xy"]');
+            if (plotRect) {
+                const width = parseFloat(plotRect.getAttribute('width'));
+                const height = parseFloat(plotRect.getAttribute('height'));
+                return {width, height};
+            } else {
+                // Retry logic with delay
+                if (attempts > 0) {
+                    return new Promise(resolve => {
+                        setTimeout(() => {
+                            resolve(getPlotSize(attempts - 1));
+                        }, 100);  // each retry is delayed by 200ms
+                    });
+                } else {
+                    return null;
+                }
+            }
+        }
+
+        // Introduce an initial delay before making the first size query
+        return new Promise(resolve => {
+            setTimeout(() => {
+                resolve(Promise.resolve(getPlotSize(5)).then(size => {
+                    if (size) {
+                        return `Plot area width: ${size.width}px\\nPlot area height: ${size.height}px`;
+                    } else {
+                        return 'Plot area not found after multiple attempts.';
+                    }
+                }));
+            }, 100);  // initial delay of 300ms before starting the measurement process
+        });
+    }
+    """,
+    Output('graph-size-data', 'children'),
+    Input('graph-size-update', 'children'),
+)
 
 if __name__ == '__main__':
     app.run_server(debug=False)

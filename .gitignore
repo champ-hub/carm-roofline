@@ -1,0 +1,14 @@
+__pycache__/
+.vscode/
+.clang-format
+*.pyc
+*.pyo
+bin/
+carm_results
+cache
+Bench/Bench
+config/auto_config/config.txt
+carm_dbi_build
+carm_dbi_output.txt
+carm_pmu_output
+Test/test_params.h

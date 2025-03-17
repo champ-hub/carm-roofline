@@ -20,7 +20,7 @@
 #include "../Bench/calc_param.c"
 #include "../Bench/config_test.h"
 
-#if defined(ARM) || defined(RISCV) || defined(RISCVVECTOR)
+#if defined(ARM) || defined(SVE) || defined(RISCV) || defined(RISCVVECTOR)
 	#include <stdlib.h>
 #else
 	#include <mm_malloc.h>
@@ -31,10 +31,10 @@
 #define EXPECTED_TIME 100000000  //in ns
 
 //ARM SECTION
-#if defined(ARM)
+#if defined(ARM) || defined(SVE)
 	extern uint64_t clktestarm(uint64_t iterations) __attribute(());
 //x86 SECTION
-#elif !defined(ARM) && !defined(RISCV) && !defined(RISCVVECTOR)
+#elif !defined(ARM) && !defined(SVE) && !defined(RISCV) && !defined(RISCVVECTOR)
 	extern uint64_t clktestx86(uint64_t iterations) __attribute((sysv_abi));
 //RISCV SECTION
 #elif defined(RISCV) || defined(RISCVVECTOR)
@@ -90,12 +90,12 @@ int long long median(int n, int long long x[]){
 	return val;
 }
 //ARM SECTION
-#if defined(ARM)
+#if defined(ARM) || defined(SVE)
 	static inline void serialize() {
     	asm volatile ("dsb sy" ::: "memory");
 	}
 //x86 SECTION
-#elif !defined(ARM) && !defined(RISCV) && !defined(RISCVVECTOR)
+#elif !defined(ARM) && !defined(SVE) && !defined(RISCV) && !defined(RISCVVECTOR)
 	static  inline void serialize(){
 		asm volatile ( "lfence;" : : : );
 	}
@@ -173,11 +173,9 @@ void * benchmark_test(void *t_args){
 	float clockSpeedGhzmax = 0;
 
 	int sufficient_time = 0;
-	//ARM SECTION
-	#if defined(ARM)
 
-	//x86 / RISCV SECTION
-	#elif !defined(ARM) && !defined(RISCV) && !defined(RISCVVECTOR)
+	//x86 SECTION
+	#if !defined(ARM) && !defined(SVE) && !defined(RISCV) && !defined(RISCVVECTOR)
 		float nominalClockSpeed = 0;
 		volatile long long tsc_s;
 		volatile long long tsc_e;
@@ -194,7 +192,7 @@ void * benchmark_test(void *t_args){
 			for(i=0; i< NUM_REP*OPS*(NUM_LD+NUM_ST); i++){
 				test_var[i] = 1;
 			}
-		#elif defined(RISCVVECTOR)
+		#elif defined(RISCVVECTOR) || defined(SVE)
 			double size_kb = (double)(NUM_REP*OPS*(NUM_LD+NUM_ST)*sizeof(PRECISION)*VLEN*VLMUL/1024.0);
 			int size_kb_rounded_up = (int)ceil(size_kb);
 			PRECISION * test_var = (PRECISION*)malloc(size_kb_rounded_up*1024);
@@ -215,7 +213,7 @@ void * benchmark_test(void *t_args){
 	pthread_barrier_wait(&bar);
 
 	//CLOCK SPEED MEASURING
-	#if defined(ARM) //ARM SECTION
+	#if defined(ARM) || defined(SVE)//ARM SECTION
 		if (measure_freq == 1){
 			for (int i=0; i<10; i++){
 				serialize();
@@ -272,7 +270,7 @@ void * benchmark_test(void *t_args){
 				sleep0();
 			}
 		}
-	#elif !defined(ARM) && !defined(RISCV) && !defined(RISCVVECTOR) //x86 SECTION
+		#elif !defined(ARM) && !defined(SVE) && !defined(RISCV) && !defined(RISCVVECTOR) //x86 SECTION
 		if (measure_freq == 1){
 			for (int i=0; i<10; i++){
 				serialize();
@@ -323,7 +321,8 @@ void * benchmark_test(void *t_args){
 			serialize();
 		#endif
 
-		#if defined(ARM) || defined(RISCV) || defined(RISCVVECTOR)//ARM / RISCV SECTION
+		//ARM / RISCV SECTION
+		#if defined(ARM) || defined(SVE) || defined(RISCV) || defined(RISCVVECTOR)
 			clock_gettime(CLOCK_MONOTONIC, &t_start);
 		#else//x86 SECTION
 			tsc_s = read_tsc_start();
@@ -331,23 +330,20 @@ void * benchmark_test(void *t_args){
 		
 		//CALCULATE NUMBER ITERATIONS FOR TEST CODE TO EXECUTE THE EXPECTED TIME
 		#if defined (MEM) || defined (DIV) || defined(MIXED)
-			#if defined (VAR)
-				test_function(test_var,test_reps, num_reps_2);
-			#else
-				test_function(test_var,test_reps);
-			#endif
+			test_function(test_var,test_reps);
 		#else
 			test_function(test_reps);
 		#endif
-		
-		#if defined(ARM) || defined(RISCV) || defined(RISCVVECTOR)//ARM / RISCV SECTION
+
+		//ARM / RISCV SECTION
+		#if defined(ARM) || defined(SVE) || defined(RISCV) || defined(RISCVVECTOR)
 			clock_gettime(CLOCK_MONOTONIC, &t_end);
 		#else //x86 SECTION
 			tsc_e = read_tsc_end();
 		#endif
 
 		//ARM / RISCV SECTION
-		#if defined(ARM) || defined(RISCV) || defined(RISCVVECTOR)
+		#if defined(ARM) || defined(SVE) || defined(RISCV) || defined(RISCVVECTOR)
 			time_diff_ms = 1000 * (t_end.tv_sec - t_start.tv_sec) + ((t_end.tv_nsec - t_start.tv_nsec) / 1000000);
 			if (time_diff_ms > 100){
 				sufficient_time = 1;
@@ -366,7 +362,8 @@ void * benchmark_test(void *t_args){
 	}
 	pthread_barrier_wait(&bar);
 	
-	#if defined(ARM) || defined(RISCV) || defined(RISCVVECTOR) //ARM / RISCV SECTION
+	//ARM / RISCV SECTION
+	#if defined(ARM) || defined(SVE) || defined(RISCV) || defined(RISCVVECTOR)
 		int long long number_rep_aux = (int long long) ceil( (double) expected_time*freq_real*test_reps/(((long long)time_diff_ms)*freq_real*1000000));
 	#else//x86 SECTION
 		int long long number_rep_aux = (int long long) ceil( (double) expected_time*freq_real*test_reps/(tsc_e-tsc_s));
@@ -403,23 +400,19 @@ void * benchmark_test(void *t_args){
 			serialize();
 		#endif
 
-		#if defined(ARM) || defined(RISCV) || defined(RISCVVECTOR)//ARM / RISCV SECTION
+		#if defined(ARM) || defined(SVE) || defined(RISCV) || defined(RISCVVECTOR)//ARM / RISCV SECTION
 			clock_gettime(CLOCK_MONOTONIC, &t_start);
 		#else //x86 SECTION
 			tsc_s = read_tsc_start();
 		#endif
 
 		#if defined (MEM) || defined (DIV) || defined(MIXED)
-			#if defined (VAR)
-				test_function(test_var, num_reps_t, num_reps_2);
-			#else
-				test_function(test_var, num_reps_t);
-			#endif
+			test_function(test_var, num_reps_t);
 		#else
 			test_function(num_reps_t);
 		#endif
 		
-		#if defined(ARM) || defined(RISCV) || defined(RISCVVECTOR) //ARM / RISCV SECTION
+		#if defined(ARM) || defined(SVE) || defined(RISCV) || defined(RISCVVECTOR)//ARM / RISCV SECTION
 			clock_gettime(CLOCK_MONOTONIC, &t_end);
 		#else//x86 SECTION
         	tsc_e = read_tsc_end();
@@ -429,7 +422,7 @@ void * benchmark_test(void *t_args){
 			serialize();
 		#endif
 		
-		#if defined(ARM) || defined(RISCV) || defined(RISCVVECTOR) //ARM / RISCV SECTION
+		#if defined(ARM) || defined(SVE) || defined(RISCV) || defined(RISCVVECTOR)
 			time_test_total[tid][i] = (long long) (1000 * (t_end.tv_sec - t_start.tv_sec) + ((t_end.tv_nsec - t_start.tv_nsec) / 1000000));
 		#else //x86 SECTION
 			cycles_s[tid][i] = tsc_s;
@@ -449,7 +442,7 @@ void * benchmark_test(void *t_args){
 	#endif
 	
 	#if defined (MEM) || defined (DIV) || defined(MIXED)
-		#if defined(ARM) || defined(RISCV) || defined(RISCVVECTOR)//ARM / RISCV SECTION
+		#if defined(ARM) || defined(SVE) || defined(RISCV) || defined(RISCVVECTOR)//ARM / RISCV SECTION
 			free(test_var);
 		#else //x86 SECTION
 			_mm_free(test_var);
@@ -513,7 +506,6 @@ int main(int argc, char*argv[]){
     int i, j;
 	num_rep_max = 0;
 
-
 	int rc;
 	pthread_t threads[num_threads];
 	void * status;
@@ -522,7 +514,7 @@ int main(int argc, char*argv[]){
     struct pthread_args *t_args = malloc(num_threads*sizeof(struct pthread_args));
 	
 	//ARM SECTION
-	#if defined(ARM) || defined(RISCV) || defined(RISCVVECTOR)
+	#if defined(ARM) || defined(SVE) || defined(RISCV) || defined(RISCVVECTOR)
 		time_test_total = (uint64_t **)malloc(num_threads*sizeof(uint64_t *));
 		for(i = 0; i < num_threads; i++){
 			time_test_total[i] = (uint64_t *)malloc(NUM_RUNS*sizeof(uint64_t));
@@ -664,7 +656,7 @@ int main(int argc, char*argv[]){
 	//PARSE RESULTS
 
 	//ARM / RISCV SECTION
-	#if defined(ARM) || defined(RISCV) || defined(RISCVVECTOR)
+	#if defined(ARM) || defined(SVE) || defined(RISCV) || defined(RISCVVECTOR)
 		uint64_t * max_time = calloc(NUM_RUNS, sizeof(uint64_t));
 
 		for(i=0;i<NUM_RUNS;i++){

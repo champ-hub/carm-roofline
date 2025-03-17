@@ -5,9 +5,9 @@ void select_ISA_mem(int * align, int * ops, char ** assembly_op, char * operatio
 void select_ISA_mem_register(char **registr, char * precision);
 
 //Create Benchmarks
-void create_benchmark_flops(char * op, char * precision, int long long fp, int Vlen, int LMUL);
-void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * precision, int Vlen, int LMUL);
-void create_benchmark_mixed(char * op, int long long num_rep, int num_ld, int num_st, int num_fp, char * precision, int Vlen, int LMUL);
+void create_benchmark_flops(char * op, char * precision, int long long fp, int Vlen, int LMUL, int verbose);
+void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * precision, int Vlen, int LMUL, int verbose);
+void create_benchmark_mixed(char * op, int long long num_rep, int num_ld, int num_st, int num_fp, char * precision, int Vlen, int LMUL, int verbose);
 
 //Write Assembly Codes
 void write_asm_fp (int long long fp, char * op, int flops, char * registr, char * assembly_op_flops_1, char * assembly_op_flops_2, char * precision, int Vlen, int LMUL);

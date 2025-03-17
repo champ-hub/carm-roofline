@@ -4,7 +4,7 @@
 //																					CREATE FP TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void create_benchmark_flops(char * op, char * precision, int long long fp, int Vlen, int LMUL){
+void create_benchmark_flops(char * op, char * precision, int long long fp, int Vlen, int LMUL, int verbose){
 	
 	int flops, check;
 	char * assembly_op_flops_1, * assembly_op_flops_2, * registr;
@@ -23,25 +23,29 @@ void create_benchmark_flops(char * op, char * precision, int long long fp, int V
 	//Free auxiliary variables
 	free(assembly_op_flops_1);
 	if(strcmp(op,"mad") == 0) free(assembly_op_flops_2);
-	
-	#if defined (AVX512)
-		check = system("make isa=avx512 -f Test/Makefile_Benchmark");
-		if (check != 0){
+
+	char cmd[8192];
+	const char *silence_flag;
+
+	if (verbose > 3){
+		silence_flag = "";
+	}else{
+		silence_flag = "-s";
+	}
+	snprintf(cmd, sizeof(cmd), 
+	"make %s isa=%s -C %s/../Test -f Makefile_Benchmark", silence_flag, ISA, PROJECT_DIR);
+
+	check = system(cmd);
+		if (check == -1) {
 			printf("There was a problem making the benchmark");
 		}
-	#else
-		check = system("make -f Test/Makefile_Benchmark");
-		if (check != 0){
-			printf("There was a problem making the benchmark");
-		}
-	#endif
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //																					CREATE MEM TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * precision, int Vlen, int LMUL){
+void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * precision, int Vlen, int LMUL, int verbose){
 	
 	char * assembly_op, * assembly_op_2, * registr;
 	int align, ops, check;
@@ -56,24 +60,28 @@ void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * 
 	//Free auxiliary variables
 	free(assembly_op);
 	
-	#if defined (AVX512)
-		check = system("make isa=avx512 -f Test/Makefile_Benchmark");
-		if (check != 0){
+	char cmd[8192];
+	const char *silence_flag;
+
+	if (verbose > 3){
+		silence_flag = "";
+	}else{
+		silence_flag = "-s";
+	}
+	snprintf(cmd, sizeof(cmd), 
+	"make %s isa=%s -C %s/../Test -f Makefile_Benchmark", silence_flag, ISA, PROJECT_DIR);
+
+	check = system(cmd);
+		if (check == -1) {
 			printf("There was a problem making the benchmark");
 		}
-	#else
-		check = system("make -f Test/Makefile_Benchmark");
-		if (check != 0){
-			printf("There was a problem making the benchmark");
-		}
-	#endif
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //																					CREATE MIXED TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void create_benchmark_mixed(char * op, int long long num_rep, int num_ld, int num_st, int num_fp, char * precision, int Vlen, int LMUL){
+void create_benchmark_mixed(char * op, int long long num_rep, int num_ld, int num_st, int num_fp, char * precision, int Vlen, int LMUL, int verbose){
 	
 	char * assembly_op, * assembly_op_2, * registr;
 	int align, ops, check;
@@ -100,15 +108,19 @@ void create_benchmark_mixed(char * op, int long long num_rep, int num_ld, int nu
 	//Free auxiliary variables
 	free(assembly_op);
 	
-	#if defined (AVX512)
-		check = system("make isa=avx512 -f Test/Makefile_Benchmark");
-		if (check != 0){
+	char cmd[8192];
+	const char *silence_flag;
+
+	if (verbose > 3){
+		silence_flag = "";
+	}else{
+		silence_flag = "-s";
+	}
+	snprintf(cmd, sizeof(cmd), 
+	"make %s isa=%s -C %s/../Test -f Makefile_Benchmark", silence_flag, ISA, PROJECT_DIR);
+
+	check = system(cmd);
+		if (check == -1) {
 			printf("There was a problem making the benchmark");
 		}
-	#else
-		check = system("make -f Test/Makefile_Benchmark");
-		if (check != 0){
-			printf("There was a problem making the benchmark");
-		}
-	#endif
 }
