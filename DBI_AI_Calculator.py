@@ -14,7 +14,7 @@ import sys
 import platform
 import csv
 
-import run
+import utils as ut
 
 #FP OPERATIONS
 x86_Scalar_fp_operations = {
@@ -91,12 +91,14 @@ x86_AVX512_fp_operations = {
     "vmulpd": {"count": 0, "string": "AVX512 (8x 64 bit)", "factor": 8},
     "vfmadd132pd": {"count": 0, "string": "AVX512 (16x 64 bit)", "factor": 16},
     "vfmadd231pd": {"count": 0, "string": "AVX512 (16x 64 bit)", "factor": 16},
+    "vfmadd213pd": {"count": 0, "string": "AVX512 (16x 64 bit)", "factor": 16},
     "vdivps": {"count": 0, "string": "AVX512 (16x 32 bit)", "factor": 16},
     "vaddps": {"count": 0, "string": "AVX512 (16x 32 bit)", "factor": 16},
     "vsubps": {"count": 0, "string": "AVX512 (16x 32 bit)", "factor": 16},
     "vmulps": {"count": 0, "string": "AVX512 (16x 32 bit)", "factor": 16},
     "vfmadd132ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32},
-    "vfmadd231ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32}
+    "vfmadd231ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32},
+    "vfmadd213ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32}
 }
 
 #INTEGER OPERATIONS
@@ -200,25 +202,27 @@ def check_client_exists(path):
         print(f"No DynamoRIO executable 'drrun' found in: '{drrun_path}'.")
         return False
 
-    cmake_command = f"cmake -DDynamoRIO_DIR={path}/cmake ../CustomClient"
-    
     #Check for build folder
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    #Construct the path to the build folder
-    build_dir = os.path.join(script_dir, "build")
+    cmake_command = f"cmake -DDynamoRIO_DIR={path}/cmake {script_dir}/CustomClient"
+    
+    
 
-    if os.path.exists(build_dir):
+    #Construct the path to the build folder
+    build_dir = "./carm_dbi_build"
+
+    if os.path.exists("./carm_dbi_build"):
         print(f"The build folder is present.")
     else:
         print(f"The build folder does not exist. Building the DynamoRIO Client.")
         try:
-            subprocess.run(f"mkdir build && cd build && {cmake_command} && make opcoder", check=True, shell=True)
+            subprocess.run(f"mkdir carm_dbi_build && cd carm_dbi_build && {cmake_command} && make opcoder", check=True, shell=True)
         except subprocess.CalledProcessError as e:
             print("Error executing the command:", e)
     
     #Construct the path to the client file
-    path_client = os.path.join(script_dir, "build/bin/libopcoder.so")
+    path_client = os.path.join(build_dir, "bin/libopcoder.so")
 
     #Check if the client file exists
     if os.path.exists(path_client):
@@ -226,7 +230,7 @@ def check_client_exists(path):
     else:
         print(f"The opcode client does not exist in the path '{path_client}'. Building the client.")
         try:
-            subprocess.run(f"rm -rf build && mkdir build && cd build && {cmake_command} && make opcoder", check=True, shell=True)
+            subprocess.run(f"rm -rf carm_dbi_build && mkdir carm_dbi_build && cd carm_dbi_build && {cmake_command} && make opcoder", check=True, shell=True)
         except subprocess.CalledProcessError as e:
             print("Error executing the command:", e)
     return True
@@ -257,9 +261,9 @@ def runSDE(sde_path, roi, executable_path, additional_args):
 def runDynamoRIO(dynamo_path, roi, executable_path, additional_args):
     #Construct the command with the provided paths and additional arguments
     if roi:
-        command = f"{dynamo_path}/bin64/drrun -c ./build/bin/libopcoder.so -roi -- {executable_path}"
+        command = f"{dynamo_path}/bin64/drrun -c ./carm_dbi_build/bin/libopcoder.so -roi -- {executable_path}"
     else:
-        command = f"{dynamo_path}/bin64/drrun -c ./build/bin/libopcoder.so -- {executable_path}"
+        command = f"{dynamo_path}/bin64/drrun -c ./carm_dbi_build/bin/libopcoder.so -- {executable_path}"
 
     # Add additional arguments to the command
     if additional_args != None:
@@ -289,18 +293,18 @@ def runApplication(roi, executable_path, additional_args):
         except subprocess.CalledProcessError as e:
             print("Error executing the command:", e)
 
-        with open("timing_results.txt", "r") as file:
+        with open("carm_timing_results.txt", "r") as file:
             contents = file.read()
             #Extract the number of seconds
             match = re.search(r"Time Taken:\s*([\d.]+)\s*seconds", contents)
             if match:
                 seconds = float(match.group(1))
             else:
-                print("No match found in timing_results.txt, stopping program.")
+                print("No match found in carm_timing_results.txt, stopping program.")
                 sys.exit(1)
         file.close()
 
-        os.remove("timing_results.txt")
+        os.remove("carm_timing_results.txt")
         return float(seconds * 1e9)
     else:
     
@@ -348,7 +352,7 @@ def analyseDynamoRIOx86():
     fp_ops = 0
     integer_ops = 0
     memory_bytes = 0
-    with open('output.txt', 'r') as file:
+    with open('carm_dbi_output.txt', 'r') as file:
         for line in file:
             #Arithmetic Section       
             if "Floating Point and Integer opcode execution counts" in line:
@@ -477,7 +481,7 @@ def analyseDynamoRIOARM():
     integer_ops = 0
     memory_bytes = 0
 
-    with open('output.txt', 'r') as file:
+    with open('carm_dbi_output.txt', 'r') as file:
         for line in file:
             # Arithmetic Section       
             if "Floating Point and Integer opcode execution counts" in line:
@@ -817,227 +821,6 @@ def printDynamoRIOARM():
             print(f"{data:12} : {opcode}")
     print("------------------------------")
 
-def parse_title_line(line):
-    parts = line.split()
-    title = {
-        "name": parts[0],
-        "isa": parts[2],
-        "precision": parts[3],
-        "threads": int(parts[4]),
-        "load": int(parts[6]),
-        "store": int(parts[8]),
-        "inst": parts[10]
-    }
-    return title
-
-#Read CARM results data
-def read_roofline_data(filename):
-    title = {}
-    data = {}
-    data_cycles = {}
-
-    with open(filename, 'r') as file:
-        title_line = file.readline().strip()
-        title = parse_title_line(title_line)
-
-        for line in file:
-            if ':' not in line:
-                continue
-
-            label, value = line.strip().split(': ')
-
-            if label == 'L1':
-                data["L1"] = float(value)
-            elif label == 'L2':
-                data["L2"] = float(value)
-            elif label == 'L3':
-                data["L3"] = float(value)
-            elif label == 'DRAM':
-                data["DRAM"] = float(value)
-            elif label == 'FP':
-                data["FP"] = float(value)
-            elif label == 'FP_FMA':
-                data["FP_FMA"] = float(value)
-            elif label == 'L1 Instruction Per Cycle':
-                data_cycles["L1"] = float(value)
-            elif label == 'L2 Instruction Per Cycle':
-                data_cycles["L2"] = float(value)
-            elif label == 'L3 Instruction Per Cycle':
-                data_cycles["L3"] = float(value)
-            elif label == 'DRAM Instruction Per Cycle':
-                data_cycles["DRAM"] = float(value)
-            elif label == 'FP Instruction Per Cycle':
-                data_cycles["FP"] = float(value)
-            elif label == 'FP_FMA Instruction Per Cycle':
-                data_cycles["FP_FMA"] = float(value)
-
-    return title, data, data_cycles
-
-
-def read_data_from_files(directory, autochoice):
-    #List all files with .out extension in the directory
-    files = [file for file in os.listdir(directory) if file.endswith('.out') and 'roofline' in file]
-
-    #Print the list of files with their indices
-    print("Available files:")
-    for i, file in enumerate(files):
-        print(f"{i + 1}. {file}")
-
-    #Prompt the user to select a file by its index
-    if autochoice == 0:
-        while True:
-            try:
-                choice = int(input("Enter the number corresponding to the file you want to read (or 0 to quit): "))
-                if 1 <= choice <= len(files):
-                    selected_file = files[choice - 1]
-                    break
-                elif choice == 0:
-                    print("No Roofline will be drawn, terminating program.")
-                    sys.exit(1)
-                else:
-                    print("Invalid choice. Please enter a number within the range.")
-            except EOFError:
-                print("No automatic roofline choice provided, no Roofline will be drawn. Exiting program.")
-                sys.exit(1)
-            except ValueError:
-                print("Invalid input. Please enter a number.")
-    else:
-        choice = autochoice
-        if 1 <= choice <= len(files):
-            selected_file = files[choice - 1]
-        else:
-            print("Autochoice does not match any file. No Roofline will be drawn, terminating program.")
-            sys.exit(1)
-
-    return read_roofline_data(os.path.join(directory, selected_file))
-
-def carm_eq(ai, bw, fp):
-    return np.minimum(ai*bw, fp)
-
-def round_power_of_2(number):
-    if number > 1:
-        for i in range(1, int(number)):
-            if (2 ** i > number):
-                return 2 ** i
-    else:
-        return 1
-
-def plot_roofline_with_dot(executable_path, exec_flops, exec_ai, choice, roi, date):
-
-    title = {}
-    data = {}
-    data_cycles = {}
-
-    executable_name = os.path.basename(executable_path)
-
-    min_ai = 0.015625
-    min_flops = 0.25
-    while exec_ai < min_ai :
-        min_ai /= 2
-    
-    while exec_flops < min_flops :
-        min_flops /= 2
-    
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-
-    #Construct the path to the build folder
-    result_dir = os.path.join(script_dir, "Results/Roofline")
-
-    title, data, data_cycles = read_data_from_files(result_dir, choice)
-
-    fig, ax = plt.subplots(figsize=(7.1875*1.5,3.75*1.5))
-    plt.xlim(min_ai, 256)
-    plt.ylim(min_flops, round_power_of_2(int(data["FP_FMA"])))
-    ai = np.linspace(0.00390625, 256, num=200000)
-
-    #Ploting Lines
-    if title["inst"] == "fma":
-        plt.plot(ai, carm_eq(ai, data["L1"], data["FP"]), 'k', lw = 3, label='L1')
-        plt.plot(ai, carm_eq(ai, data["L2"], data["FP"]), 'grey', lw = 3, label='L2')
-        plt.plot(ai, carm_eq(ai, data["L3"], data["FP"]), 'k', linestyle='dashed', lw = 3, label='L3')
-        plt.plot(ai, carm_eq(ai, data["DRAM"], data["FP"]), 'k', linestyle='dotted', lw = 3, label='DRAM')
-    else:
-        plt.plot(ai, carm_eq(ai, data["L1"], data["FP_FMA"]), 'k', lw = 3, label='L1')
-        plt.plot(ai, carm_eq(ai, data["L2"], data["FP_FMA"]), 'grey', lw = 3, label='L2')
-        plt.plot(ai, carm_eq(ai, data["L3"], data["FP_FMA"]), 'k', linestyle='dashed', lw = 3, label='L3')
-        plt.plot(ai, carm_eq(ai, data["DRAM"], data["FP_FMA"]), 'k', linestyle='dotted', lw = 3, label='DRAM')
-        plt.plot(ai, carm_eq(ai, data["L1"], data["FP"]), 'k', linestyle='dashdot', lw = 3, label=title["inst"])
-    
-    #Plot dot at exec_gflops and exec_ai
-    plt.scatter(exec_ai, exec_flops, color='red', label=executable_name, zorder=5)
-
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    if roi:
-        plt.title(executable_name + " (" + title["name"] + ")" + ' DBI ROI CARM: ' + str(title["isa"]) + " " + str(title["precision"]) + " " + str(title["threads"]) + " Threads " + str(title["load"]) + " Load " + str(title["store"]) + " Store " + title["inst"], fontsize=18)
-    else:
-        plt.title(executable_name + " (" + title["name"] + ")" + ' DBI CARM: ' + str(title["isa"]) + " " + str(title["precision"]) + " " + str(title["threads"]) + " Threads " + str(title["load"]) + " Load " + str(title["store"]) + " Store " + title["inst"], fontsize=18)
-
-
-    plt.ylabel('Performance [GFLOPS/s]', fontsize=18)
-    plt.xlabel('Arithmetic Intensity [flops/bytes]', fontsize=18)
-    plt.setp(ax.get_xticklabels(), fontsize=18)
-    plt.setp(ax.get_yticklabels(), fontsize=18)
-    plt.yscale('log', base=2)
-    plt.xscale('log', base=2)
-    plt.legend(fontsize=18, loc='lower right')
-    new_rc_params = {'text.usetex': False,"svg.fonttype": 'none'}
-    plt.rcParams.update(new_rc_params)
-    plt.tight_layout()
-    if(os.path.isdir('Results') == False):
-            os.mkdir('Results')
-    if(os.path.isdir('Results/Applications') == False):
-        os.mkdir('Results/Applications')
-
-    if roi:
-        plt.savefig('Results/Applications/' + executable_name + "_" + title["name"] + '_DBI_ROI_roofline_analysis_' + date + '_' + str(title["isa"]) + "_" + str(title["precision"]) + "_" + str(title["threads"]) + "_Threads_" + str(title["load"]) + "Load_" + str(title["store"]) + "Store_" + title["inst"] + '.svg')
-    else:
-        plt.savefig('Results/Applications/' + executable_name + "_" + title["name"] + '_DBI_roofline_analysis_' + date + '_' + str(title["isa"]) + "_" + str(title["precision"]) + "_" + str(title["threads"]) + "_Threads_" + str(title["load"]) + "Load_" + str(title["store"]) + "Store_" + title["inst"] + '.svg')
-
-
-def update_csv(machine, executable_path, exec_flops, exec_ai, bandwidth, time, name, date, isa, precision, threads, method, VLEN, LMUL):
-
-    csv_path = f"./Results/Applications/{machine}_Applications.csv"
-
-    if name == "":
-        name = os.path.basename(executable_path)
-
-    if(os.path.isdir('Results') == False):
-        os.mkdir('Results')
-    if(os.path.isdir('Results/Applications') == False):
-        os.mkdir('Results/Applications')
-    
-    if (isa in ["rvv0.7", "rvv1.0"]):
-        isa = str(isa) + "_vl" + str(VLEN) + "_lmul" + str(LMUL)
-
-    results = [
-        date,
-        method,
-        name,
-        isa,
-        precision,
-        threads,
-        run.custom_round(exec_ai),
-        run.custom_round(exec_flops),
-        run.custom_round(bandwidth),
-        run.custom_round(time)
-    ]
-
-    headers = ['Date', 'Method', 'Name', 'ISA', 'Precision', 'Threads', 'AI', 'Gflops', 'Bandwidth', 'Time']
-
-    #Check if the file exists
-    if os.path.exists(csv_path):
-        #If exists, append without header
-        with open(csv_path, 'a', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(results)
-    else:
-        #If not, write with header and include secondary headers
-        with open(csv_path, 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(headers)
-            writer.writerow(results)
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Run an executable with DynamoRIO.")
@@ -1101,8 +884,6 @@ if __name__ == "__main__":
         if args.roi:
             method += "-ROI"
 
-
-
     time_taken_seconds = float (exec_time / 1e9)
 
     flops = fp_ops/time_taken_seconds
@@ -1113,15 +894,15 @@ if __name__ == "__main__":
     bandwidth = float((memory_bytes) / exec_time)
 
     print("\n---------DBI RESULTS-----------")
-    print("Total FP operations:", fp_ops)
-    print("Total memory bytes:", memory_bytes)
+    print("Total FP operations:", ut.custom_round(fp_ops))
+    print("Total memory bytes:", ut.custom_round(memory_bytes))
     if (not args.sde):
-        print("Total integer operations:", integer_ops)
+        print("Total integer operations:", ut.custom_round(integer_ops))
 
-    print("\nExecution time (seconds):", time_taken_seconds)
-    print("GFLOP/s:", gflops)
-    print("Bandwidth (GB/s): " + str(bandwidth))
-    print("Arithmetic Intensity:", ai)
+    print("\nExecution time (seconds):", ut.custom_round(time_taken_seconds))
+    print("GFLOP/s:", ut.custom_round(gflops))
+    print("Bandwidth (GB/s): " + str(ut.custom_round(bandwidth)))
+    print("Arithmetic Intensity:", ut.custom_round(ai))
     print("------------------------------")
 
     ct = datetime.datetime.now()
@@ -1131,10 +912,10 @@ if __name__ == "__main__":
         if not plot_numpy == None:
             print("Manual application plotting not implemented iet, results can be viewed using the GUI")
             #date = ct.strftime('%Y-%m-%d_%H-%M-%S')
-            #plot_roofline_with_dot(args.executable_path, gflops, ai, args.choice, args.roi, date)
+            #ut.plot_roofline_with_dot(args.executable_path, gflops, ai, args.choice, args.roi, date, "dbi")
         else:
             print("No Matplotlib and/or Numpy found, in order to draw CARM graphs make sure to install them.")
     date = ct.strftime('%Y-%m-%d %H:%M:%S')
     
 
-    update_csv(args.name, args.executable_path, gflops, ai, bandwidth, time_taken_seconds, args.app_name, date, args.isa, args.precision, args.threads, method, 1, 1)
+    ut.update_csv(args.name, args.executable_path, gflops, ai, bandwidth, time_taken_seconds, args.app_name, date, args.isa, args.precision, args.threads, method, 1, 1)

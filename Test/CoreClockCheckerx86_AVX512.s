@@ -40,4 +40,4 @@ clktest_loop:
   pop %r8
   pop %rbx
   ret
-
+.section .note.GNU-stack,"",%progbits

@@ -1,6 +1,6 @@
 # The CARM Tool
 
-This tool performs the micro-benchmarking necessary to constuct the Cache-Aware Roofline Model (CARM) for floating-point operations on Intel, AMD, AARCH64, and RISCV64 CPUs. It supports different instruction set extensions (AVX512, AVX, SSE, Scalar, Neon, RVV0.7), different data precisions (double- and single-precision), different floating point instructions (fused multiply and add, addition, multiplication and division). The micro-benchmarks can be performed for any number of threads. The tool provides as output a vizualization of CARM, as well as the measurements obtained for the different memory levels and selected FP instruction. The tool is also capable of the micro-benchmarking necessary to construct a memory bandwidth graph for various problem sizes, and perform mixed tests that stress the FP units and memory system at the same time.
+This tool performs the micro-benchmarking necessary to constuct the Cache-Aware Roofline Model (CARM) for floating-point operations on Intel, AMD, AARCH64, and RISCV64 CPUs. It supports different instruction set extensions (AVX512, AVX2, SSE, Scalar, SVE, Neon, RVV1.0, RVV0.7), different data precisions (double- and single-precision), different floating point instructions (fused multiply and add, addition, multiplication and division). The micro-benchmarks can be performed for any number of threads. The tool provides as output a vizualization of CARM, as well as the measurements obtained for the different memory levels and selected FP instruction. The tool is also capable of the micro-benchmarking necessary to construct a memory bandwidth graph for various problem sizes, and perform mixed tests that stress the FP units and memory system at the same time.
 
 The tool can also perform application analysis using either performance counters (via PAPI) or dynamic binary instrumentation (via DynamoRIO or Intel SDE), to view the output of these results in a CARM graph the GUI is required.
 
@@ -46,7 +46,7 @@ l3_cache=25344
 After the optional creation of the configuration file, the tool can executed as:
 
 ```
-python run.py <path_config_file> --name <name> --test <test> --inst <fp_inst> --num_ops <num_ops> --isa <[isa]> --precision <[data_precision]> --ld_st_ratio <ld_st_ratio> --fp_ld_st_ratio <fp_ld_st_ratio> --dram_bytes <dram_bytes> is the size of the array used for the DRAM benchmark in KiB; --threads <[num_threads]> --freq <frequency> --l1_size <l1_size> --l2_size <l2_size> --l3_size <l3_size> --threads_per_l1 <threads_per_l1> --threads_per_l2 <threads_per_l2> --vector_length <vector_length> --verbose [0, 1, 2, 3] [--only_ld] [--only_st] [--no_freq_measure] [--set_freq] [--interleaved] [--dram_auto] [--plot]
+python run.py <path_config_file> --name <name> --test <test> --inst <fp_inst> --num_ops <num_ops> --isa <[isa]> --precision <[data_precision]> --ld_st_ratio <ld_st_ratio> --fp_ld_st_ratio <fp_ld_st_ratio> --l3_kbytes <l3_kbytes> --dram_kbytes <dram_kbytes> --threads <[num_threads]> --freq <frequency> --l1_size <l1_size> --l2_size <l2_size> --l3_size <l3_size> --threads_per_l1 <threads_per_l1> --threads_per_l2 <threads_per_l2> --vector_length <vector_length> --verbose [0, 1, 2, 3, 4] [--only_ld] [--only_st] [--no_freq_measure] [--set_freq] [--interleaved] [--dram_auto] [--plot]
 ```
 
 where
@@ -59,16 +59,17 @@ where
  - --precision <data_precision> is the precision of the data, multiple options can be seletcted by spacing them (dp, sp);
  - --ld_st_ratio <ld_st_ratio> is the number of loads per store involed in the memory benchmarks;
  - --fp_ld_st_ratio <fp_ld_st_ratio> is the FP to Load/Store ratio involved in the mixed benchmarks;
- - --dram_bytes <dram_bytes> is the size of the array used for the DRAM benchmark in KiB;
+ - --l3_kbytes <l3_kbytes> is the total size of the array for the L3 test in KiB;
+ - --dram_kbytes <dram_kbytes> is the total size of the array for the DRAM test in KiB (Default: 524288 (512 MiB));
  - --threads <num_threads> is the number of threads used for the test, multiple options can be selected by spacing them
  - --freq <frequency> expected CPU frequency if not auto-measuring (in GHz)
  - --l1_size <l1_size> is the L1 size per core of the machine being benchmarked
  - --l2_size <l2_size> is the L2 size per core of the machine being benchmarked
  - --l3_size <l3_size> is the total L3 size of the machine being benchmarked
- - --threads_per_l1 <threads_per_l1> are the expected number of threads that will share the same L1 cache (Default: 2)
+ - --threads_per_l1 <threads_per_l1> are the expected number of threads that will share the same L1 cache (Default: 1)
  - --threads_per_l2 <threads_per_l2> are the expected number of threads that will share the same L2 cache (Default: 2)
  - --vector_length <vector_length> is the desired vector length in elements to be used (for riscvvector only, tool will use the max by default)
- - --verbose [0, 1, 2, 3] is the level of output information to be displayed during execution (0 -> No Output 1 -> Only ISA Errors and Test Details, 2 -> Intermediate Test Results, 3 -> Configuration Values Selected/Detected)
+ - --verbose [0, 1, 2, 3, 4] is the level of terminal output details (0 -> No Output 1 -> Only ISA/Configuration Errors and Test Specifications, 2 -> Test Results, 3 -> Configuration Values Selected/Detected, 4 -> Debug Output)
  - [--only_ld] indicates that the memory benchmarks will just contain loads (<ld_st_ratio> is ignored);
  - [--only_st] indicates that the memory benchmarks will just contain stores (<ld_st_ratio> is ignored);
  - [--no_freq_measure] disables the automatic frequency measuring (CPU frequency should be provided in config file or via --freq argument)
@@ -95,7 +96,6 @@ python run.py -h
 
 To profile an application using **Performance Counters**, PMU_AI_Calculator.py should be executed with the following arguments:
 
- - <PAPI_path> Path to the PAPI directory.
  - <executable_path> Path to the executable to analyze.
  - <additional_args> Arguments for the executable that will be analyzed.
  - --name <name> Name for the machine running the executable (Default: unnamed);
@@ -145,7 +145,7 @@ The profiling results are automatically stored in a csv assocaited with the prov
 
 ## How to use (GUI)
 
-The tool can also be used via the GUI, by running **ResultsGui.py**, and then opening the provided link in the browser, the CARM benchmarks can be executed by opening the sidebar and entering your desired configuration values and clicking the "Run CARM Benchmarks" button, the "Stop Benchmark/Analysis" button can be used to stop execution at any time. After benchmark execution is finished, refreshing the page should be suficient to view the new results in the GUI. The tool output during benchmarking will be visible in the terminal where the ResultsGui.py script was launched from. Note that only the roofline test type is available in the GUI.
+The tool can also be used via the GUI, by running **ResultsGUI.py**, and then opening the provided link in the browser, the CARM benchmarks can be executed by opening the sidebar and entering your desired configuration values and clicking the "Run CARM Benchmarks" button, the "Stop Benchmark/Analysis" button can be used to stop execution at any time. After benchmark execution is finished, refreshing the page should be suficient to view the new results in the GUI. The tool output during benchmarking will be visible in the terminal where the ResultsGui.py script was launched from. Note that only the roofline test type is available in the GUI.
 
 From the GUI you can also execute other functions of the tool, like the application profiling using either DBI or PMUs, this can be done by clicking the "Run Application Analysis" button, then selecting what kind of analysis method is desired (DBI, DBI with ROI, PMU with ROI), and providing the file path to the target application executable along with any arguments that it may take. Note that for Region of Interest analysis, the source code must be previously injected with instrumentation code, specific to the DBI method or the PMU method.
 
