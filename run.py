@@ -102,8 +102,8 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
             isa_set = supported_isas
         if (verbose > 2):
             print("-----------------CPU INFORMATION-----------------")
-            print("Vector Instruction ISAs Supported:", auto_args[0], auto_args[1], auto_args[2])
             print("CPU Vendor:", auto_args[3])
+            print("Vector Instruction ISAs Supported:", auto_args[0], auto_args[1], auto_args[2])
             print("L1 cache size:", auto_args[4], "KB" + (f" (Warning: User specified: {l1_size} KB)" if l1_size > 0 and l1_size != auto_args[4] else ""))
             print("L2 cache size:", auto_args[5], "KB" + (f" (Warning: User specified: {l2_size} KB)" if l2_size > 0 and l2_size != auto_args[5] else ""))
             print("L3 cache size:", auto_args[6], "KB" + (f" (Warning: User specified: {l3_size} KB)" if l3_size > 0 and l3_size != auto_args[6] else ""))
@@ -285,9 +285,11 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
  
             #Check if RVV0.7 compilation works
             try:
-                subprocess.run([rvv_SVE_compiler_path, "-o", rvv07_ex, rvv07_source, "-march=rv64gcv0p7"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-                #For Clang -menable-experimental-extensions is sometimes needed
-                #subprocess.run([riscv_vector_compiler_path, "-o", rvv_ex, rvv_source, "-march=rv64gcv0p7", "-menable-experimental-extensions"])
+                if "gcc" in rvv_SVE_compiler_path:
+                    subprocess.run([rvv_SVE_compiler_path, "-o", rvv07_ex, rvv07_source, "-march=rv64gcv0p7"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                elif "clang" in rvv_SVE_compiler_path:
+                    #For Clang -menable-experimental-extensions is sometimes needed
+                    subprocess.run([rvv_SVE_compiler_path, "-o", rvv07_ex, rvv07_source, "-march=rv64gcv0p7", "-menable-experimental-extensions"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             except subprocess.CalledProcessError as e:
                 print("RVV0.7 Compiler Error Output:", e.stderr.decode("utf-8"))
             if not os.path.exists(rvv07_ex):
@@ -413,12 +415,6 @@ def autoconf(new_max_freq, set_freq):
 
     return arguments
 
-def positive_int(value):
-    ivalue = int(value)
-    if ivalue <= 0:
-        raise argparse.ArgumentTypeError(f"{value} is an invalid positive int value")
-    return ivalue
-
 #Read system configuration file
 def read_config(config_file):
     f = open(config_file, "r")
@@ -442,20 +438,6 @@ def read_config(config_file):
 
     return name, int(l1_size), int(l2_size), int(l3_size)
 
-
-def round_power_of_2(number):
-    if number > 1:
-        for i in range(1, int(number)):
-            if (2 ** i > number):
-                return 2 ** i
-    else:
-        return 1
-
-def carm_eq(ai, bw, fp):
-    import numpy as np
-    return np.minimum(ai*bw, fp)
-
-
 def plot_roofline(name, data, date, isa, precision, threads, num_ld, num_st, inst, interleaved):
     if plot_numpy == None:
         print("No Matplotlib and/or Numpy found, in order to draw CARM graphs make sure to install them.")
@@ -463,23 +445,23 @@ def plot_roofline(name, data, date, isa, precision, threads, num_ld, num_st, ins
     fig, ax = plt.subplots(figsize=(7.1875*1.5,3.75*1.5))
     plt.xlim(0.015625, 256)
     if inst == "fma":
-        plt.ylim(0.25, round_power_of_2(int(data['FP'])))
+        plt.ylim(0.25, ut.round_power_of_2(int(data['FP'])))
     else:
-        plt.ylim(0.25, round_power_of_2(int(data['FP_FMA'])))
+        plt.ylim(0.25, ut.round_power_of_2(int(data['FP_FMA'])))
     ai = np.linspace(0.00390625, 256, num=200000)
 
     #Ploting Lines
     if inst == "fma":
-        plt.plot(ai, carm_eq(ai, data['L1'], data['FP']), 'k', lw = 3, label='L1')
-        plt.plot(ai, carm_eq(ai, data['L2'], data['FP']), 'grey', lw = 3, label='L2')
-        plt.plot(ai, carm_eq(ai, data['L3'], data['FP']), 'k', linestyle='dashed', lw = 3, label='L3')
-        plt.plot(ai, carm_eq(ai, data['DRAM'], data['FP']), 'k', linestyle='dotted', lw = 3, label='DRAM')
+        plt.plot(ai, ut.carm_eq(ai, data['L1'], data['FP']), 'k', lw = 3, label='L1')
+        plt.plot(ai, ut.carm_eq(ai, data['L2'], data['FP']), 'grey', lw = 3, label='L2')
+        plt.plot(ai, ut.carm_eq(ai, data['L3'], data['FP']), 'k', linestyle='dashed', lw = 3, label='L3')
+        plt.plot(ai, ut.carm_eq(ai, data['DRAM'], data['FP']), 'k', linestyle='dotted', lw = 3, label='DRAM')
     else:
-        plt.plot(ai, carm_eq(ai, data['L1'], data['FP_FMA']), 'k', lw = 3, label='L1')
-        plt.plot(ai, carm_eq(ai, data['L2'], data['FP_FMA']), 'grey', lw = 3, label='L2')
-        plt.plot(ai, carm_eq(ai, data['L3'], data['FP_FMA']), 'k', linestyle='dashed', lw = 3, label='L3')
-        plt.plot(ai, carm_eq(ai, data['DRAM'], data['FP_FMA']), 'k', linestyle='dotted', lw = 3, label='DRAM')
-        plt.plot(ai, carm_eq(ai, data['L1'], data['FP']), 'k', linestyle='dashdot', lw = 3, label=inst)
+        plt.plot(ai, ut.carm_eq(ai, data['L1'], data['FP_FMA']), 'k', lw = 3, label='L1')
+        plt.plot(ai, ut.carm_eq(ai, data['L2'], data['FP_FMA']), 'grey', lw = 3, label='L2')
+        plt.plot(ai, ut.carm_eq(ai, data['L3'], data['FP_FMA']), 'k', linestyle='dashed', lw = 3, label='L3')
+        plt.plot(ai, ut.carm_eq(ai, data['DRAM'], data['FP_FMA']), 'k', linestyle='dotted', lw = 3, label='DRAM')
+        plt.plot(ai, ut.carm_eq(ai, data['L1'], data['FP']), 'k', linestyle='dashdot', lw = 3, label=inst)
 
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
@@ -569,6 +551,37 @@ def update_csv(name, test_type, data, data_cycles, date, isa, precision, threads
             writer.writerow(primary_headers)
             writer.writerow(results)
 
+def print_start(test_type, threads_set, isa_set, precision_set, VLEN, LMUL):
+    print("-------------------------------------------------")
+    print(f"Running {test_type[0].upper()}{test_type[1:]} Benchmarks for the Following Thread Counts: {threads_set}")
+    print("On the Following ISA extensions: ", isa_set)
+    print("Using the Following Precisions:", precision_set)
+    if "rvv0.7" in isa_set or "rvv1.0" in isa_set or "sve" in isa_set:
+        if "dp" in precision_set:
+            print("Vector with " + str(VLEN) + " double precision elements will be used for vector benchmark.")
+        if "sp" in precision_set:
+            print("Vector with " + str(VLEN*2) + " single precision elements will be used for vector benchmark.")
+    if "rvv0.7" in isa_set or "rvv1.0" in isa_set:
+        print(f"Register grouping (-vlmul) of {LMUL} will be used for RVV benchmark.")
+    print("-------------------------------------------------")
+
+def print_mid(verbose, test_type, threads_set, isa_set, precision_set, threads, isa, precision, VLEN, LMUL):
+    if verbose == 4:
+        print("-------------------------------------------------")
+        print(f"Running {test_type[0].upper()}{test_type[1:]} Benchmarks for the Following Thread Counts: {threads_set}")
+        print("On the Following ISA extensions: ", isa_set)
+        print("Using the Following Precisions:", precision_set)
+
+    if verbose > 0:
+        print(f"Now Testing {test_type[0].upper()}{test_type[1:]} with: {threads} {'Thread' if threads == 1 else 'Threads'} using {isa} with {precision}")
+        if isa in vector_agnostic_ISA:
+            if precision == "dp":
+                print("Vector with " + str(VLEN) + " double precision elements will be used.")
+            if precision == "sp":
+                print("Vector with " + str(VLEN) + " single precision elements will be used.")
+        if isa in ["rvv0.7", "rvv1.0"]:
+            print(f"Register grouping (-vlmul) of {LMUL} will be used.")
+
 def print_results(isa, test_type, test_data, data_cycles, num_reps, test_size, inner_loop_reps, freq_real, cycles, freq_nominal, time_ms, threads, num_ld, num_st, inst, FP_factor, precision, VLEN, interleaved, LMUL, verbose):
     if interleaved:
         inter = "Yes"
@@ -628,28 +641,11 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
         FP_factor = 2
 
     if 0 < verbose < 4:
-        print("-------------------------------------------------")
-        print(f"Running {test_type[0].upper()}{test_type[1:]} Benchmarks for the Following Thread Counts: {threads_set}")
-        print("On the Following ISA extensions: ", isa_set)
-        print("Using the Following Precisions:", precision_set)
-        if "rvv0.7" in isa_set or "rvv1.0" in isa_set or "sve" in isa_set:
-            if "dp" in precision_set:
-                print("Vector with " + str(VLEN) + " double precision elements will be used for vector benchmark.")
-            if "sp" in precision_set:
-                print("Vector with " + str(VLEN*2) + " single precision elements will be used for vector benchmark.")
-        if "rvv0.7" in isa_set or "rvv1.0" in isa_set:
-            print(f"Register grouping (-vlmul) of {LMUL} will be used for RVV benchmark.")
-        print("-------------------------------------------------")
-        
+        print_start(test_type, threads_set, isa_set, precision_set, VLEN, LMUL)
 
     for threads in threads_set:
         for isa in isa_set:
             for precision in precision_set:
-                if verbose == 4:
-                    print("-------------------------------------------------")
-                    print(f"Running {test_type[0].upper()}{test_type[1:]} Benchmarks for the Following Thread Counts: {threads_set}")
-                    print("On the Following ISA extensions: ", isa_set)
-                    print("Using the Following Precisions:", precision_set)
                 dram_bytes = dram_bytes_aux
                 if inst == "fma":
                     FP_factor = 2
@@ -667,15 +663,8 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                     LMUL = 1
                 if isa in ["sve"]:
                     LMUL = 1
-                if verbose > 0:
-                    print(f"Now Testing {test_type[0].upper()}{test_type[1:]} with: {threads} {'Thread' if threads == 1 else 'Threads'} using {isa} with {precision}")
-                    if isa in vector_agnostic_ISA:
-                        if precision == "dp":
-                            print("Vector with " + str(VLEN) + " double precision elements will be used.")
-                        if precision == "sp":
-                            print("Vector with " + str(VLEN) + " single precision elements will be used.")
-                    if isa in ["rvv0.7", "rvv1.0"]:
-                        print(f"Register grouping (-vlmul) of {LMUL} will be used.")
+
+                print_mid(verbose, test_type, threads_set, isa_set, precision_set, threads, isa, precision, VLEN, LMUL)
 
                 #Calculate number of repetitions for each test
                 #L1 Reps
@@ -984,29 +973,11 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
     freq_real = freq
 
     if 0 < verbose < 4:
-        print("-------------------------------------------------")
-        print("Running Memory Benchmarks for the Following Thread Counts:", threads_set)
-        print("On the Following ISA extensions: ", isa_set)
-        print("Using the Following Precisions:", precision_set)
-        if "rvv0.7" in isa_set or "rvv1.0" in isa_set or "sve" in isa_set:
-            if "dp" in precision_set:
-                print("Vector with " + str(VLEN) + " double precision elements will be used for vector benchmark.")
-            if "sp" in precision_set:
-                print("Vector with " + str(VLEN*2) + " single precision elements will be used for vector benchmark.")
-        if "rvv0.7" in isa_set or "rvv1.0" in isa_set:
-            print(f"Register grouping (-vlmul) of {LMUL} will be used for RVV benchmark.")
-        print("-------------------------------------------------")
-        
+        print_start("Memory", threads_set, isa_set, precision_set, VLEN, LMUL)
 
     for threads in threads_set:
         for isa in isa_set:
             for precision in precision_set:
-                if verbose == 4:
-                    print("-------------------------------------------------")
-                    print("Running Memory Benchmarks for the Following Thread Counts:", threads_set)
-                    print("On the Following ISA extensions: ", isa_set)
-                    print("Using the Following Precisions:", precision_set)
-                
                 if VLEN_aux > 1 and precision == "dp":
                     VLEN = VLEN_aux
                     LMUL = LMUL_aux
@@ -1018,15 +989,8 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                     LMUL = 1
                 if isa in ["sve"]:
                     LMUL = 1
-                if verbose > 0:
-                    print(f"Now Testing Memory with: {threads} {'Thread' if threads == 1 else 'Threads'} using {isa} with {precision}")
-                    if isa in vector_agnostic_ISA:
-                        if precision == "dp":
-                            print("Vector with " + str(VLEN) + " double precision elements will be used.")
-                        if precision == "sp":
-                            print("Vector with " + str(VLEN) + " single precision elements will be used.")
-                    if isa in ["rvv0.7", "rvv1.0"]:
-                        print(f"Register grouping (-vlmul) of {LMUL} will be used.")
+
+                print_mid(verbose, "Memory", threads_set, isa_set, precision_set, threads, isa, precision, VLEN, LMUL)
                     
                 Gbps = [0] * len(test_sizes)
                 InstCycle = [0] * len(test_sizes)
@@ -1218,29 +1182,11 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
     freq_real = freq
     
     if 0 < verbose < 4:
-        print("-------------------------------------------------")
-        print(f"Running {test_type[0].upper()}{test_type[1:]} Benchmarks for the Following Thread Counts: {threads_set}")
-        print("On the Following ISA extensions: ", isa_set)
-        print("Using the Following Precisions:", precision_set)
-        if "rvv0.7" in isa_set or "rvv1.0" in isa_set or "sve" in isa_set:
-            if "dp" in precision_set:
-                print("Vector with " + str(VLEN) + " double precision elements will be used for vector benchmark.")
-            if "sp" in precision_set:
-                print("Vector with " + str(VLEN*2) + " single precision elements will be used for vector benchmark.")
-        if "rvv0.7" in isa_set or "rvv1.0" in isa_set:
-            print(f"Register grouping (-vlmul) of {LMUL} will be used for RVV benchmark.")
-        print("-------------------------------------------------")
-        
+        print_start(test_type, threads_set, isa_set, precision_set, VLEN, LMUL)
 
     for threads in threads_set:
         for isa in isa_set:
-            for precision in precision_set:
-                if verbose == 4:
-                    print("-------------------------------------------------")
-                    print(f"Running {test_type[0].upper()}{test_type[1:]} Benchmarks for the Following Thread Counts: {threads_set}")
-                    print("On the Following ISA extensions: ", isa_set)
-                    print("Using the Following Precisions:", precision_set)
-                
+            for precision in precision_set:            
                 dram_bytes = dram_bytes_aux
                 if VLEN_aux > 1 and precision == "dp":
                     VLEN = VLEN_aux
@@ -1253,15 +1199,8 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                     LMUL = 1
                 if isa in ["sve"]:
                     LMUL = 1
-                if verbose > 0:
-                    print(f"Now Testing {test_type[0].upper()}{test_type[1:]} with: {threads} {'Thread' if threads == 1 else 'Threads'} using {isa} with {precision}")
-                    if isa in vector_agnostic_ISA:
-                        if precision == "dp":
-                            print("Vector with " + str(VLEN) + " double precision elements will be used.")
-                        if precision == "sp":
-                            print("Vector with " + str(VLEN) + " single precision elements will be used.")
-                    if isa in ["rvv0.7", "rvv1.0"]:
-                        print(f"Register grouping (-vlmul) of {LMUL} will be used.")
+
+                print_mid(verbose, test_type, threads_set, isa_set, precision_set, threads, isa, precision, VLEN, LMUL)
                 
                 if test_type == "mixedL1":
                     if l1_size > 0:
@@ -1391,7 +1330,7 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                 ct = datetime.datetime.now()
                 date = ct.strftime('%Y-%m-%d %H:%M:%S')
                 test_details = test_type + "_" + str(num_fp) + "FP_" + str(num_ld) + "LD_" + str(num_st) + "ST_" + inst
-                DBI_AI_Calculator.update_csv(name, "/home/mixed", gflops, ai, bandwidth, time_ms, test_details, date, isa, precision, threads, "MIX", VLEN, LMUL)
+                ut.update_csv(name, "/home/mixed", gflops, ai, bandwidth, time_ms, test_details, date, isa, precision, threads, "MIX", VLEN, LMUL)
 
 def main():
     parser = argparse.ArgumentParser(description='Script to run micro-benchmarks to construct Cache-Aware Roofline Model')
@@ -1402,20 +1341,20 @@ def main():
     parser.add_argument('--name', default='unnamed', nargs='?', type = str, help='Name for results file (if not using config file)')
     parser.add_argument('-v', '--verbose', default=3, nargs='?', type = int, choices=[0, 1, 2, 3, 4], help='Level of terminal output details (0 -> No Output 1 -> Only ISA/Configuration Errors and Test Specifications, 2 -> Test Results, 3 -> Configuration Values Selected/Detected, 4 -> Debug Output)')
     parser.add_argument('--inst', default='add', nargs='?', choices=['add', 'mul', 'div', 'fma'], help='FP Instruction (Default: add), FMA performance is measured by default too.')
-    parser.add_argument('-vl', '--vector_length',  default=1, nargs='?', type=positive_int, help='Vector Length in double/single precision elements (if running dp and sp in one run, double precision elements will be assumed) for RVV configuration (Default: Max available)')
+    parser.add_argument('-vl', '--vector_length',  default=1, nargs='?', type=ut.positive_int, help='Vector Length in double/single precision elements (if running dp and sp in one run, double precision elements will be assumed) for RVV configuration (Default: Max available)')
     parser.add_argument('-vlmul', '--vector_lmul', default=1, nargs='?', type = int, choices=[1, 2, 4, 8], help='Vector Register Grouping for RVV configuration (Default: 1)')
     parser.add_argument('--isa', default=['auto'], nargs='+', choices=['avx512', 'avx2', 'sse', 'scalar', 'neon', 'armscalar', 'sve', 'riscvscalar', 'rvv0.7', 'rvv1.0', 'auto'], help='set of ISAs to test, if auto will test all available ISAs (Default: auto)')
     parser.add_argument('-p', '--precision', default=['dp'], nargs='+', choices=['dp', 'sp'], help='Data Precision (Default: dp)')
-    parser.add_argument('-ldst', '--ld_st_ratio',  default=2, nargs='?', type=positive_int, help='Load/Store Ratio (Default: 2)')
-    parser.add_argument('-fpldst', '--fp_ld_st_ratio',  default=1, nargs='?', type=positive_int, help='FP to Load/Store Ratio, for mixed test (Default: 1)')
+    parser.add_argument('-ldst', '--ld_st_ratio',  default=2, nargs='?', type=ut.positive_int, help='Load/Store Ratio (Default: 2)')
+    parser.add_argument('-fpldst', '--fp_ld_st_ratio',  default=1, nargs='?', type=ut.positive_int, help='FP to Load/Store Ratio, for mixed test (Default: 1)')
     parser.add_argument('--only_ld',  dest='only_ld', action='store_const', const=1, default=0, help='Run only loads in mem test (ld_st_ratio is ignored)')
     parser.add_argument('--only_st',  dest='only_st', action='store_const', const=1, default=0, help='Run only stores in mem test (ld_st_ratio is ignored)')
     parser.add_argument('config', nargs='?', help='Path for the system configuration file')
-    parser.add_argument('-t', '--threads', default=[1], nargs='+', type=positive_int, help='Set of number of threads for the micro-benchmarking, insert multiple thread valus by spacing them, no commas (Default: [1])')
+    parser.add_argument('-t', '--threads', default=[1], nargs='+', type=ut.positive_int, help='Set of number of threads for the micro-benchmarking, insert multiple thread valus by spacing them, no commas (Default: [1])')
     parser.add_argument('-i', '--interleaved',  dest='interleaved', action='store_const', const=1, default=0, help='For thread binding when cores are interleaved between NUMA domains (Default: 0)')
-    parser.add_argument('-ops', '--num_ops',  default=32768, nargs='?', type=positive_int, help='Number of FP operations to be used in FP test (Default: 32768)')
-    parser.add_argument('--l3_kbytes',  default=0, nargs='?', type=positive_int, help='Total Size of the array for the L3 test in KiB')
-    parser.add_argument('--dram_kbytes',  default=524288, nargs='?', type=positive_int, help='Total Size of the array for the DRAM test in KiB (Default: 524288 (512 MiB))')
+    parser.add_argument('-ops', '--num_ops',  default=32768, nargs='?', type=ut.positive_int, help='Number of FP operations to be used in FP test (Default: 32768)')
+    parser.add_argument('--l3_kbytes',  default=0, nargs='?', type=ut.positive_int, help='Total Size of the array for the L3 test in KiB')
+    parser.add_argument('--dram_kbytes',  default=524288, nargs='?', type=ut.positive_int, help='Total Size of the array for the DRAM test in KiB (Default: 524288 (512 MiB))')
     parser.add_argument('--dram_auto',  dest='dram_auto', action='store_const', const=1, default=0, help='Automatically calculate the DRAM test size needed to ensure data does not fit in L3, can require a lot of memory in some cases, make sure it fits in the DRAM of your system (Default: 0)')
     parser.add_argument('--plot',  dest='plot', action='store_const', const=1, default=0, help='Create CARM plot SVG for each test result')
 
