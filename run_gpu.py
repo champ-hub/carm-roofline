@@ -9,7 +9,6 @@ from dotenv import load_dotenv # type: ignore
 
 load_dotenv('GPU/gpu.env')
 
-# TODO: use some config file or option to define target GPU
 DEVICE = os.getenv('DEVICE')
 
 def read_config(config_file):
@@ -174,7 +173,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 
 	# Cuda Core benchmarks
 	for precision in target_cuda:
-		ouputs = {}
+		outputs = {}
 		# Generate benchmarks
 		#FLOPS
 		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--operation", cuda_op, "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -187,7 +186,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 			print(result.stdout.decode('utf-8').rstrip())
 			exit(8)
 		
-		ouputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
+		outputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
 		print("Performance(" + precision + ", " + cuda_op + "): ", result.stdout.decode('utf-8').rstrip())
 
 		if cuda_op != "fma":
@@ -201,7 +200,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 				print(result.stdout.decode('utf-8').rstrip())
 				exit(8)
 			
-			ouputs["fma"] = result.stdout.decode('utf-8').split(' ')[0]
+			outputs["fma"] = result.stdout.decode('utf-8').split(' ')[0]
 			print("Performance(" + precision + ", " + "fma" + "): ", result.stdout.decode('utf-8').rstrip())
 
 		#MEM Shared
@@ -215,7 +214,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 			print(result.stdout.decode('utf-8').rstrip())
 			exit(10)
 
-		ouputs["shared"] = result.stdout.decode('utf-8').split(' ')[0]
+		outputs["shared"] = result.stdout.decode('utf-8').split(' ')[0]
 		print("Bandwith shared memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
 
 		#MEM Global
@@ -229,7 +228,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 			print(result.stdout.decode('utf-8').rstrip())
 			exit(10)
 			
-		ouputs["global"] = result.stdout.decode('utf-8').split(' ')[0]
+		outputs["global"] = result.stdout.decode('utf-8').split(' ')[0]
 		print("Bandwith global memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
 
 
@@ -248,7 +247,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 
 		ct = datetime.datetime.now()
 		date = ct.strftime('%Y-%m-%d %H:%M:%S')
-		update_csv(name, "Roofline", ouputs, date, "cuda", precision, cuda_op, threads, blocks, out)
+		update_csv(name, "Roofline", outputs, date, "cuda", precision, cuda_op, threads, blocks, out)
 
 
 	# Tensor Core benchmarks
@@ -265,7 +264,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 			print(result.stdout.decode('utf-8').rstrip())
 			exit(17)
 		
-		ouputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
+		outputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
 		print("Performance Tensor(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
 
 		#MEM Shared
@@ -279,7 +278,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 			print(result.stdout.decode('utf-8').rstrip())
 			exit(19)
 
-		ouputs["shared"] = result.stdout.decode('utf-8').split(' ')[0]
+		outputs["shared"] = result.stdout.decode('utf-8').split(' ')[0]
 		print("Bandwith shared memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
 
 		#MEM Global
@@ -293,7 +292,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 			print(result.stdout.decode('utf-8').rstrip())
 			exit(21)
 			
-		ouputs["global"] = result.stdout.decode('utf-8').split(' ')[0]
+		outputs["global"] = result.stdout.decode('utf-8').split(' ')[0]
 		print("Bandwith global memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
 
 				# Save results
@@ -311,7 +310,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 
 		ct = datetime.datetime.now()
 		date = ct.strftime('%Y-%m-%d %H:%M:%S')
-		update_csv(name, "Roofline", ouputs, date, "tensor", precision, "mma", threads, blocks, out)
+		update_csv(name, "Roofline", outputs, date, "tensor", precision, "mma", threads, blocks, out)
 
 
 def shutdown(set_freq):
