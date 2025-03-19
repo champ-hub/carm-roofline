@@ -25,8 +25,15 @@ def preprocess_output(ncu_report):
 			if save:
 				fw.write(line)
 
-def process_metrics(ncu_report):
-	data = pd.read_csv(ncu_report, sep=',')
+def process_metrics(ncu_report, kernel_name):
+	try:
+		data = pd.read_csv(ncu_report, sep=',')
+	except pd.errors.EmptyDataError:
+		print(f"There is no kernel to profile with the name {kernel_name}")
+		os.remove(ncu_report)
+		sys.exit(4)
+
+
 	data.replace(',','', regex=True, inplace=True)
 	data['Metric Value'] = pd.to_numeric(data['Metric Value'])
 
@@ -49,10 +56,11 @@ def process_metrics(ncu_report):
 
 
 
-def run_ncu(executable_path, no_tensor, additional_args = []):
+def run_ncu(executable_path, no_tensor, kernel_name = "", additional_args = []):
 	tmp_file_path = 'tmp_report.csv'
 	ncu_path = f'{CUDA_PATH}/bin/ncu'
-	options = f'--replay-mode kernel --clock-control none --print-units base --csv --log-file {tmp_file_path} --devices {DEVICE} --metrics'.split(' ')
+	kernel = "" if kernel_name == "" else f' -k {kernel_name}'
+	options = f'--replay-mode kernel --clock-control none --print-units base --csv --log-file {tmp_file_path} --devices {DEVICE}{kernel} --metrics'.split(' ')
 
 	cuda_core_metrics = 'sm__sass_data_bytes_mem_global.sum,sm__sass_data_bytes_mem_local.sum,sm__sass_data_bytes_mem_shared.sum,gpu__time_duration.avg,sm__sass_thread_inst_executed_op_fadd_pred_on.sum,sm__sass_thread_inst_executed_op_ffma_pred_on.sum,sm__sass_thread_inst_executed_op_fmul_pred_on.sum,sm__sass_thread_inst_executed_op_hadd_pred_on.sum,sm__sass_thread_inst_executed_op_hfma_pred_on.sum,sm__sass_thread_inst_executed_op_hmul_pred_on.sum,sm__sass_thread_inst_executed_op_dadd_pred_on.sum,sm__sass_thread_inst_executed_op_dfma_pred_on.sum,sm__sass_thread_inst_executed_op_dmul_pred_on.sum'
 	tensor_core_metrics = 'sm__ops_path_tensor_src_bf16_dst_fp32.sum,sm__ops_path_tensor_src_fp16_dst_fp16.sum,sm__ops_path_tensor_src_fp16_dst_fp32.sum,sm__ops_path_tensor_src_fp64.sum,sm__ops_path_tensor_src_int1.sum,sm__ops_path_tensor_src_int4.sum,sm__ops_path_tensor_src_int8.sum,sm__ops_path_tensor_src_tf32_dst_fp32.sum'
@@ -62,14 +70,16 @@ def run_ncu(executable_path, no_tensor, additional_args = []):
 
 	command = [ncu_path, *options, cuda_core_metrics, executable_path, *additional_args]
 
-	result = subprocess.run(command, stdout=subprocess.PIPE)
+	result = subprocess.run(command)
 	if result.returncode != 0:
 		print("Error profilling application.")
 		sys.exit(3)
 
 	preprocess_output(tmp_file_path) # Remove unnecessary headers from csv report
 
-	execution_time_nsec, bytes_requested, tensor_flops, half_flops, float_flops, double_flops = process_metrics(tmp_file_path) # Analyse metrics from kernels 
+	print("\n----------NCU Results----------")
+
+	execution_time_nsec, bytes_requested, tensor_flops, half_flops, float_flops, double_flops = process_metrics(tmp_file_path,kernel_name) # Analyse metrics from kernels 
 
 	cuda_flops = half_flops + float_flops + double_flops
 	total_flops = cuda_flops + tensor_flops
@@ -78,7 +88,6 @@ def run_ncu(executable_path, no_tensor, additional_args = []):
 	gflops = float(total_flops/execution_time_nsec)
 	gbw = float(bytes_requested/execution_time_nsec)
 
-	print("\n----------NCU Results----------")
 	print("Total FLOPS:", total_flops)
 	print("\tTotal Cuda Core FLOPS:", cuda_flops)
 	print("\t\t - Half:", half_flops)
@@ -104,6 +113,7 @@ def main():
 	parser.add_argument("additional_args", nargs="...", help='Additional arguments for target application.')
 	parser.add_argument("-n", '--name', default="unnamed", nargs='?', type=str, help='Name for the machine running the application.')
 	parser.add_argument("--no_tensor", action='store_const', const=1, default=0, help='Disable Tensor Core profilling for applications that do not need it')
+	parser.add_argument("--kernel_name", default="", nargs='?', help='Name of target kernel when profilling a single kernel.')
 
 	args=parser.parse_args()
 
@@ -124,7 +134,7 @@ def main():
 		print(f'NCU not detected in {CUDA_PATH}/bin/ncu. Double check your CUDA path on GPU/gpu.env')
 		sys.exit(2)
 
-	run_ncu(args.executable_path, args.no_tensor, args.additional_args)
+	run_ncu(args.executable_path, args.no_tensor, args.kernel_name ,args.additional_args)
 
 if __name__ == "__main__":
 	main()
