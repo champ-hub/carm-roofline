@@ -52,7 +52,7 @@ def process_metrics(ncu_report):
 def run_ncu(executable_path, no_tensor, additional_args = []):
 	tmp_file_path = 'tmp_report.csv'
 	ncu_path = f'{CUDA_PATH}/bin/ncu'
-	options = f'--replay-mode kernel --clock-control none --print-units base --csv --log-file {tmp_file_path} --metrics'.split(' ')
+	options = f'--replay-mode kernel --clock-control none --print-units base --csv --log-file {tmp_file_path} --devices {DEVICE} --metrics'.split(' ')
 
 	cuda_core_metrics = 'sm__sass_data_bytes_mem_global.sum,sm__sass_data_bytes_mem_local.sum,sm__sass_data_bytes_mem_shared.sum,gpu__time_duration.avg,sm__sass_thread_inst_executed_op_fadd_pred_on.sum,sm__sass_thread_inst_executed_op_ffma_pred_on.sum,sm__sass_thread_inst_executed_op_fmul_pred_on.sum,sm__sass_thread_inst_executed_op_hadd_pred_on.sum,sm__sass_thread_inst_executed_op_hfma_pred_on.sum,sm__sass_thread_inst_executed_op_hmul_pred_on.sum,sm__sass_thread_inst_executed_op_dadd_pred_on.sum,sm__sass_thread_inst_executed_op_dfma_pred_on.sum,sm__sass_thread_inst_executed_op_dmul_pred_on.sum'
 	tensor_core_metrics = 'sm__ops_path_tensor_src_bf16_dst_fp32.sum,sm__ops_path_tensor_src_fp16_dst_fp16.sum,sm__ops_path_tensor_src_fp16_dst_fp32.sum,sm__ops_path_tensor_src_fp64.sum,sm__ops_path_tensor_src_int1.sum,sm__ops_path_tensor_src_int4.sum,sm__ops_path_tensor_src_int8.sum,sm__ops_path_tensor_src_tf32_dst_fp32.sum'
