@@ -11,18 +11,30 @@
 
 using namespace std;
 
-#define NUM_REPS 64
+// DEFINE NUM_REPS
 
 // DEFINE KERNEL PARAMETERS
+
+#define STRIDE 32768 * 8L
 
 // DEFINE PRECISION
 
 // DEFINE DEVICE
 
-// DEFINE TEST
+__global__ void benchmark(PRECISION *d_X, PRECISION *d_Y, int iterations) {
+	int id = blockIdx.x * blockDim.x + threadIdx.x;
 
-// DEFINE FUNCTION
-__global__ void benchmark(PRECISION *d_X, int iterations);
+	PRECISION d;
+
+	for (int i = 0; i < iterations; i++) {
+#pragma unroll
+		for (int j = 0; j < 128; j++) {
+			d = d_X[id + j * STRIDE];
+			d_Y[id + j * STRIDE] = d;
+		}
+	}
+	d_X[id] = d;
+}
 
 int main() {
 	// Allocate memory in GPU
@@ -32,9 +44,10 @@ int main() {
 	float milliseconds = 0;
 	vector<float> time_series;
 
-	// DEFINE VECTORS
 	PRECISION *d_X;
-	cudaMalloc((void **)&d_X, NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(PRECISION));
+	cudaMalloc((void **)&d_X, (NUM_BLOCKS * THREADS_PER_BLOCK + 128 * STRIDE) * sizeof(PRECISION));
+	PRECISION *d_Y;
+	cudaMalloc((void **)&d_Y, (NUM_BLOCKS * THREADS_PER_BLOCK + 128 * STRIDE) * sizeof(PRECISION));
 
 	// Timers
 	cudaEvent_t start, stop;
@@ -45,8 +58,8 @@ int main() {
 	while (milliseconds < 150.f) {
 		iterations *= 2;
 		cudaEventRecord(start);
-		// DEFINE CALL
-		benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, iterations);
+
+		benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, d_Y, iterations);
 		cudaEventRecord(stop);
 		cudaEventSynchronize(stop);
 
@@ -56,8 +69,8 @@ int main() {
 	// Perform testing
 	for (int i = 0; i < NUM_REPS; i++) {
 		cudaEventRecord(start);
-		// DEFINE CALL
-		benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, iterations);
+
+		benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, d_Y, iterations);
 		cudaEventRecord(stop);
 		cudaEventSynchronize(stop);
 
@@ -76,27 +89,10 @@ int main() {
 		median = time_series[time_series.size() / 2];
 	}
 
-#if TEST == 1
-	double flops = MULTIPLIER * 4. * iterations * 128 * THREADS_PER_BLOCK * NUM_BLOCKS / 1e9;
-	float perf = flops * 1e3 / median;
-
-	cout << perf << " GFLOPS/s" << endl;
-#elif TEST == 2
-	double flops = 2. * M * N * K * iterations * 128 * (THREADS_PER_BLOCK / 32) * NUM_BLOCKS / 1e9;
-	float perf = flops * 1e3 / median;
-
-	cout << perf << "GFLOPS/s" << endl;
-#elif TEST == 3
-	double bytes = sizeof(PRECISION) * 2. * iterations * 128 * csize / 1e9;
-	float bandwidth = bytes * 1e3 / median;
-
-	cout << bandwidth << " GB/s" << endl;
-#else
 	double bytes = sizeof(PRECISION) * 2. * iterations * 128 * THREADS_PER_BLOCK * NUM_BLOCKS / 1e9;
 	float bandwidth = bytes * 1e3 / median;
 
 	cout << bandwidth << " GB/s" << endl;
-#endif
 
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);

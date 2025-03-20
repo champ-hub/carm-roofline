@@ -22,7 +22,7 @@ NVCC=$(CU_DIR)/bin/nvcc
 NVCCFLAGS=-arch=sm_$(compute_capability)
 
 
-OBJS= $(OBJDIR)/main_test.o $(OBJDIR)/benchmark.o
+OBJS= $(OBJDIR)/test.o
 
 
 .PHONY: dirs clean

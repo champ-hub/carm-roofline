@@ -5,7 +5,7 @@ import subprocess
 import datetime
 import sys 
 import csv
-from dotenv import load_dotenv # type: ignore
+from dotenv import load_dotenv
 
 load_dotenv('GPU/gpu.env')
 
