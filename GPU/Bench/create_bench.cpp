@@ -43,7 +43,7 @@ void create_benchmark_flops(int device, int compute_capability, string operation
 		} else if (text == "// DEFINE DEVICE") {
 			output << "#define DEVICE " << device << endl;
 		} else if (text == "// DEFINE TEST") {
-			output << "#define FLOPS 1" << endl;
+			output << "#define TEST 1" << endl;
 			if (operation == "fma") {
 				output << "#define MULTIPLIER 2" << endl;
 			} else if (operation == "add" || operation == "mul") {
@@ -217,7 +217,7 @@ void create_benchmark_tensor(int device, int compute_capability, string precisio
 		} else if (text == "// DEFINE DEVICE") {
 			output << "#define DEVICE " << device << endl;
 		} else if (text == "// DEFINE TEST") {
-			output << "#define FLOPS 2" << endl;
+			output << "#define TEST 2" << endl;
 		} else if (text == "// DEFINE FUNCTION") {
 			output << "__global__ void benchmark(PRECISION_A *d_A, PRECISION_B *d_B, "
 					  "PRECISION_C *d_C, int iterations);"
@@ -465,7 +465,7 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 			} else if (text == "// DEFINE DEVICE") {
 				output << "#define DEVICE " << device << endl;
 			} else if (text == "// DEFINE TEST") {
-				output << "#define FLOPS 0" << endl;
+				output << "#define TEST 0" << endl;
 			}
 		}
 
@@ -544,7 +544,7 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 			} else if (text == "// DEFINE DEVICE") {
 				output << "#define DEVICE " << device << endl;
 			} else if (text == "// DEFINE TEST") {
-				output << "#define FLOPS 0" << endl;
+				output << "#define TEST 0" << endl;
 			} else if (text == "// DEFINE FUNCTION") {
 				output << "__global__ void benchmark(PRECISION *d_X, PRECISION *d_Y, int "
 						  "iterations);"
@@ -612,6 +612,112 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
 			exit(13);
+		}
+	} else if (target == "L2") {
+		// Shared Memory
+		string text;
+
+		ifstream input("GPU/Test/main_test_base.cu");
+		ofstream output("GPU/bin/main_test.cu");
+
+		while (getline(input, text)) {
+			output << text << endl;
+			if (text == "// DEFINE KERNEL PARAMETERS") {
+				// This test executes with a predefined number of threads and blocks for accurate
+				// testing
+				output << "#define THREADS_PER_BLOCK " << 1024 << endl;
+				output << "#define NUM_BLOCKS " << 1024
+					   << endl;	 // in reality, the test will execute with SMs * 2
+			} else if (text == "// DEFINE PRECISION") {
+				string aux;
+				if (precision == "sp" || precision == "tf32")
+					aux = "float";
+				else if (precision == "dp")
+					aux = "double";
+				else if (precision == "int" || precision == "int8" || precision == "int4" ||
+						 precision == "int1")
+					aux = "int";
+				else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
+					aux = "half";
+				else if (precision == "bf16")
+					aux = "nv_bfloat16";
+
+				output << "#define PRECISION " << aux << endl;
+			} else if (text == "// DEFINE DEVICE") {
+				output << "#define DEVICE " << device << endl;
+			} else if (text == "// DEFINE TEST") {
+				output << "#define TEST 3" << endl;
+			} else if (text == "// DEFINE FUNCTION") {
+				output << "__global__ void benchmark(PRECISION *__restrict__ d_X, PRECISION "
+						  "*__restrict__ d_Y, int "
+						  "iterations, const uint64_t csize);"
+					   << endl;
+				getline(input, text);
+			} else if (text == "\t// DEFINE VECTORS") {
+				output << "\tcudaDeviceProp deviceProps;\n"
+						  "\tcudaGetDeviceProperties(&deviceProps, DEVICE);\n"
+						  "\tuint64_t csize = 0;\n"
+						  "\twhile (2 * csize * sizeof(PRECISION) < deviceProps.l2CacheSize / 2)\n"
+						  "\t\tcsize += 2 * deviceProps.multiProcessorCount * 1024;"
+					   << endl;
+			} else if (text.find("// DEFINE CALL") != string::npos) {
+				output << "benchmark<<<2*deviceProps.multiProcessorCount, "
+						  "THREADS_PER_BLOCK>>>(d_X, d_X+csize, iterations, csize);"
+					   << endl;
+				getline(input, text);
+			}
+		}
+
+		input.close();
+		output.close();
+
+		input.open("GPU/Test/benchmark_base.cu");
+		output.open("GPU/bin/benchmark.cu");
+
+		while (getline(input, text)) {
+			output << text << endl;
+			if (text == "// DEFINE PRECISION") {
+				string aux;
+				if (precision == "sp" || precision == "tf32")
+					aux = "float";
+				else if (precision == "dp")
+					aux = "double";
+				else if (precision == "int" || precision == "int8" || precision == "int4" ||
+						 precision == "int1")
+					aux = "int";
+				else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
+					aux = "half";
+				else if (precision == "bf16")
+					aux = "nv_bfloat16";
+
+				output << "#define PRECISION " << aux << endl;
+				output << "#define THREADS_PER_BLOCK " << 1024 << endl;
+			} else if (text == "\t// DEFINE INITIALIZATION") {
+				output << "\tPRECISION d;" << endl;
+			} else if (text.find("// DEFINE LOOP") != string::npos) {
+				output << "for (int k = id; k < csize;\n"
+						  "k += gridDim.x * blockDim.x)\n"
+						  "if (i & 1) d_X[k] = d_Y[k]; else d_Y[k] = d_X[k];"
+					   << endl;
+			} else if (text == "// DEFINE FUNCTION") {
+				output << "__global__ void benchmark(PRECISION *__restrict__ d_X, PRECISION "
+						  "*__restrict__ d_Y, int "
+						  "iterations, const uint64_t csize) {"
+					   << endl;
+				getline(input, text);
+			} else if (text == "\t// DEFINE CLOSURE") {
+				getline(input, text);
+			}
+		}
+		input.close();
+		output.close();
+		char buffer[100];
+		cout << endl;
+		sprintf(buffer, "make compute_capability=%d -f GPU/Test/Makefile", compute_capability);
+		int check = system(buffer);
+		if (check != 0) {
+			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
+			exit(22);
 		}
 	}
 }
