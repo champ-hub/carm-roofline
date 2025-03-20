@@ -215,7 +215,21 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 			exit(10)
 
 		outputs["shared"] = result.stdout.decode('utf-8').split(' ')[0]
-		print("Bandwith shared memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
+		print("Bandwith Shared Memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
+
+		# MEM L2
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "L2", "--precision", precision, "--compute", str(compute_capability)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stderr.decode('utf-8').rstrip())
+			sys.exit(23)
+
+		result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stdout.decode('utf-8').rstrip())
+			exit(24)
+
+		outputs["l2"] = result.stdout.decode('utf-8').split(' ')[0]
+		print("Bandwith L2 Cache(" + precision +"): ", result.stdout.decode('utf-8').rstrip())
 
 		#MEM Global
 		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "global", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -229,7 +243,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 			exit(10)
 			
 		outputs["global"] = result.stdout.decode('utf-8').split(' ')[0]
-		print("Bandwith global memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
+		print("Bandwith Global Memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
 
 
 		# Save results
@@ -279,7 +293,21 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 			exit(19)
 
 		outputs["shared"] = result.stdout.decode('utf-8').split(' ')[0]
-		print("Bandwith shared memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
+		print("Bandwith Shared Memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
+
+		# MEM L2
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "L2", "--precision", precision, "--compute", str(compute_capability)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stderr.decode('utf-8').rstrip())
+			sys.exit(23)
+
+		result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stdout.decode('utf-8').rstrip())
+			exit(24)
+
+		outputs["l2"] = result.stdout.decode('utf-8').split(' ')[0]
+		print("Bandwith L2 Cache(" + precision +"): ", result.stdout.decode('utf-8').rstrip())
 
 		#MEM Global
 		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "global", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -293,7 +321,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 			exit(21)
 			
 		outputs["global"] = result.stdout.decode('utf-8').split(' ')[0]
-		print("Bandwith global memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
+		print("Bandwith Global Memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
 
 				# Save results
 		if out == './Results':
