@@ -95,7 +95,7 @@ int main() {
 	double flops = 2. * M * N * K * iterations * 128 * (THREADS_PER_BLOCK / 32.) * NUM_BLOCKS / 1e9;
 	float perf = flops * 1e3 / median;
 
-	cout << perf << "GFLOPS/s" << endl;
+	cout << perf << " GFLOPS/s" << endl;
 
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);
