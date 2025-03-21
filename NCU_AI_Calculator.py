@@ -5,11 +5,38 @@ import argparse
 import subprocess
 import sys
 import pandas as pd
+import csv
+import datetime
 
 load_dotenv('GPU/gpu.env')
 
 DEVICE = os.getenv('DEVICE')
 CUDA_PATH = os.getenv('CUDA_PATH')
+
+def custom_round(value, digits=4):
+	if value == 0:
+		return 0  #Directly return 0 if the value is 0
+	elif abs(value) >= 1:
+		#For numbers greater than or equal to 1, round normally
+		return round(value, digits)
+	else:
+		#For numbers less than 1, find the position of the first non-zero digit after the decimal
+		str_value = str(value)
+		if 'e' in str_value or 'E' in str_value:  #Check for scientific notation
+			return round(value, digits)
+		
+		#Count positions until first non-zero digit after the decimal
+		decimal_part = str_value.split('.')[1]
+		leading_zeros = 0
+		for char in decimal_part:
+			if char == '0':
+				leading_zeros += 1
+			else:
+				break
+		
+		#Adjust the number of digits based on the position of the first significant digit
+		total_digits = digits + leading_zeros
+		return round(value, total_digits)
 
 def preprocess_output(ncu_report):
 	key = '"ID","Process ID","Process Name","Host Name","Kernel Name","Context","Stream","Block Size","Grid Size","Device","CC","Section Name","Metric Name","Metric Unit","Metric Value"'
@@ -54,9 +81,34 @@ def process_metrics(ncu_report, kernel_name):
 
 	return execution_time, bytes_requested, tensor_flops, half_flops, float_flops, double_flops
 
+def update_csv(machine_name, executable_path, app_name, performance, ai, bandwidth, execution_time, date, target, precision):
+	csv_path = f"./Results/Applications/{machine_name}_Applications.csv"
+
+	if app_name == "":
+		app_name = os.path.basename(executable_path)
+
+	if(os.path.isdir('Results') == False):
+		os.mkdir('Results')
+	if(os.path.isdir('Results/Applications') == False):
+		os.mkdir('Results/Applications')
+
+	results = [date, "NCU", app_name, target, precision, 0, custom_round(ai), custom_round(performance), custom_round(bandwidth), custom_round(execution_time)]
+
+	headers = ['Date', 'Method', 'Name', 'ISA', 'Precision', 'Threads', 'AI', 'Gflops', 'Bandwidth', 'Time']
+
+	if os.path.exists(csv_path):
+		with open(csv_path, 'a', newline='') as csvfile:
+			writer = csv.writer(csvfile)
+			writer.writerow(results)
+	else:
+		with open(csv_path, 'w', newline='') as csvfile:
+			writer = csv.writer(csvfile)
+			writer.writerow(headers)
+			writer.writerow(results)
 
 
-def run_ncu(executable_path, no_tensor, kernel_name = "", additional_args = []):
+
+def run_ncu(machine_name, app_name, executable_path, no_tensor, kernel_name = "", additional_args = []):
 	tmp_file_path = 'tmp_report.csv'
 	ncu_path = f'{CUDA_PATH}/bin/ncu'
 	kernel = "" if kernel_name == "" else f' -k {kernel_name}'
@@ -102,6 +154,18 @@ def run_ncu(executable_path, no_tensor, kernel_name = "", additional_args = []):
 	print("Arithmetic Intensity:", ai)
 	print("------------------------------")
 
+	ct = datetime.datetime.now()
+	date = ct.strftime('%Y-%m-%d %H:%M:%S')
+
+	target = 'mixed'
+	if (cuda_flops/total_flops) > 0.9:
+		target = 'cuda'
+	elif (tensor_flops/total_flops) > 0.9:
+		target = 'tensor'
+
+	update_csv(machine_name, executable_path, app_name, gflops, ai, gbw, float(execution_time_nsec/1e9), date, target, 'na')
+	# TODO: Needs discussion on threads and precision
+
 	os.remove(tmp_file_path)
 
 
@@ -112,6 +176,7 @@ def main():
 	parser.add_argument("executable_path", help="Path to the executable provided by the user.")
 	parser.add_argument("additional_args", nargs="...", help='Additional arguments for target application.')
 	parser.add_argument("-n", '--name', default="unnamed", nargs='?', type=str, help='Name for the machine running the application.')
+	parser.add_argument("-an", '--app_name', default='', nargs='?', type=str, help="Name for the target app.")
 	parser.add_argument("--no_tensor", action='store_const', const=1, default=0, help='Disable Tensor Core profilling for applications that do not need it')
 	parser.add_argument("--kernel_name", default="", nargs='?', help='Name of target kernel when profilling a single kernel.')
 
@@ -134,7 +199,7 @@ def main():
 		print(f'NCU not detected in {CUDA_PATH}/bin/ncu. Double check your CUDA path on GPU/gpu.env')
 		sys.exit(2)
 
-	run_ncu(args.executable_path, args.no_tensor, args.kernel_name ,args.additional_args)
+	run_ncu(args.name, args.app_name, args.executable_path, args.no_tensor, args.kernel_name ,args.additional_args)
 
 if __name__ == "__main__":
 	main()

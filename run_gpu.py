@@ -28,17 +28,36 @@ def read_config(config_file):
 
 def update_csv(name, test, results, date, target, precision, inst, threads, blocks, out_path):
 	csv_path = f"{out_path}/Roofline/{name}_{test}.csv"
-	output = [date, target, precision, threads, blocks, inst]
+	output = [date, target, precision, threads, 1, 1, blocks, 0, inst]
 
 	output.append(results["shared"])
-	#L2 cache to be implemented
-	output.append(0)
+	output.append(0) #I/Cycle not implemented yet
+
+	output.append(0) #L1 cache not implemented yet
+	output.append(0) #I/Cycle not implemented yet
+	
+	output.append(results["l2"])
+	output.append(0) #I/Cycle not implemented yet
+
 	output.append(results["global"])
+	output.append(0) #I/Cycle not implemented yet
 
-	output.append(results["flops"])
+	if "flops" in results:
+		output.append(results["flops"])
+		output.append(0) #I/Cycle not implemented yet
+	else:
+		output.append(0)
+		output.append(0)
 
-	secondary_headers = ["Name:", name, "Shared", "L2(todo)", "Global", "FP"]
-	primary_headers = ["Date", "ISA", "Precision", "Threads per Block", "Number of Blocks", "FP Inst.", "GB/s", "GB/s", "GB/s", "Gflops/s"]
+	if "fma" in results:
+		output.append(results["fma"])
+		output.append(0) #I/Cycle not implemented yet
+	else:
+		output.append(0)
+		output.append(0)
+
+	secondary_headers = ["Name:", name, "Shared Memory/L1 Size:", "0", "L2 Size:", "0", "Global Size:", "0", "", "Shared", "Shared", "L1", "L1", "L2", "L2", "Global", "Global", "FP", "FP", "FP FMA", "FP FMA"]
+	primary_headers = ["Date", "ISA", "Precision", "Threads per Block", "Loads", "Stores", "Number of Blocks", "DRAM Bytes", "FP Inst.", "GB/s", "I/Cycle", "GB/s", "I/Cycle", "GB/s", "I/Cycle", "GB/s", "I/Cycle", "Gflops/s", "I/Cycle", "Gflops/s", "I/Cycle"]
 
 	#Check if the file exists
 	if os.path.exists(csv_path):
@@ -176,21 +195,8 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 		outputs = {}
 		# Generate benchmarks
 		#FLOPS
-		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--operation", cuda_op, "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-		if result.returncode != 0:
-			print(result.stderr.decode('utf-8').rstrip())
-			sys.exit(5)
-
-		result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
-		if result.returncode != 0:
-			print(result.stdout.decode('utf-8').rstrip())
-			exit(8)
-		
-		outputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
-		print("Performance(" + precision + ", " + cuda_op + "): ", result.stdout.decode('utf-8').rstrip())
-
 		if cuda_op != "fma":
-			result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--operation", "fma", "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--operation", cuda_op, "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 			if result.returncode != 0:
 				print(result.stderr.decode('utf-8').rstrip())
 				sys.exit(5)
@@ -200,8 +206,23 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 				print(result.stdout.decode('utf-8').rstrip())
 				exit(8)
 			
-			outputs["fma"] = result.stdout.decode('utf-8').split(' ')[0]
-			print("Performance(" + precision + ", " + "fma" + "): ", result.stdout.decode('utf-8').rstrip())
+			outputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
+			print("Performance(" + precision + ", " + cuda_op + "): ", result.stdout.decode('utf-8').rstrip())
+
+
+		# Always execute FMA
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--operation", "fma", "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stderr.decode('utf-8').rstrip())
+			sys.exit(5)
+
+		result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
+		if result.returncode != 0:
+			print(result.stdout.decode('utf-8').rstrip())
+			exit(8)
+		
+		outputs["fma"] = result.stdout.decode('utf-8').split(' ')[0]
+		print("Performance(" + precision + ", " + "fma" + "): ", result.stdout.decode('utf-8').rstrip())
 
 		#MEM Shared
 		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "shared", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
