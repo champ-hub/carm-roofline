@@ -12,10 +12,8 @@ except ImportError:
     plot_numpy = None
 import datetime
 import platform
-import re
 import sys
 
-import DBI_AI_Calculator
 import utils as ut
 
 rvv_SVE_compiler_path = "gcc"
@@ -618,7 +616,7 @@ def print_results(isa, test_type, test_data, data_cycles, num_reps, test_size, i
         print("Results Debug -> Total Inner Loop Reps:", int(inner_loop_reps), "| Number of reps:", num_reps)
 
 #Run Roofline tests
-def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, threads_set, interleaved, num_ops, l3_bytes, dram_bytes, dram_auto, test_type, verbose, set_freq, no_freq_measure, VLEN, tl1, tl2, plot, LMUL, out_path):
+def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, threads_set, interleaved, num_ops, l3_bytes, dram_bytes, dram_auto, test_type, verbose, set_freq, no_freq_measure, VLEN, tl1, tl2, plot, LMUL, out_path, num_runs):
     
     num_reps = {}
     test_size = {}
@@ -735,7 +733,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                 if test_type in ["L1", "roofline"] and l1_size > 0:
                     #Run L1 Test
 
-                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["L1"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose))
+                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["L1"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose) + " -num_runs " + str(num_runs))
                     
                     if(interleaved):
                         result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
@@ -766,7 +764,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                     if verbose == 4 and test_type == 'roofline':
                         print("-------------------------------------------------")
                         print("Debug output:")
-                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["L2"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose))
+                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["L2"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose) + " -num_runs " + str(num_runs))
                     
                     if test_type == 'roofline' and l1_size > 0:
                         no_freq_measure = 1
@@ -800,7 +798,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                     if verbose == 4 and test_type == 'roofline':
                         print("-------------------------------------------------")
                         print("Debug output:")
-                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["L3"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose))
+                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["L3"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose) + " -num_runs " + str(num_runs))
                     
                     if test_type == 'roofline' and (l1_size > 0 or l2_size > 0):
                         no_freq_measure = 1
@@ -834,7 +832,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                     if verbose == 4 and test_type == 'roofline':
                         print("-------------------------------------------------")
                         print("Debug output:")
-                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["DRAM"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose))
+                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps["DRAM"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose) + " -num_runs " + str(num_runs))
                     
                     if test_type == 'roofline' and (l1_size > 0 or l2_size > 0 or l3_size > 0):
                         no_freq_measure = 1
@@ -868,7 +866,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                     if verbose == 4 and test_type == 'roofline':
                         print("-------------------------------------------------")
                         print("Debug output:")
-                    os.system(str(bench_ex) + " -test FLOPS -op " + inst + " -precision " + precision + " -fp " + str(num_reps["FP"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose))
+                    os.system(str(bench_ex) + " -test FLOPS -op " + inst + " -precision " + precision + " -fp " + str(num_reps["FP"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose) + " -num_runs " + str(num_runs))
                     
                     if test_type == 'roofline' and (l1_size > 0 or l2_size > 0 or l3_size > 0 or dram_bytes > 0):
                         no_freq_measure = 1
@@ -907,7 +905,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                     if verbose == 4:
                         print("-------------------------------------------------")
                         print("Debug output:")
-                    os.system(str(bench_ex) + " -test FLOPS -op " + inst_fma + " -precision " + precision + " -fp " + str(num_reps["FP_FMA"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose))
+                    os.system(str(bench_ex) + " -test FLOPS -op " + inst_fma + " -precision " + precision + " -fp " + str(num_reps["FP_FMA"]) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose) + " -num_runs " + str(num_runs))
                     
                     if test_type == 'roofline' and (l1_size > 0 or l2_size > 0 or l3_size > 0 or dram_bytes > 0):
                         no_freq_measure = 1
@@ -959,7 +957,7 @@ def run_roofline(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision
                     update_csv(name, "roofline", data, data_cycles, date, isa, precision, threads, num_ld, num_st, inst, interleaved, l1_size, l2_size, l3_size, dram_bytes, VLEN, LMUL, out_path)
 
 #Run Memory Bandwidth tests
-def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precision_set, num_ld, num_st, threads_set, interleaved, verbose, no_freq_measure, VLEN, tl1, plot, LMUL):
+def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precision_set, num_ld, num_st, threads_set, interleaved, verbose, no_freq_measure, VLEN, tl1, plot, LMUL, num_runs):
     if interleaved:
         inter = "Yes"
     else:
@@ -1008,7 +1006,7 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
 
                 num_reps = int(int(l1_size)*1024/(tl1*2*mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
 
-                os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose))
+                os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose) + " -num_runs " + str(num_runs))
                 
                 no_freq_measure = 0
 
@@ -1033,7 +1031,7 @@ def run_memory(name, freq, set_freq, l1_size, l2_size, l3_size, isa_set, precisi
                         print("Testing with", size, "Kb")
                     num_reps = int(size*1024/(mem_inst_size[isa][precision]*(num_ld+num_st)*VLEN*LMUL))
 
-                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose))
+                    os.system(str(bench_ex) + " -test MEM -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose) + " -num_runs " + str(num_runs))
                 
                     if(interleaved):
                         result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq_real), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
@@ -1172,7 +1170,7 @@ def update_memory_csv(Gbps, InstCycle, date, name, l1_size, l2_size, l3_size, is
         writer.writerow(results)
 
 #Run Mixed Benchmark
-def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, num_fp, threads_set, interleaved, num_ops, l3_bytes, dram_bytes, dram_auto, test_type, verbose, set_freq, no_freq_measure, VLEN, tl1, tl2, LMUL):
+def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_set, num_ld, num_st, num_fp, threads_set, interleaved, num_ops, l3_bytes, dram_bytes, dram_auto, test_type, verbose, set_freq, no_freq_measure, VLEN, tl1, tl2, LMUL, num_runs):
     
     isa_set, l1_size, l2_size, l3_size, VLEN, LMUL = check_hardware(isa_set, freq, set_freq, verbose, precision_set, l1_size, l2_size, l3_size, VLEN, LMUL)
     VLEN_aux = VLEN
@@ -1266,7 +1264,7 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
                     print("Debug output:")
 
                 os.system(f"make {make_verb_flag} -C {script_dir} clean && make {make_verb_flag} -C {script_dir} isa={isa}")
-                os.system(str(bench_ex) + " -test MIXED -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -num_FP " + str(num_fp) + " -op " + inst + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose))
+                os.system(str(bench_ex) + " -test MIXED -num_LD " + str(num_ld) + " -num_ST " + str(num_st) + " -num_FP " + str(num_fp) + " -op " + inst + " -precision " + precision + " -num_rep " + str(num_reps) + " -Vlen " + str(VLEN) + " -LMUL " + str(LMUL) + " -verbose " + str(verbose) + " -num_runs " + str(num_runs))
 
                 if(interleaved):
                     result = subprocess.run([test_ex, "-threads", str(threads), "-freq", str(freq), "-measure_freq", str(no_freq_measure), "--interleaved"], stdout=subprocess.PIPE)
@@ -1335,35 +1333,40 @@ def run_mixed(name, freq, l1_size, l2_size, l3_size, inst, isa_set, precision_se
 def main():
     parser = argparse.ArgumentParser(description='Script to run micro-benchmarks to construct Cache-Aware Roofline Model')
     parser.add_argument('--test', default='roofline', nargs='?', choices=['FP', 'L1', 'L2', 'L3', 'DRAM', 'roofline', 'MEM', 'mixedL1', 'mixedL2', 'mixedL3', 'mixedDRAM'], help='Type of the test. Roofline test measures the bandwidth of the different memory levels and FP Performance, MEM test measures the bandwidth of various memory sizes, mixed test measures bandwidth and FP performance for a combination of memory acceses (to L1, L2, L3, or DRAM) and FP operations (Default: roofline)')
-    parser.add_argument('--no_freq_measure',  dest='no_freq_measure', action='store_const', const=1, default=0, help='Measure CPU frequency or not')
-    parser.add_argument('--freq', default='2.0', nargs='?', type = float, help='Expected/Desired CPU frequency during test (if no_freq_measure or set_freq is enabled)')
-    parser.add_argument('--set_freq',  dest='set_freq', action='store_const', const=1, default=0, help='Set Processor frequency to indicated one (x86 only, might require admin priviliges and might not work for certain systems)')
-    parser.add_argument('--name', default='unnamed', nargs='?', type = str, help='Name for results file (if not using config file)')
-    parser.add_argument('-v', '--verbose', default=3, nargs='?', type = int, choices=[0, 1, 2, 3, 4], help='Level of terminal output details (0 -> No Output 1 -> Only ISA/Configuration Errors and Test Specifications, 2 -> Test Results, 3 -> Configuration Values Selected/Detected, 4 -> Debug Output)')
+    parser.add_argument('-nr', '--num_runs', default=1024, nargs='?', type=ut.positive_int, help='Number of repetitions for the benchmarks (Default: 1024)')
+    parser.add_argument('-ops', '--num_ops',  default=32768, nargs='?', type=ut.positive_int, help='Number of FP operations to be used in FP test (Default: 32768)')
+    
+    parser.add_argument('--isa', default=['auto'], nargs='+', choices=['avx512', 'avx2', 'sse', 'scalar', 'neon', 'armscalar', 'sve', 'riscvscalar', 'rvv0.7', 'rvv1.0', 'auto'], help='set of ISAs to test, if auto will test all available ISAs (Default: auto)')
+    parser.add_argument('-p', '--precision', default=['dp'], nargs='+', choices=['dp', 'sp'], help='Data Precision (Default: dp)')
+    parser.add_argument('-t', '--threads', default=[1], nargs='+', type=ut.positive_int, help='Set of number of threads for the micro-benchmarking, insert multiple thread valus by spacing them, no commas (Default: [1])')
+    parser.add_argument('-i', '--interleaved',  dest='interleaved', action='store_const', const=1, default=0, help='For thread binding when cores are interleaved between NUMA domains (Default: 0)')
     parser.add_argument('--inst', default='add', nargs='?', choices=['add', 'mul', 'div', 'fma'], help='FP Instruction (Default: add), FMA performance is measured by default too.')
     parser.add_argument('-vl', '--vector_length',  default=1, nargs='?', type=ut.positive_int, help='Vector Length in double/single precision elements (if running dp and sp in one run, double precision elements will be assumed) for RVV configuration (Default: Max available)')
     parser.add_argument('-vlmul', '--vector_lmul', default=1, nargs='?', type = int, choices=[1, 2, 4, 8], help='Vector Register Grouping for RVV configuration (Default: 1)')
-    parser.add_argument('--isa', default=['auto'], nargs='+', choices=['avx512', 'avx2', 'sse', 'scalar', 'neon', 'armscalar', 'sve', 'riscvscalar', 'rvv0.7', 'rvv1.0', 'auto'], help='set of ISAs to test, if auto will test all available ISAs (Default: auto)')
-    parser.add_argument('-p', '--precision', default=['dp'], nargs='+', choices=['dp', 'sp'], help='Data Precision (Default: dp)')
+    
     parser.add_argument('-ldst', '--ld_st_ratio',  default=2, nargs='?', type=ut.positive_int, help='Load/Store Ratio (Default: 2)')
     parser.add_argument('-fpldst', '--fp_ld_st_ratio',  default=1, nargs='?', type=ut.positive_int, help='FP to Load/Store Ratio, for mixed test (Default: 1)')
     parser.add_argument('--only_ld',  dest='only_ld', action='store_const', const=1, default=0, help='Run only loads in mem test (ld_st_ratio is ignored)')
     parser.add_argument('--only_st',  dest='only_st', action='store_const', const=1, default=0, help='Run only stores in mem test (ld_st_ratio is ignored)')
-    parser.add_argument('config', nargs='?', help='Path for the system configuration file')
-    parser.add_argument('-t', '--threads', default=[1], nargs='+', type=ut.positive_int, help='Set of number of threads for the micro-benchmarking, insert multiple thread valus by spacing them, no commas (Default: [1])')
-    parser.add_argument('-i', '--interleaved',  dest='interleaved', action='store_const', const=1, default=0, help='For thread binding when cores are interleaved between NUMA domains (Default: 0)')
-    parser.add_argument('-ops', '--num_ops',  default=32768, nargs='?', type=ut.positive_int, help='Number of FP operations to be used in FP test (Default: 32768)')
+    
     parser.add_argument('--l3_kbytes',  default=0, nargs='?', type=ut.positive_int, help='Total Size of the array for the L3 test in KiB')
     parser.add_argument('--dram_kbytes',  default=524288, nargs='?', type=ut.positive_int, help='Total Size of the array for the DRAM test in KiB (Default: 524288 (512 MiB))')
     parser.add_argument('--dram_auto',  dest='dram_auto', action='store_const', const=1, default=0, help='Automatically calculate the DRAM test size needed to ensure data does not fit in L3, can require a lot of memory in some cases, make sure it fits in the DRAM of your system (Default: 0)')
-    parser.add_argument('--plot',  dest='plot', action='store_const', const=1, default=0, help='Create CARM plot SVG for each test result')
 
     parser.add_argument('-tl1', '--threads_per_l1',  default=1, nargs='?', type = int, help='Expected amount of threads that will have to share the same L1 cache (Default: 1)')
     parser.add_argument('-tl2', '--threads_per_l2',  default=2, nargs='?', type = int, help='Expected amount of threads that will have to share the same L2 cache (Default: 2)')
     parser.add_argument('-l1', '--l1_size',  default=0, nargs='?', type = int, help='L1 size per core')
     parser.add_argument('-l2', '--l2_size',  default=0, nargs='?', type = int, help='L2 size per core')
     parser.add_argument('-l3', '--l3_size',  default=0, nargs='?', type = int, help='L3 total size')
+    parser.add_argument('config', nargs='?', help='Path for the system configuration file')
 
+    parser.add_argument('--no_freq_measure',  dest='no_freq_measure', action='store_const', const=1, default=0, help='Measure CPU frequency or not')
+    parser.add_argument('--freq', default='2.0', nargs='?', type = float, help='Expected/Desired CPU frequency during test (if no_freq_measure or set_freq is enabled)')
+    parser.add_argument('--set_freq',  dest='set_freq', action='store_const', const=1, default=0, help='Set Processor frequency to indicated one (x86 only, might require admin priviliges and might not work for certain systems)')
+
+    parser.add_argument('-v', '--verbose', default=3, nargs='?', type = int, choices=[0, 1, 2, 3, 4], help='Level of terminal output details (0 -> No Output 1 -> Only ISA/Configuration Errors and Test Specifications, 2 -> Test Results, 3 -> Configuration Values Selected/Detected, 4 -> Debug Output)')
+    parser.add_argument('--name', default='unnamed', nargs='?', type = str, help='Name for results file (if not using config file)')
+    parser.add_argument('--plot',  dest='plot', action='store_const', const=1, default=0, help='Create CARM plot SVG for each test result')
     parser.add_argument('-out', '--output', nargs='?', default='./carm_results', help='Path to a folder to save roofline results to (Default: ./carm_results | Only applies to roofline results)')
 
     args = parser.parse_args()
@@ -1419,11 +1422,11 @@ def main():
                 print("WARNING: Please specify an even number for --vector_length (-vl) argument when using single precision.")
         
     if args.test in ["mixedL1", "mixedL2", "mixedL3", "mixedDRAM"]:
-        run_mixed(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, precision_set, num_ld, num_st, num_fp, args.threads, args.interleaved, args.num_ops, args.l3_kbytes, args.dram_kbytes, args.dram_auto, args.test, verbose, args.set_freq, args.no_freq_measure, vlen, args.threads_per_l1,  args.threads_per_l2, args.vector_lmul)
+        run_mixed(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, precision_set, num_ld, num_st, num_fp, args.threads, args.interleaved, args.num_ops, args.l3_kbytes, args.dram_kbytes, args.dram_auto, args.test, verbose, args.set_freq, args.no_freq_measure, vlen, args.threads_per_l1,  args.threads_per_l2, args.vector_lmul, args.num_runs)
     elif args.test == 'MEM':
-        run_memory(name, freq, args.set_freq, l1_size, l2_size, l3_size, isa_set, precision_set, num_ld, num_st, args.threads, args.interleaved, verbose, args.no_freq_measure, vlen, args.threads_per_l1, args.plot, args.vector_lmul)
+        run_memory(name, freq, args.set_freq, l1_size, l2_size, l3_size, isa_set, precision_set, num_ld, num_st, args.threads, args.interleaved, verbose, args.no_freq_measure, vlen, args.threads_per_l1, args.plot, args.vector_lmul, args.num_runs)
     else:
-        run_roofline(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, precision_set, num_ld, num_st, args.threads, args.interleaved, args.num_ops, args.l3_kbytes, args.dram_kbytes, args.dram_auto, args.test, verbose, args.set_freq, args.no_freq_measure, vlen, args.threads_per_l1,  args.threads_per_l2, args.plot, args.vector_lmul, args.output)
+        run_roofline(name, freq, l1_size, l2_size, l3_size, args.inst, isa_set, precision_set, num_ld, num_st, args.threads, args.interleaved, args.num_ops, args.l3_kbytes, args.dram_kbytes, args.dram_auto, args.test, verbose, args.set_freq, args.no_freq_measure, vlen, args.threads_per_l1,  args.threads_per_l2, args.plot, args.vector_lmul, args.output, args.num_runs)
 
 if __name__ == "__main__":
     main()

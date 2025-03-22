@@ -1,20 +1,16 @@
 import argparse
 import subprocess
 import os
-plot_numpy = 1
-try:
-    import matplotlib.pyplot as plt
-    import numpy as np
-except ImportError:
-    plot_numpy = None
 import datetime
 import time
 import re
 import sys
 import platform
-import csv
 
 import utils as ut
+
+if not hasattr(time, 'time_ns'):
+    time.time_ns = lambda: int(time.time() * 1e9)
 
 #FP OPERATIONS
 x86_Scalar_fp_operations = {
@@ -49,24 +45,31 @@ x86_SSE_fp_operations = {
     "mulpd": {"count": 0, "string": "SSE (2x 64 bit)", "factor": 2},
     "vfmadd132pd": {"count": 0, "string": "SSE (4x 64 bit)", "factor": 4},
     "vfmadd231pd": {"count": 0, "string": "SSE (4x 64 bit)", "factor": 4},
+    "vfmadd213pd": {"count": 0, "string": "SSE (4x 64 bit)", "factor": 4},
+    "vfnmadd132pd": {"count": 0, "string": "SSE (4x 64 bit)", "factor": 4},
+    "vfnmadd231pd": {"count": 0, "string": "SSE (4x 64 bit)", "factor": 4},
+    "vfnmadd213pd": {"count": 0, "string": "SSE (4x 64 bit)", "factor": 4},
     "divps": {"count": 0, "string": "SSE (4x 32 bit)", "factor": 4},
     "addps": {"count": 0, "string": "SSE (4x 32 bit)", "factor": 4},
     "subps": {"count": 0, "string": "SSE (4x 32 bit)", "factor": 4},
+    "vfmsub132ps": {"count": 0, "string": "SSE (8x 32 bit)", "factor": 8},
+    "vfmsub231ps": {"count": 0, "string": "SSE (8x 32 bit)", "factor": 8},
+    "vfmsub213ps": {"count": 0, "string": "SSE (8x 32 bit)", "factor": 8},
     "mulps": {"count": 0, "string": "SSE (4x 32 bit)", "factor": 4},
-    "vfmadd132ps": {"count": 0, "string": "SSE (8x 32 bit)", "factor": 4},
-    "vfmadd231ps": {"count": 0, "string": "SSE (8x 32 bit)", "factor": 4},
-    "vdivpd": {"count": 0, "string": "AVX2 (2x 64 bit)", "factor": 2},
-    "vaddpd": {"count": 0, "string": "AVX2 (2x 64 bit)", "factor": 2},
-    "vsubpd": {"count": 0, "string": "AVX2 (2x 64 bit)", "factor": 2},
-    "vmulpd": {"count": 0, "string": "AVX2 (2x 64 bit)", "factor": 2},
-    "vfmadd132pd": {"count": 0, "string": "AVX2 (4x 64 bit)", "factor": 4},
-    "vfmadd231pd": {"count": 0, "string": "AVX2 (4x 64 bit)", "factor": 4},
-    "vdivps": {"count": 0, "string": "AVX2 (4x 32 bit)", "factor": 4},
-    "vaddps": {"count": 0, "string": "AVX2 (4x 32 bit)", "factor": 4},
-    "vsubps": {"count": 0, "string": "AVX2 (4x 32 bit)", "factor": 4},
-    "vmulps": {"count": 0, "string": "AVX2 (4x 32 bit)", "factor": 4},
-    "vfmadd132ps": {"count": 0, "string": "AVX2 (8x 64 bit)", "factor": 8},
-    "vfmadd231ps": {"count": 0, "string": "AVX2 (8x 64 bit)", "factor": 8}
+    "vfmadd132ps": {"count": 0, "string": "SSE (8x 32 bit)", "factor": 8},
+    "vfmadd231ps": {"count": 0, "string": "SSE (8x 32 bit)", "factor": 8},
+    "vfmadd213ps": {"count": 0, "string": "SSE (8x 32 bit)", "factor": 8},
+    "vfnmadd132ps": {"count": 0, "string": "SSE (8x 32 bit)", "factor": 8},
+    "vfnmadd231ps": {"count": 0, "string": "SSE (8x 32 bit)", "factor": 8},
+    "vfnmadd213ps": {"count": 0, "string": "SSE (8x 32 bit)", "factor": 8},
+    "vdivpd": {"count": 0, "string": "SSE (2x 64 bit)", "factor": 2},
+    "vaddpd": {"count": 0, "string": "SSE (2x 64 bit)", "factor": 2},
+    "vsubpd": {"count": 0, "string": "SSE (2x 64 bit)", "factor": 2},
+    "vmulpd": {"count": 0, "string": "SSE (2x 64 bit)", "factor": 2},
+    "vdivps": {"count": 0, "string": "SSE (4x 32 bit)", "factor": 4},
+    "vaddps": {"count": 0, "string": "SSE (4x 32 bit)", "factor": 4},
+    "vsubps": {"count": 0, "string": "SSE (4x 32 bit)", "factor": 4},
+    "vmulps": {"count": 0, "string": "SSE (4x 32 bit)", "factor": 4},
 }
 
 x86_AVX2_fp_operations = {
@@ -76,12 +79,23 @@ x86_AVX2_fp_operations = {
     "vmulpd": {"count": 0, "string": "AVX2 (4x 64 bit)", "factor": 4},
     "vfmadd132pd": {"count": 0, "string": "AVX2 (8x 64 bit)", "factor": 8},
     "vfmadd231pd": {"count": 0, "string": "AVX2 (8x 64 bit)", "factor": 8},
+    "vfmadd213pd": {"count": 0, "string": "AVX2 (8x 64 bit)", "factor": 8},
+    "vfnmadd132pd": {"count": 0, "string": "AVX2 (8x 64 bit)", "factor": 8},
+    "vfnmadd231pd": {"count": 0, "string": "AVX2 (8x 64 bit)", "factor": 8},
+    "vfnmadd213pd": {"count": 0, "string": "AVX2 (8x 64 bit)", "factor": 8},
     "vdivps": {"count": 0, "string": "AVX2 (8x 32 bit)", "factor": 8},
     "vaddps": {"count": 0, "string": "AVX2 (8x 32 bit)", "factor": 8},
     "vsubps": {"count": 0, "string": "AVX2 (8x 32 bit)", "factor": 8},
+    "vfmsub132ps": {"count": 0, "string": "AVX2 (16x 32 bit)", "factor": 16},
+    "vfmsub231ps": {"count": 0, "string": "AVX2 (16x 32 bit)", "factor": 16},
+    "vfmsub213ps": {"count": 0, "string": "AVX2 (16x 32 bit)", "factor": 16},
     "vmulps": {"count": 0, "string": "AVX2 (8x 32 bit)", "factor": 8},
     "vfmadd132ps": {"count": 0, "string": "AVX2 (16x 32 bit)", "factor": 16},
-    "vfmadd231ps": {"count": 0, "string": "AVX2 (16x 32 bit)", "factor": 16}
+    "vfmadd231ps": {"count": 0, "string": "AVX2 (16x 32 bit)", "factor": 16},
+    "vfmadd213ps": {"count": 0, "string": "AVX2 (16x 32 bit)", "factor": 16},
+    "vfnmadd132ps": {"count": 0, "string": "AVX2 (16x 32 bit)", "factor": 16},
+    "vfnmadd231ps": {"count": 0, "string": "AVX2 (16x 32 bit)", "factor": 16},
+    "vfnmadd213ps": {"count": 0, "string": "AVX2 (16x 32 bit)", "factor": 16}
 }
 
 x86_AVX512_fp_operations = {
@@ -92,13 +106,22 @@ x86_AVX512_fp_operations = {
     "vfmadd132pd": {"count": 0, "string": "AVX512 (16x 64 bit)", "factor": 16},
     "vfmadd231pd": {"count": 0, "string": "AVX512 (16x 64 bit)", "factor": 16},
     "vfmadd213pd": {"count": 0, "string": "AVX512 (16x 64 bit)", "factor": 16},
+    "vfnmadd132pd": {"count": 0, "string": "AVX512 (16x 64 bit)", "factor": 16},
+    "vfnmadd231pd": {"count": 0, "string": "AVX512 (16x 64 bit)", "factor": 16},
+    "vfnmadd213pd": {"count": 0, "string": "AVX512 (16x 64 bit)", "factor": 16},
     "vdivps": {"count": 0, "string": "AVX512 (16x 32 bit)", "factor": 16},
     "vaddps": {"count": 0, "string": "AVX512 (16x 32 bit)", "factor": 16},
     "vsubps": {"count": 0, "string": "AVX512 (16x 32 bit)", "factor": 16},
+    "vfmsub132ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32},
+    "vfmsub231ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32},
+    "vfmsub213ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32},
     "vmulps": {"count": 0, "string": "AVX512 (16x 32 bit)", "factor": 16},
     "vfmadd132ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32},
     "vfmadd231ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32},
-    "vfmadd213ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32}
+    "vfmadd213ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32},
+    "vfnmadd132ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32},
+    "vfnmadd231ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32},
+    "vfnmadd213ps": {"count": 0, "string": "AVX512 (32x 32 bit)", "factor": 32}
 }
 
 #INTEGER OPERATIONS
@@ -126,18 +149,18 @@ x86_SSE_int_operations = {
     "pdivd": {"count": 0, "string": "SSE (4x 32 bit)", "factor": 4},
     "pdivw": {"count": 0, "string": "SSE (8x 16 bit)", "factor": 8},
     "pdivb": {"count": 0, "string": "SSE (16x 8 bit)", "factor": 16},
-    "vpaddq": {"count": 0, "string": "AVX2 (2x 64 bit)", "factor": 2},
-    "vpaddd": {"count": 0, "string": "AVX2 (4x 32 bit)", "factor": 4},
-    "vpaddw": {"count": 0, "string": "AVX2 (8x 16 bit)", "factor": 8},
-    "vpaddb": {"count": 0, "string": "AVX2 (16x 8 bit)", "factor": 16},
-    "vpsubq": {"count": 0, "string": "AVX2 (2x 64 bit)", "factor": 2},
-    "vpsubd": {"count": 0, "string": "AVX2 (4x 32 bit)", "factor": 4},
-    "vpsubw": {"count": 0, "string": "AVX2 (8x 16 bit)", "factor": 8},
-    "vpsubb": {"count": 0, "string": "AVX2 (16x 8 bit)", "factor": 16},
-    "vpdivq": {"count": 0, "string": "AVX2 (2x 64 bit)", "factor": 2},
-    "vpdivd": {"count": 0, "string": "AVX2 (4x 32 bit)", "factor": 4},
-    "vpdivw": {"count": 0, "string": "AVX2 (8x 16 bit)", "factor": 8},
-    "vpdivb": {"count": 0, "string": "AVX2 (16x 8 bit)", "factor": 16},
+    "vpaddq": {"count": 0, "string": "SSE (2x 64 bit)", "factor": 2},
+    "vpaddd": {"count": 0, "string": "SSE (4x 32 bit)", "factor": 4},
+    "vpaddw": {"count": 0, "string": "SSE (8x 16 bit)", "factor": 8},
+    "vpaddb": {"count": 0, "string": "SSE (16x 8 bit)", "factor": 16},
+    "vpsubq": {"count": 0, "string": "SSE (2x 64 bit)", "factor": 2},
+    "vpsubd": {"count": 0, "string": "SSE (4x 32 bit)", "factor": 4},
+    "vpsubw": {"count": 0, "string": "SSE (8x 16 bit)", "factor": 8},
+    "vpsubb": {"count": 0, "string": "SSE (16x 8 bit)", "factor": 16},
+    "vpdivq": {"count": 0, "string": "SSE (2x 64 bit)", "factor": 2},
+    "vpdivd": {"count": 0, "string": "SSE (4x 32 bit)", "factor": 4},
+    "vpdivw": {"count": 0, "string": "SSE (8x 16 bit)", "factor": 8},
+    "vpdivb": {"count": 0, "string": "SSE (16x 8 bit)", "factor": 16},
 }
 
 x86_AVX2_int_operations = {
@@ -906,16 +929,11 @@ if __name__ == "__main__":
     print("------------------------------")
 
     ct = datetime.datetime.now()
+    date = ct.strftime('%Y-%m-%d %H:%M:%S')
 
     #Plot Roofline
     if args.drawroof:
-        if not plot_numpy == None:
-            print("Manual application plotting not implemented iet, results can be viewed using the GUI")
-            #date = ct.strftime('%Y-%m-%d_%H-%M-%S')
-            #ut.plot_roofline_with_dot(args.executable_path, gflops, ai, args.choice, args.roi, date, "dbi")
-        else:
-            print("No Matplotlib and/or Numpy found, in order to draw CARM graphs make sure to install them.")
-    date = ct.strftime('%Y-%m-%d %H:%M:%S')
+        print("Manual application plotting not implemented iet, results can be viewed using the GUI")
+        #ut.plot_roofline_with_dot(args.executable_path, gflops, ai, args.choice, args.roi, date, "dbi")
     
-
     ut.update_csv(args.name, args.executable_path, gflops, ai, bandwidth, time_taken_seconds, args.app_name, date, args.isa, args.precision, args.threads, method, 1, 1)

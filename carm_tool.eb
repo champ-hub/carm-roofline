@@ -1,0 +1,25 @@
+easyblock = 'Tarball'
+
+name = 'carm-tool'
+version = 'main'
+
+homepage = 'https://github.com/champ-hub/carm-roofline'
+description = """CARM Tool"""
+
+toolchain = {'name': 'GCC', 'version': 'system'}
+
+sources = ['%(namelower)s-%(version)s.tar.gz']
+
+postinstallcmds = [
+    'chmod +x %(installdir)s/run.py',
+    'chmod +x %(installdir)s/bin/carm_bench',
+]
+
+moduleclass = 'tools'
+
+sanity_check_paths = {
+	'files': ["run.py",
+	"PMU_AI_Calculator.py",
+	"DBI_AI_Calculator.py"],
+	'dirs':[],
+}

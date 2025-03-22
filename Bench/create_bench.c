@@ -4,7 +4,7 @@
 //																					CREATE FP TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void create_benchmark_flops(char * op, char * precision, int long long fp, int Vlen, int LMUL, int verbose){
+void create_benchmark_flops(char * op, char * precision, int long long fp, int Vlen, int LMUL, int verbose, int num_runs){
 	
 	int flops, check;
 	char * assembly_op_flops_1, * assembly_op_flops_2, * registr;
@@ -18,7 +18,7 @@ void create_benchmark_flops(char * op, char * precision, int long long fp, int V
 
 	select_ISA_flops_register(&registr, precision);
 
-	write_asm_fp (fp, op, flops, registr, assembly_op_flops_1, assembly_op_flops_2, precision, Vlen, LMUL); 	//Write Assembly Code
+	write_asm_fp (fp, op, flops, registr, assembly_op_flops_1, assembly_op_flops_2, precision, Vlen, LMUL, num_runs); 	//Write Assembly Code
 	
 	//Free auxiliary variables
 	free(assembly_op_flops_1);
@@ -45,7 +45,7 @@ void create_benchmark_flops(char * op, char * precision, int long long fp, int V
 //																					CREATE MEM TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * precision, int Vlen, int LMUL, int verbose){
+void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * precision, int Vlen, int LMUL, int verbose, int num_runs){
 	
 	char * assembly_op, * assembly_op_2, * registr;
 	int align, ops, check;
@@ -55,7 +55,7 @@ void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * 
 
 	select_ISA_mem_register(&registr, precision);
 
-	write_asm_mem (num_rep, align, ops, num_ld, num_st, registr, assembly_op, assembly_op_2, precision, Vlen, LMUL); //Write ASM code
+	write_asm_mem (num_rep, align, ops, num_ld, num_st, registr, assembly_op, assembly_op_2, precision, Vlen, LMUL, num_runs); //Write ASM code
 		
 	//Free auxiliary variables
 	free(assembly_op);
@@ -81,7 +81,7 @@ void create_benchmark_mem(int long long num_rep, int num_ld, int num_st, char * 
 //																					CREATE MIXED TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void create_benchmark_mixed(char * op, int long long num_rep, int num_ld, int num_st, int num_fp, char * precision, int Vlen, int LMUL, int verbose){
+void create_benchmark_mixed(char * op, int long long num_rep, int num_ld, int num_st, int num_fp, char * precision, int Vlen, int LMUL, int verbose, int num_runs){
 	
 	char * assembly_op, * assembly_op_2, * registr;
 	int align, ops, check;
@@ -103,7 +103,7 @@ void create_benchmark_mixed(char * op, int long long num_rep, int num_ld, int nu
 
 	select_ISA_mem_register(&registr, precision);
 
-	write_asm_mixed (num_rep, align, op, ops, num_ld, num_st, num_fp, registr, registr_flops, assembly_op, assembly_op_2, assembly_op_flops_1, assembly_op_flops_2, precision, Vlen, LMUL); //Write ASM code
+	write_asm_mixed (num_rep, align, op, ops, num_ld, num_st, num_fp, registr, registr_flops, assembly_op, assembly_op_2, assembly_op_flops_1, assembly_op_flops_2, precision, Vlen, LMUL, num_runs); //Write ASM code
 		
 	//Free auxiliary variables
 	free(assembly_op);
