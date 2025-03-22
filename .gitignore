@@ -3,7 +3,7 @@ __pycache__/
 .clang-format
 *.pyc
 *.pyo
-bin/
+bin/test
 carm_results
 cache
 Bench/Bench
