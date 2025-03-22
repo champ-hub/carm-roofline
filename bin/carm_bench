@@ -1,0 +1,15 @@
+#!/bin/bash
+
+#Check if 'python' exists; if not, use 'python3'
+python_cmd=$(command -v python || command -v python3)
+
+if [ -z "$python_cmd" ]; then
+    echo "Error: Python (or Python3) is not installed."
+    exit 1
+fi
+
+#Get the absolute path of the script directory
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+
+#Run the Python script with the chosen Python interpreter
+$python_cmd "$script_dir/../run.py" "$@"

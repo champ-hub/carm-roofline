@@ -16,7 +16,7 @@ job-run-python-karolina:
     SCHEDULER_PARAMETERS: '-A OPEN-30-41 -p qcpu_exp -N 1 --ntasks-per-node=1'
   tags:
     - it4i
-    - Barbora
+    - barbora
     - slurmjob
   script:
     - set -e
