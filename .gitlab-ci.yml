@@ -1,0 +1,33 @@
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+      when: always
+    - when: never
+
+stages:
+  - run
+
+job-run-python-karolina:
+  stage: run
+  id_tokens:
+    SITE_ID_TOKEN:
+      aud: https://code.it4i.cz/
+  variables:
+    SCHEDULER_PARAMETERS: '-A OPEN-30-41 -p qcpu_exp -N 1 --ntasks-per-node=1'
+  tags:
+    - it4i
+    - Barbora
+    - slurmjob
+  script:
+    - set -e
+    - echo "Running carm tool on Barbora..."
+    - python3 run.py -v 4 -nr 100
+    - ml EasyBuild
+    - echo "Downloading source code tarball..."
+    - wget https://code.it4i.cz/it4i-jmorg/carm-tool/-/archive/main/carm-tool-main.tar.gz
+    - echo "Running EasyBuild script to extract the source code..."
+    - eb carm-tool.eb -r -f
+    - module use $HOME/.local/easybuild/modules/all/
+    - ml load carm-tool
+    - echo "Running carm tool as a module..."
+    - carm_bench -v 4 -nr 100

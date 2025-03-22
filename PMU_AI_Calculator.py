@@ -1,31 +1,20 @@
 import argparse
 import subprocess
 import os
-plot_numpy = 1
-try:
-    import matplotlib.pyplot as plt
-    import numpy as np
-except ImportError:
-    plot_numpy = None
 import datetime
 import time
-import math
-import re
 import sys
 import json
 import platform
-import threading
-import csv
 import shutil
 
 import utils as ut
 
+if not hasattr(time, 'time_ns'):
+    time.time_ns = lambda: int(time.time() * 1e9)
+
 #Define a global set to store the names of JSON files that have been read
 read_files = set()
-
-def runPAPI_async(executable_path, debug, additional_args):
-    thread = threading.Thread(target=runPAPI, args=(executable_path, debug, additional_args))
-    thread.start()
 
 #Run PAPI with provided application
 def runPAPI(executable_path, debug, additional_args=None):
@@ -187,22 +176,18 @@ if __name__ == "__main__":
     print("Calculated Total Memory Bytes:", ut.custom_round(memory_bytes))
     print("SP FLOP Ratio: " + str(ut.custom_round(sp_ratio)) + " DP FLOP Ration: " + str(ut.custom_round(dp_ratio)))
     print("Threads Used:", thread_count)
-    print("\nExecution Time (seconds):",np.format_float_positional(ut.custom_round(time_taken_seconds), trim='-'))
+    print("\nExecution Time (seconds):",ut.custom_round(time_taken_seconds))
     print("GFLOP/s: " + str(ut.custom_round(gflops)))
     print("Bandwidth (GB/s): " + str(ut.custom_round(bandwidth)))
     print("Arithmetic Intensity:", ut.custom_round(ai))
     print("------------------------------")
 
     ct = datetime.datetime.now()
+    date = ct.strftime('%Y-%m-%d %H:%M:%S')
     
     #Plot Roofline
     if args.drawroof:
-        if not plot_numpy == None:
-            print("Manual application plotting not implemented iet, results can be viewed using the GUI")
-            #date = ct.strftime('%Y-%m-%d_%H-%M-%S')
-            #ut.plot_roofline_with_dot(args.executable_path, gflops, ai, args.choice, date, "pmu")
-        else:
-            print("No Matplotlib and/or Numpy found, in order to draw CARM graphs make sure to install them.")
+        print("Manual application plotting not implemented iet, results can be viewed using the GUI")
+        #ut.plot_roofline_with_dot(args.executable_path, gflops, ai, args.choice, date, "pmu")
 
-    date = ct.strftime('%Y-%m-%d %H:%M:%S')
     ut.update_csv(args.name, args.executable_path, gflops, ai, bandwidth, time_taken_seconds, args.app_name, date, args.isa, precision, thread_count, "PMU", 1, 1)

@@ -26,8 +26,6 @@
 	#include <mm_malloc.h>
 #endif
 
-
-#define NUM_RUNS 1024
 #define EXPECTED_TIME 100000000  //in ns
 
 //ARM SECTION

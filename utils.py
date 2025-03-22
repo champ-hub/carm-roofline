@@ -195,6 +195,8 @@ def plot_roofline_with_dot(executable_path, exec_flops, exec_ai, choice, roi, da
     title = {}
     data = {}
     data_cycles = {}
+    if plot_numpy == None:
+        print("No Matplotlib and/or Numpy found, in order to draw CARM graphs make sure to install them.")
 
     executable_name = os.path.basename(executable_path)
 

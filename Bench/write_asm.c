@@ -4,7 +4,7 @@
 //																					WRITE FP TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void write_asm_fp (int long long fp, char * op, int flops, char * registr, char * assembly_op_flops_1, char * assembly_op_flops_2, char * precision, int Vlen, int LMUL){
+void write_asm_fp (int long long fp, char * op, int flops, char * registr, char * assembly_op_flops_1, char * assembly_op_flops_2, char * precision, int Vlen, int LMUL, int num_runs){
 	
 	int i, j;
 	FILE * file,*file_header;
@@ -17,6 +17,7 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 	file_header =  fopen(path, "w");
 	file = file_header;
 	
+	fprintf(file_header,"#define NUM_RUNS %d\n", num_runs);
 	//Specific test data
 	//ARM SECTION
 	#if defined(ASCALAR) || defined(NEON)
@@ -329,7 +330,7 @@ void write_asm_fp (int long long fp, char * op, int flops, char * registr, char 
 //																					WRITE MEM TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int num_st, char * registr, char * assembly_op, char * assembly_op_2, char * precision, int Vlen, int LMUL){
+void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int num_st, char * registr, char * assembly_op, char * assembly_op_2, char * precision, int Vlen, int LMUL, int num_runs){
 	
 	int offset = 0;
 	int aux = num_rep;
@@ -346,6 +347,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 
 	iter = mem_math (num_rep, num_ld, num_st, &num_aux, align); //Calculate number of iterations
 
+	fprintf(file_header,"#define NUM_RUNS %d\n", num_runs);
 	//ARM SECTION
 	#if defined(ASCALAR) || defined(NEON)
 		fprintf(file_header,"#define ARM 1\n");
@@ -656,7 +658,7 @@ void write_asm_mem (int long long num_rep, int align, int ops, int num_ld, int n
 //																					WRITE MIXED TEST
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int num_ld, int num_st, int num_fp, char * registr, char * registr_flops, char * assembly_op, char * assembly_op_2, char * assembly_op_flops_1, char * assembly_op_flops_2, char * precision, int Vlen, int LMUL){
+void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int num_ld, int num_st, int num_fp, char * registr, char * registr_flops, char * assembly_op, char * assembly_op_2, char * assembly_op_flops_1, char * assembly_op_flops_2, char * precision, int Vlen, int LMUL, int num_runs){
 	
 	int offset = 0;
 	int aux = num_rep;
@@ -675,6 +677,7 @@ void write_asm_mixed (int long long num_rep, int align, char * op, int ops, int 
 
 	int half_point = (num_fp + 1) / 2;
 
+	fprintf(file_header,"#define NUM_RUNS %d\n", num_runs);
 	//ARM SECTION
 	#if defined(ASCALAR) || defined(NEON)
 		fprintf(file_header,"#define ARM 1\n");
