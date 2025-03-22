@@ -7,7 +7,7 @@ workflow:
 stages:
   - run
 
-job-run-python-karolina:
+job-run-barbora:
   stage: run
   id_tokens:
     SITE_ID_TOKEN:
