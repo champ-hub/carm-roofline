@@ -3,6 +3,7 @@ __pycache__/
 .clang-format
 *.pyc
 *.pyo
+*.csv
 bin/
 Results
 cache
