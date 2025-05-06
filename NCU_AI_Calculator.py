@@ -52,7 +52,7 @@ def preprocess_output(ncu_report):
 			if save:
 				fw.write(line)
 
-def process_metrics(ncu_report, kernel_name):
+def process_metrics(ncu_report, kernel_name, level):
 	try:
 		data = pd.read_csv(ncu_report, sep=',')
 	except pd.errors.EmptyDataError:
@@ -64,28 +64,53 @@ def process_metrics(ncu_report, kernel_name):
 	data.replace(',','', regex=True, inplace=True)
 	data['Metric Value'] = pd.to_numeric(data['Metric Value'])
 
-	# find all the rows that share a metric name and sum their metric values
-	grouped_data = data.groupby('Metric Name')['Metric Value'].sum()
-	
-	execution_time = grouped_data['gpu__time_duration.avg']
+	if level == "app":
+		# find all the rows that share a metric name and sum their metric values
+		grouped_data = data.groupby('Metric Name')['Metric Value'].sum()
+		
+		execution_time = grouped_data['gpu__time_duration.avg']
 
-	bytes_requested = grouped_data.filter(like="sm__sass_data_bytes_mem").sum()
+		bytes_requested = grouped_data.filter(like="sm__sass_data_bytes_mem").sum()
 
-	tensor_flops = grouped_data.filter(like="sm__ops_path_tensor_src").sum()
+		tensor_flops = grouped_data.filter(like="sm__ops_path_tensor_src").sum()
 
-	half_flops = grouped_data['sm__sass_thread_inst_executed_op_hadd_pred_on.sum']+2*grouped_data['sm__sass_thread_inst_executed_op_hfma_pred_on.sum']+grouped_data['sm__sass_thread_inst_executed_op_hmul_pred_on.sum']
+		half_flops = grouped_data['sm__sass_thread_inst_executed_op_hadd_pred_on.sum']+2*grouped_data['sm__sass_thread_inst_executed_op_hfma_pred_on.sum']+grouped_data['sm__sass_thread_inst_executed_op_hmul_pred_on.sum']
 
-	float_flops = grouped_data['sm__sass_thread_inst_executed_op_fadd_pred_on.sum']+2*grouped_data['sm__sass_thread_inst_executed_op_ffma_pred_on.sum']+grouped_data['sm__sass_thread_inst_executed_op_fmul_pred_on.sum']
+		float_flops = grouped_data['sm__sass_thread_inst_executed_op_fadd_pred_on.sum']+2*grouped_data['sm__sass_thread_inst_executed_op_ffma_pred_on.sum']+grouped_data['sm__sass_thread_inst_executed_op_fmul_pred_on.sum']
 
-	double_flops = grouped_data['sm__sass_thread_inst_executed_op_dadd_pred_on.sum']+2*grouped_data['sm__sass_thread_inst_executed_op_dfma_pred_on.sum']+grouped_data['sm__sass_thread_inst_executed_op_dmul_pred_on.sum']
+		double_flops = grouped_data['sm__sass_thread_inst_executed_op_dadd_pred_on.sum']+2*grouped_data['sm__sass_thread_inst_executed_op_dfma_pred_on.sum']+grouped_data['sm__sass_thread_inst_executed_op_dmul_pred_on.sum']
 
-	return execution_time, bytes_requested, tensor_flops, half_flops, float_flops, double_flops
+		results = [{"execution_time": execution_time, "bytes_requested": bytes_requested, "tensor_flops": tensor_flops, "half_flops": half_flops, "float_flops": float_flops, "double_flops": double_flops}]
 
-def update_csv(machine_name, executable_path, app_name, performance, ai, bandwidth, execution_time, date, target, precision):
+	else:
+		reps = data.groupby('Kernel Name')['ID'].nunique()
+		grouped_data = data.groupby(['Kernel Name', 'Metric Name'])['Metric Value'].sum()
+
+		results = []
+
+		for kernel_name in grouped_data.index.levels[0]:
+
+			execution_time = grouped_data[kernel_name,'gpu__time_duration.avg']
+
+			bytes_requested = grouped_data[kernel_name].filter(like="sm__sass_data_bytes_mem").sum()
+
+			tensor_flops = grouped_data[kernel_name].filter(like="sm__ops_path_tensor_src").sum()
+
+			half_flops = grouped_data[kernel_name, 'sm__sass_thread_inst_executed_op_hadd_pred_on.sum']+2*grouped_data[kernel_name, 'sm__sass_thread_inst_executed_op_hfma_pred_on.sum']+grouped_data[kernel_name, 'sm__sass_thread_inst_executed_op_hmul_pred_on.sum']
+
+			float_flops = grouped_data[kernel_name, 'sm__sass_thread_inst_executed_op_fadd_pred_on.sum']+2*grouped_data[kernel_name, 'sm__sass_thread_inst_executed_op_ffma_pred_on.sum']+grouped_data[kernel_name, 'sm__sass_thread_inst_executed_op_fmul_pred_on.sum']
+
+			double_flops = grouped_data[kernel_name, 'sm__sass_thread_inst_executed_op_dadd_pred_on.sum']+2*grouped_data[kernel_name, 'sm__sass_thread_inst_executed_op_dfma_pred_on.sum']+grouped_data[kernel_name, 'sm__sass_thread_inst_executed_op_dmul_pred_on.sum']
+
+			tmp={"kernel_name": kernel_name, "calls": reps[kernel_name], "execution_time": execution_time, "bytes_requested": bytes_requested, "tensor_flops": tensor_flops, "half_flops": half_flops, "float_flops": float_flops, "double_flops": double_flops}
+			
+			results.append(tmp)
+
+
+	return results
+
+def update_csv(machine_name, app_name, performance, ai, bandwidth, execution_time, date, target, precision):
 	csv_path = f"./Results/Applications/{machine_name}_Applications.csv"
-
-	if app_name == "":
-		app_name = os.path.basename(executable_path)
 
 	if(os.path.isdir('Results') == False):
 		os.mkdir('Results')
@@ -108,7 +133,7 @@ def update_csv(machine_name, executable_path, app_name, performance, ai, bandwid
 
 
 
-def run_ncu(machine_name, app_name, executable_path, no_tensor, kernel_name = "", additional_args = []):
+def run_ncu(machine_name, app_name, executable_path, no_tensor, level, kernel_name = "", additional_args = []):
 	tmp_file_path = 'tmp_report.csv'
 	ncu_path = f'{CUDA_PATH}/bin/ncu'
 	kernel = "" if kernel_name == "" else f' -k {kernel_name}'
@@ -129,41 +154,53 @@ def run_ncu(machine_name, app_name, executable_path, no_tensor, kernel_name = ""
 
 	preprocess_output(tmp_file_path) # Remove unnecessary headers from csv report
 
-	print("\n----------NCU Results----------")
+	results = process_metrics(tmp_file_path,kernel_name, level) # Analyse metrics from kernels
 
-	execution_time_nsec, bytes_requested, tensor_flops, half_flops, float_flops, double_flops = process_metrics(tmp_file_path,kernel_name) # Analyse metrics from kernels 
+	for data in results:
 
-	cuda_flops = half_flops + float_flops + double_flops
-	total_flops = cuda_flops + tensor_flops
+		cuda_flops = data["half_flops"] + data["float_flops"] + data["double_flops"]
+		total_flops = cuda_flops + data["tensor_flops"]
 
-	ai = float(total_flops/bytes_requested)
-	gflops = float(total_flops/execution_time_nsec)
-	gbw = float(bytes_requested/execution_time_nsec)
+		ai = float(total_flops / data["bytes_requested"])
+		gflops = float(total_flops / data["execution_time"])
+		gbw = float(data["bytes_requested"] / data["execution_time"])
 
-	print("Total FLOPS:", total_flops)
-	print("\tTotal Cuda Core FLOPS:", cuda_flops)
-	print("\t\t - Half:", half_flops)
-	print("\t\t - Single:", float_flops)
-	print("\t\t - Double:", double_flops)
-	print("\tTotal Tensor Core FLOPS:", tensor_flops)
-	print("Total Transfered Bytes:", bytes_requested, "\n")
-	
-	print("Execution Time (s):", float(execution_time_nsec/1e9))
-	print("Performance (GFLOPS/s):", gflops)
-	print("Bandwidth (GB/s):", gbw)
-	print("Arithmetic Intensity:", ai)
-	print("------------------------------")
+		if level == "app":
+			print("\n----------NCU Results----------")
 
-	ct = datetime.datetime.now()
-	date = ct.strftime('%Y-%m-%d %H:%M:%S')
+			print("Total FLOPS:", total_flops)
+			print("\tTotal Cuda Core FLOPS:", cuda_flops)
+			print("\t\t - Half:", data["half_flops"])
+			print("\t\t - Single:", data["float_flops"])
+			print("\t\t - Double:", data["double_flops"])
+			print("\tTotal Tensor Core FLOPS:", data["tensor_flops"])
+			print("Total Transfered Bytes:", data["bytes_requested"], "\n")
+			
+			print("Execution Time (s):", float(data["execution_time"]/1e9))
+			print("Performance (GFLOPS/s):", gflops)
+			print("Bandwidth (GB/s):", gbw)
+			print("Arithmetic Intensity:", ai)
+			print("------------------------------")
 
-	target = 'mixed'
-	if (cuda_flops/total_flops) > 0.9:
-		target = 'cuda'
-	elif (tensor_flops/total_flops) > 0.9:
-		target = 'tensor'
+		ct = datetime.datetime.now()
+		date = ct.strftime('%Y-%m-%d %H:%M:%S')
 
-	update_csv(machine_name, executable_path, app_name, gflops, ai, gbw, float(execution_time_nsec/1e9), date, target, 'na')
+		target = 'mixed'
+		if (cuda_flops / total_flops) > 0.9:
+			target = 'cuda'
+		elif (data["tensor_flops"] / total_flops) > 0.9:
+			target = 'tensor'
+
+		if app_name == "":
+			app_name = os.path.basename(executable_path)
+
+		if level == "kernel":
+			if "(" in data["kernel_name"]:
+				app_name += f"/{data['kernel_name'][:data['kernel_name'].find('(')]}({data.get('calls', 0)})"
+			else:
+				app_name += f"/{data['kernel_name']}({data.get('calls', 0)})"
+
+		update_csv(machine_name, app_name, gflops, ai, gbw, float(data["execution_time"] / 1e9), date, target, 'na')
 	# TODO: Needs discussion on threads and precision
 
 	os.remove(tmp_file_path)
@@ -178,7 +215,8 @@ def main():
 	parser.add_argument("-n", '--name', default="unnamed", nargs='?', type=str, help='Name for the machine running the application.')
 	parser.add_argument("-an", '--app_name', default='', nargs='?', type=str, help="Name for the target app.")
 	parser.add_argument("--no_tensor", action='store_const', const=1, default=0, help='Disable Tensor Core profilling for applications that do not need it')
-	parser.add_argument("--kernel_name", default="", nargs='?', help='Name of target kernel when profilling a single kernel.')
+	parser.add_argument("-k", "--kernel_name", default="", nargs='?', help='Name of target kernel when profilling a single kernel.')
+	parser.add_argument("-l", "--level", default="app", choices=["app", "kernel"], help='Level of profiling. Choose between app or kernel. Default is app. Kernel level seperates the metrics per kernel.')
 
 	args=parser.parse_args()
 
@@ -199,7 +237,7 @@ def main():
 		print(f'NCU not detected in {CUDA_PATH}/bin/ncu. Double check your CUDA path on GPU/gpu.env')
 		sys.exit(2)
 
-	run_ncu(args.name, args.app_name, args.executable_path, args.no_tensor, args.kernel_name ,args.additional_args)
+	run_ncu(args.name, args.app_name, args.executable_path, args.no_tensor, args.level, args.kernel_name, args.additional_args)
 
 if __name__ == "__main__":
 	main()
