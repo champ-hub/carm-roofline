@@ -48,7 +48,7 @@ int main() {
 
 	PRECISION *d_X;
 	// create a larger than necessary vector just in case
-	cudaMalloc((void **)&d_X, 1024 * THREADS_PER_BLOCK * sizeof(PRECISION));
+	cudaMalloc((void **)&d_X, 32 * deviceProps.l2CacheSize);
 
 	// Timers
 	cudaEvent_t start, stop;
