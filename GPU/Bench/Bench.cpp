@@ -11,8 +11,6 @@
 #define required_argument 1
 #define optional_argument 2
 
-#define DEVICE 0  // TODO: FIX
-
 using namespace std;
 
 int main(int argc, char* argv[]) {
@@ -24,14 +22,16 @@ int main(int argc, char* argv[]) {
 									  {"help", no_argument, 0, 'h'},
 									  {"threads", required_argument, 0, 's'},
 									  {"blocks", required_argument, 0, 'b'},
+									  {"device", required_argument, 0, 'd'},
 									  {0, 0, 0, 0}};
 
 	int o;
 
 	string test, target, precision, operation;
 	int compute_capability = 0, threads_per_block = 0, num_blocks = 0;
+	int DEVICE = 0;
 
-	while ((o = getopt_long(argc, argv, "t:c:a:p:o:hs:b:", longopts, NULL)) != -1) switch (o) {
+	while ((o = getopt_long(argc, argv, "t:c:a:p:o:hs:b:d:", longopts, NULL)) != -1) switch (o) {
 			case 't':
 				test = optarg;
 				break;
@@ -52,6 +52,9 @@ int main(int argc, char* argv[]) {
 				break;
 			case 'b':
 				num_blocks = atoi(optarg);
+				break;
+			case 'd':
+				DEVICE = atoi(optarg);
 				break;
 			case 'h':
 				// TODO: IMPLEMENT
