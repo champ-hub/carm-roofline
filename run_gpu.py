@@ -375,7 +375,7 @@ def main():
 	# Parse arguments
 	parser = argparse.ArgumentParser(description='Script to run GPU micro-benchmarks to construct the Cache-Aware Roofline Model for GPUs')
 	parser.add_argument('--test', default='roofline', nargs= '?', choices=['FP', 'TC', 'roofline', 'MEM'], help='Type of test.Type of the test. Roofline test measures the bandwidth of the different memory levels and FP Performance, MEM test measures the bandwidth of various memory sizes, mixed test measures bandwidth and FP performance for a combination of memory acceses (to L1, L2, L3, or DRAM) and FP operations (Default: roofline) ')
-	parser.add_argument('--name', default='unnnamed_gpu', nargs= '?', help='Name of the GPU to be tested (if not using config file)')
+	parser.add_argument('--name', default='unnamed', nargs= '?', help='Name of the GPU to be tested (if not using config file)')
 	parser.add_argument('config', nargs='?', help='Path to the configuration file')
 	parser.add_argument('-v', '--verbose', default=1, nargs='?', type=int, choices=[0, 1, 2, 3], help='Level of terminal output (0 -> No Output 1 -> Only Errors and Test Details, 2 -> Intermediate Test Results, 3 -> Configuration Values Selected/Detected)')
 	parser.add_argument('-out', '--output', default='./Results', nargs='?', help='Path to the output directory')
