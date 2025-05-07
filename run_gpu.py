@@ -188,7 +188,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 		print("------------------------------")
 
 	# Compile benchmark generator
-	os.system("cd GPU && make clean && make")
+	os.system("cd GPU && make -s clean && make -s")
 
 	# Cuda Core benchmarks
 	for precision in target_cuda:
@@ -283,6 +283,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 		ct = datetime.datetime.now()
 		date = ct.strftime('%Y-%m-%d %H:%M:%S')
 		update_csv(name, "Roofline", outputs, date, "cuda", precision, cuda_op, threads, blocks, out)
+		print("--------------------------------------------------")
 
 
 	# Tensor Core benchmarks
@@ -360,6 +361,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 		ct = datetime.datetime.now()
 		date = ct.strftime('%Y-%m-%d %H:%M:%S')
 		update_csv(name, "Roofline", outputs, date, "tensor", precision, "mma", threads, blocks, out)
+		print("--------------------------------------------------")
 
 
 def shutdown(set_freq):
