@@ -7,8 +7,7 @@ import sys
 import pandas as pd
 import csv
 import datetime
-
-load_dotenv('GPU/gpu.env')
+load_dotenv(os.path.dirname(os.path.realpath(__file__))+ '/GPU/gpu.env')
 
 DEVICE = os.getenv('DEVICE')
 CUDA_PATH = os.getenv('CUDA_PATH')
@@ -110,12 +109,12 @@ def process_metrics(ncu_report, kernel_name, level):
 	return results
 
 def update_csv(machine_name, app_name, performance, ai, bandwidth, execution_time, date, target, precision):
-	csv_path = f"./Results/Applications/{machine_name}_Applications.csv"
+	csv_path = os.path.dirname(os.path.realpath(__file__)) + f"/Results/Applications/{machine_name}_Applications.csv"
 
-	if(os.path.isdir('Results') == False):
-		os.mkdir('Results')
-	if(os.path.isdir('Results/Applications') == False):
-		os.mkdir('Results/Applications')
+	if(os.path.isdir(os.path.dirname(os.path.realpath(__file__)) +'/Results') == False):
+		os.mkdir(os.path.dirname(os.path.realpath(__file__)) +'/Results')
+	if(os.path.isdir(os.path.dirname(os.path.realpath(__file__)) +'/Results/Applications') == False):
+		os.mkdir(os.path.dirname(os.path.realpath(__file__)) +'/Results/Applications')
 
 	results = [date, "NCU", app_name, target, precision, 0, custom_round(ai), custom_round(performance), custom_round(bandwidth), custom_round(execution_time)]
 
@@ -134,7 +133,7 @@ def update_csv(machine_name, app_name, performance, ai, bandwidth, execution_tim
 
 
 def run_ncu(machine_name, app_name, executable_path, no_tensor, level, kernel_name = "", additional_args = []):
-	tmp_file_path = 'tmp_report.csv'
+	tmp_file_path = os.path.dirname(os.path.realpath(__file__)) +'/tmp_report.csv'
 	ncu_path = f'{CUDA_PATH}/bin/ncu'
 	kernel = "" if kernel_name == "" else f' -k {kernel_name}'
 	options = f'--replay-mode kernel --clock-control none --print-units base --csv --log-file {tmp_file_path} --devices {DEVICE}{kernel} --metrics'.split(' ')
@@ -150,11 +149,15 @@ def run_ncu(machine_name, app_name, executable_path, no_tensor, level, kernel_na
 	result = subprocess.run(command)
 	if result.returncode != 0:
 		print("Error profilling application.")
+		os.remove(tmp_file_path)
 		sys.exit(3)
 
 	preprocess_output(tmp_file_path) # Remove unnecessary headers from csv report
 
 	results = process_metrics(tmp_file_path,kernel_name, level) # Analyse metrics from kernels
+
+	if app_name == "":
+		app_name = os.path.basename(executable_path)
 
 	for data in results:
 
@@ -186,21 +189,25 @@ def run_ncu(machine_name, app_name, executable_path, no_tensor, level, kernel_na
 		date = ct.strftime('%Y-%m-%d %H:%M:%S')
 
 		target = 'mixed'
-		if (cuda_flops / total_flops) > 0.9:
-			target = 'cuda'
-		elif (data["tensor_flops"] / total_flops) > 0.9:
-			target = 'tensor'
-
-		if app_name == "":
-			app_name = os.path.basename(executable_path)
+		if (total_flops != 0):
+			if (cuda_flops / total_flops) > 0.9:
+				target = 'cuda'
+			elif (data["tensor_flops"] / total_flops) > 0.9:
+				target = 'tensor'
+		else:
+			target = 'na'
 
 		if level == "kernel":
 			if "(" in data["kernel_name"]:
-				app_name += f"/{data['kernel_name'][:data['kernel_name'].find('(')]}({data.get('calls', 0)})"
+				app_name_csv = app_name + f"/{data['kernel_name'][:data['kernel_name'].find('(')]}({data.get('calls', 0)})"
 			else:
-				app_name += f"/{data['kernel_name']}({data.get('calls', 0)})"
+				app_name_csv = app_name + f"/{data['kernel_name']}({data.get('calls', 0)})"
+		else:
+			app_name_csv = app_name
 
-		update_csv(machine_name, app_name, gflops, ai, gbw, float(data["execution_time"] / 1e9), date, target, 'na')
+		update_csv(machine_name, app_name_csv, gflops, ai, gbw, float(data["execution_time"] / 1e9), date, target, 'na')
+
+		app_name = app_name
 	# TODO: Needs discussion on threads and precision
 
 	os.remove(tmp_file_path)
