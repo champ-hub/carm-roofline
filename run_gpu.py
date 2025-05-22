@@ -426,14 +426,8 @@ def main():
 			arch = 'amd'
 
 		except Exception:
-			try:
-				subprocess.run('rocm-smi', stdout=subprocess.PIPE)
-				print('AMD GPU detected')
-				arch = 'amd'
-
-			except Exception:
-				print('AMD GPU not detected')
-				sys.exit(1)
+			print('AMD GPU not detected. This tool requires the amd-smi CLI.')
+			sys.exit(1)
 
 	run_roofline(args.verbose, args.name, args.output, args.set_freq, args.freq_sm, args.freq_mem, arch, args.vector, args.tensor, args.vector_op, args.threads, args.blocks)
 
