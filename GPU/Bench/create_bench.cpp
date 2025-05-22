@@ -20,7 +20,7 @@ void create_benchmark_flops(int device, int compute_capability, string operation
 	// CUDA cores
 	string text;
 
-	ifstream input("GPU/Test/flops/cuda_cores.cu");
+	ifstream input("GPU/Test/nvidia/flops/cuda_cores.cu");
 	ofstream output("GPU/bin/test.cu");
 
 	while (getline(input, text)) {
@@ -118,7 +118,7 @@ void create_benchmark_flops(int device, int compute_capability, string operation
 
 	char buffer[100];
 	cout << endl;
-	sprintf(buffer, "make compute_capability=%d -f GPU/Test/Makefile", compute_capability);
+	sprintf(buffer, "make compute_capability=%d -f GPU/Test/nvidia/Makefile", compute_capability);
 	int check = system(buffer);
 	if (check != 0) {
 		cerr << "ERROR: It was not possible to generate the benchmark." << endl;
@@ -137,7 +137,7 @@ void create_benchmark_tensor(int device, int compute_capability, string precisio
 	// Tensor
 	string text;
 
-	ifstream input("GPU/Test/flops/tensor_cores.cu");
+	ifstream input("GPU/Test/nvidia/flops/tensor_cores.cu");
 	ofstream output("GPU/bin/test.cu");
 
 	while (getline(input, text)) {
@@ -328,7 +328,7 @@ void create_benchmark_tensor(int device, int compute_capability, string precisio
 
 	char buffer[100];
 	cout << endl;
-	sprintf(buffer, "make compute_capability=%d -f GPU/Test/Makefile", compute_capability);
+	sprintf(buffer, "make compute_capability=%d -f GPU/Test/nvidia/Makefile", compute_capability);
 	int check = system(buffer);
 	if (check != 0) {
 		cerr << "ERROR: It was not possible to generate the benchmark." << endl;
@@ -349,7 +349,7 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 		// Shared Memory
 		string text;
 
-		ifstream input("GPU/Test/mem/shared.cu");
+		ifstream input("GPU/Test/nvidia/mem/shared.cu");
 		ofstream output("GPU/bin/test.cu");
 
 		while (getline(input, text)) {
@@ -386,7 +386,8 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 
 		char buffer[100];
 		cout << endl;
-		sprintf(buffer, "make compute_capability=%d -f GPU/Test/Makefile", compute_capability);
+		sprintf(buffer, "make compute_capability=%d -f GPU/Test/nvidia/Makefile",
+				compute_capability);
 		int check = system(buffer);
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
@@ -397,7 +398,7 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 		// Global Memory
 		string text;
 
-		ifstream input("GPU/Test/mem/global.cu");
+		ifstream input("GPU/Test/nvidia/mem/global.cu");
 		ofstream output("GPU/bin/test.cu");
 
 		while (getline(input, text)) {
@@ -435,7 +436,8 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 
 		char buffer[100];
 		cout << endl;
-		sprintf(buffer, "make compute_capability=%d -f GPU/Test/Makefile", compute_capability);
+		sprintf(buffer, "make compute_capability=%d -f GPU/Test/nvidia/Makefile",
+				compute_capability);
 		int check = system(buffer);
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
@@ -445,7 +447,7 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 		// L2 Cache
 		string text;
 
-		ifstream input("GPU/Test/mem/l2.cu");
+		ifstream input("GPU/Test/nvidia/mem/l2.cu");
 		ofstream output("GPU/bin/test.cu");
 
 		// This test executes with a predefined number of threads and blocks for accurate
@@ -482,7 +484,8 @@ void create_benchmark_mem(int device, int compute_capability, string target, str
 
 		char buffer[100];
 		cout << endl;
-		sprintf(buffer, "make compute_capability=%d -f GPU/Test/Makefile", compute_capability);
+		sprintf(buffer, "make compute_capability=%d -f GPU/Test/nvidia/Makefile",
+				compute_capability);
 		int check = system(buffer);
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;

@@ -175,28 +175,37 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_ten
 
 
 
-def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, target_tensor, cuda_op, threads, blocks):
-	compute_capability, target_cuda, target_tensor = check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor)
+def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_vector, target_tensor, vector_op, threads, blocks):
+	compute_capability, target_vector, target_tensor = check_hardware(verbose, set_freq, freq_sm, freq_mem, target_vector, target_tensor)
 
 	if verbose == 1:
 		print("------------------------------")
-		print("Running Benchmarks for the CUDA Core Precisions", target_cuda)
-		if not target_tensor:
-			print("Tensor Cores are not supported in this device.")
+		if arch == 'nvidia':
+			print("Running Benchmarks for the CUDA Core Precisions: ", target_vector)
 		else:
-			print("On the Following Tensor Core Precisions: ", target_tensor)
+			print("Running Benchmarks for the Rocm Vector Core Precisions: ", target_vector)
+		if not target_tensor:
+			if arch == 'nvidia':
+				print("Tensor Cores are not supported in this device.")
+			else:
+				print("Matrix Cores are not supported in this device.")
+		else:
+			if arch == 'nvidia':
+				print("On the Following Tensor Core Precisions: ", target_tensor)
+			else:
+				print("On the Following Matrix Core Precisions: ", target_tensor)
 		print("------------------------------")
 
 	# Compile benchmark generator
 	os.system("cd GPU && make -s clean && make -s")
 
 	# Cuda Core benchmarks
-	for precision in target_cuda:
+	for precision in target_vector:
 		outputs = {}
 		# Generate benchmarks
 		#FLOPS
-		if cuda_op != "fma":
-			result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--operation", cuda_op, "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		if vector_op != "fma":
+			result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--operation", vector_op, "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 			if result.returncode != 0:
 				print(result.stderr.decode('utf-8').rstrip())
 				sys.exit(5)
@@ -207,7 +216,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 				exit(8)
 			
 			outputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
-			print("Performance(" + precision + ", " + cuda_op + "): ", result.stdout.decode('utf-8').rstrip())
+			print("Performance(" + precision + ", " + vector_op + "): ", result.stdout.decode('utf-8').rstrip())
 
 
 		# Always execute FMA
@@ -282,7 +291,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, target_cuda, t
 
 		ct = datetime.datetime.now()
 		date = ct.strftime('%Y-%m-%d %H:%M:%S')
-		update_csv(name, "Roofline", outputs, date, "cuda", precision, cuda_op, threads, blocks, out)
+		update_csv(name, "Roofline", outputs, date, "cuda", precision, vector_op, threads, blocks, out)
 		print("--------------------------------------------------")
 
 
@@ -384,9 +393,9 @@ def main():
 	parser.add_argument('--freq_mem', dest='freq_mem', default=0, nargs='?', type=int, help='Desired MEM frequency during test')
 	parser.add_argument('--set_freq',  dest='set_freq', action='store_const', const=1, default=0, help='Set SM and MEM frequency to indicated one')
 
-	parser.add_argument('--cuda', default=['auto'], nargs='+', choices=['none','auto','hp', 'int', 'sp', 'dp', 'bf16'], help='Set of CUDA core arithmetic precisions to test. If auto, all will be tested.')
+	parser.add_argument('--vector', default=['auto'], nargs='+', choices=['none','auto','hp', 'int', 'sp', 'dp', 'bf16'], help='Set of CUDA core arithmetic precisions to test. If auto, all will be tested.')
 	parser.add_argument('--tensor', default=['auto'], nargs='+', choices=['none','auto', 'fp16_32', 'fp16_16', 'tf32', 'bf16', 'int8', 'int4', 'int1'], help='Set of Tensor Core arithmetic precisions to test. If auto, all will be tested.')
-	parser.add_argument('--cuda_op', dest='cuda_op', default='add', nargs='?', choices=['fma', 'add', 'mul'], help="Desired operation to execute in CUDA Cores.")
+	parser.add_argument('--vector_op', dest='vector_op', default='add', nargs='?', choices=['fma', 'add', 'mul'], help="Desired operation to execute in CUDA Cores.")
 
 	parser.add_argument('--threads', default=1024, nargs='?', type=int, help='Num of threads per block to execute in the benchmarks')
 	parser.add_argument('--blocks', default=32768, nargs='?', type=int, help='Number of thread blocks to execute in the benchmarks')
@@ -402,16 +411,31 @@ def main():
 	if name == '':
 		name = args.name
 
-	# Test if NVIDIA GPU is available
+	# Test if GPU is available
+	arch = ''
 	try:
 		subprocess.run('nvidia-smi', stdout=subprocess.PIPE)
 		print('NVIDIA GPU detected')
+		arch = 'nvidia'
 
 	except Exception:
 		print('NVIDIA GPU not detected')
-		sys.exit(1)
+		try:
+			subprocess.run('amd-smi', stdout=subprocess.PIPE)
+			print('AMD GPU detected')
+			arch = 'amd'
 
-	run_roofline(args.verbose, args.name, args.output, args.set_freq, args.freq_sm, args.freq_mem, args.cuda, args.tensor, args.cuda_op, args.threads, args.blocks)
+		except Exception:
+			try:
+				subprocess.run('rocm-smi', stdout=subprocess.PIPE)
+				print('AMD GPU detected')
+				arch = 'amd'
+
+			except Exception:
+				print('AMD GPU not detected')
+				sys.exit(1)
+
+	run_roofline(args.verbose, args.name, args.output, args.set_freq, args.freq_sm, args.freq_mem, arch, args.vector, args.tensor, args.vector_op, args.threads, args.blocks)
 
 	shutdown(args.set_freq)
 
