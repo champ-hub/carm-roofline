@@ -5,6 +5,7 @@ import subprocess
 import datetime
 import sys 
 import csv
+import json
 from dotenv import load_dotenv
 
 load_dotenv('GPU/gpu.env')
@@ -73,50 +74,57 @@ def update_csv(name, test, results, date, target, precision, inst, threads, bloc
 			writer.writerow(primary_headers)
 			writer.writerow(output)
 
-def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_tensor):
+def check_hardware(verbose, set_freq, freq_sm, freq_mem, arch, target_vector, target_tensor):
 	compute_capability = 0
 	gpu_name = ''
 	cuda_precisions = ['int', 'hp', 'sp', 'dp']
 	tensor_cores = False
 	tensor_core_precisions = []
 
-	# Obtain compute capability
-	result = subprocess.run(['nvidia-smi','--query-gpu=compute_cap', '-i', str(DEVICE), '--format=csv,noheader'], stdout=subprocess.PIPE)
-	result = result.stdout.decode('utf-8').rstrip().split('.')
-	compute_capability = int(result[0])*10+int(result[1])
+	if arch == 'nvidia':
+		# Obtain compute capability
+		result = subprocess.run(['nvidia-smi','--query-gpu=compute_cap', '-i', str(DEVICE), '--format=csv,noheader'], stdout=subprocess.PIPE)
+		result = result.stdout.decode('utf-8').rstrip().split('.')
+		compute_capability = int(result[0])*10+int(result[1])
 
-	# Obtain GPU name to see if it's GTX (necessary as GTX 1660 is compute capability 75 and does not have TC)
-	result = subprocess.run(['nvidia-smi','--query-gpu=gpu_name', '-i', str(DEVICE), '--format=csv,noheader'], stdout=subprocess.PIPE)
-	gpu_name = result.stdout.decode('utf-8').rstrip()
+		# Obtain GPU name to see if it's GTX (necessary as GTX 1660 is compute capability 75 and does not have TC)
+		result = subprocess.run(['nvidia-smi','--query-gpu=gpu_name', '-i', str(DEVICE), '--format=csv,noheader'], stdout=subprocess.PIPE)
+		gpu_name = result.stdout.decode('utf-8').rstrip()
 
-	if compute_capability >= 70 and gpu_name.find('GTX') < 0:
-		tensor_cores = True
-		tensor_core_precisions.append('fp16_32')
+		if compute_capability >= 70 and gpu_name.find('GTX') < 0:
+			tensor_cores = True
+			tensor_core_precisions.append('fp16_32')
 
-		if compute_capability >= 75:
-			tensor_core_precisions.append('fp16_16')
-			tensor_core_precisions.append('int8')
-			tensor_core_precisions.append('int4')
+			if compute_capability >= 75:
+				tensor_core_precisions.append('fp16_16')
+				tensor_core_precisions.append('int8')
+				tensor_core_precisions.append('int4')
 
-			if compute_capability >= 80:
-				tensor_core_precisions.append('bf16')
-				tensor_core_precisions.append('tf32')
-				tensor_core_precisions.append('int1')
-				cuda_precisions.append('bf16')
+				if compute_capability >= 80:
+					tensor_core_precisions.append('bf16')
+					tensor_core_precisions.append('tf32')
+					tensor_core_precisions.append('int1')
+					cuda_precisions.append('bf16')
 
-				if compute_capability >= 89:
-					pass #implement fp8
+					if compute_capability >= 89:
+						pass #implement fp8
+	else:
+		result = subprocess.run(['amd-smi', 'static', '-g', str(DEVICE), '-a', '--json'], stdout=subprocess.PIPE).stdout.decode('utf-8').rstrip()
+		compute_capability = json.loads(result)
+		compute_capability = compute_capability[0]['asic']['target_graphics_version']
+		major = compute_capability[3:-2]
+		minor = compute_capability[-2:-1]
 
 	# Check valid arithmetic precisions
-	if target_cuda[0] == 'auto':
-		target_cuda = cuda_precisions.copy()
-	elif 'none' in target_cuda:
-		target_cuda = []
+	if target_vector[0] == 'auto':
+		target_vector = cuda_precisions.copy()
+	elif 'none' in target_vector:
+		target_vector = []
 	else:
-		for item in target_cuda:
+		for item in target_vector:
 			if item not in cuda_precisions:
 				print("WARNING: Selected CUDA arithmetic precision", item, "was detected and removed since it is not supported by the tested GPU.")
-				target_cuda.remove(item)
+				target_vector.remove(item)
 	
 	if target_tensor[0] == 'auto':
 		target_tensor = tensor_core_precisions.copy()
@@ -158,7 +166,7 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_ten
 		print("GPU:", gpu_name)
 		print("Compute Capability:", compute_capability)
 		print("Supported CUDA Precisions:", ', '.join(cuda_precisions))
-		print("Tested CUDA Precisions:", ', '.join(target_cuda))
+		print("Tested CUDA Precisions:", ', '.join(target_vector))
 		if tensor_cores:
 			print("Supported Tensor Core Precisions:", ', '.join(tensor_core_precisions))
 			print("Tested Tensor Core Precisions:", ', '.join(target_tensor))
@@ -171,7 +179,7 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, target_cuda, target_ten
 		print("Current SM Frequency:", real_freq_sm, "MHz")
 		print("Current Memory Frequency:", real_freq_mem, "MHz")
 
-	return compute_capability, target_cuda, target_tensor
+	return compute_capability, target_vector, target_tensor
 
 
 
