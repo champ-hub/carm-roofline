@@ -77,7 +77,7 @@ def update_csv(name, test, results, date, target, precision, inst, threads, bloc
 def check_hardware(verbose, set_freq, freq_sm, freq_mem, arch, target_vector, target_tensor):
 	compute_capability = 0
 	gpu_name = ''
-	cuda_precisions = ['int', 'hp', 'sp', 'dp']
+	vector_precisions = ['int', 'hp', 'sp', 'dp']
 	tensor_cores = False
 	tensor_core_precisions = []
 
@@ -104,26 +104,42 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, arch, target_vector, ta
 					tensor_core_precisions.append('bf16')
 					tensor_core_precisions.append('tf32')
 					tensor_core_precisions.append('int1')
-					cuda_precisions.append('bf16')
+					vector_precisions.append('bf16')
 
 					if compute_capability >= 89:
 						pass #implement fp8
 	else:
 		result = subprocess.run(['amd-smi', 'static', '-g', str(DEVICE), '-a', '--json'], stdout=subprocess.PIPE).stdout.decode('utf-8').rstrip()
 		compute_capability = json.loads(result)
+		gpu_name = compute_capability[0]['asic']['market_name']
 		compute_capability = compute_capability[0]['asic']['target_graphics_version']
+		
 		major = compute_capability[3:-2]
-		minor = compute_capability[-2:-1]
+
+		if int(major) >= 9:
+			vector_precisions.append('bf16')
+			if compute_capability in ['gfx908', 'gfx90a', 'gfx942']:
+				tensor_cores = True
+				tensor_core_precisions.append('fp32')
+				tensor_core_precisions.append('int8')
+				tensor_core_precisions.append('fp16_32')
+				tensor_core_precisions.append('bf16')
+				
+				if compute_capability in ['gfx90a', 'gfx942']:
+					tensor_core_precisions.append('fp64')
+
+					if compute_capability == 'gfx942':
+						pass #implement fp8
 
 	# Check valid arithmetic precisions
 	if target_vector[0] == 'auto':
-		target_vector = cuda_precisions.copy()
+		target_vector = vector_precisions.copy()
 	elif 'none' in target_vector:
 		target_vector = []
 	else:
 		for item in target_vector:
-			if item not in cuda_precisions:
-				print("WARNING: Selected CUDA arithmetic precision", item, "was detected and removed since it is not supported by the tested GPU.")
+			if item not in vector_precisions:
+				print("WARNING: Selected Vector arithmetic precision", item, "was detected and removed since it is not supported by the tested GPU.")
 				target_vector.remove(item)
 	
 	if target_tensor[0] == 'auto':
@@ -133,58 +149,59 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, arch, target_vector, ta
 	else:
 		for item in target_tensor:
 			if item not in tensor_core_precisions:
-				print("WARNING: Selected Tensor Core arithmetic precision", item, "was detected and removed since it is not supported by the tested GPU.")
+				print("WARNING: Selected Tensor arithmetic precision", item, "was detected and removed since it is not supported by the tested GPU.")
 				target_tensor.remove(item)
 	
-
+	if arch == 'nvidia':
 	# Configure SM and MEM frequency
-	if set_freq and freq_sm !=0 and freq_mem != 0:
-		# Turn on persistency mode
-		result = subprocess.run(['nvidia-smi', '-i', str(DEVICE), '-pm', '1'], stdout=subprocess.PIPE)
-		
-		if result.returncode != 0:
-			print(result.stdout.decode('utf-8').rstrip())
-			sys.exit(2)
-		
-		# Configure SM freqency
-		result = subprocess.run(['nvidia-smi', '-i', str(DEVICE), '-lgc', str(freq_sm)], stdout=subprocess.PIPE)
+		if set_freq and freq_sm !=0 and freq_mem != 0:
+			# Turn on persistency mode
+			result = subprocess.run(['nvidia-smi', '-i', str(DEVICE), '-pm', '1'], stdout=subprocess.PIPE)
+			
+			if result.returncode != 0:
+				print(result.stdout.decode('utf-8').rstrip())
+				sys.exit(2)
+			
+			# Configure SM freqency
+			result = subprocess.run(['nvidia-smi', '-i', str(DEVICE), '-lgc', str(freq_sm)], stdout=subprocess.PIPE)
 
-		if result.returncode != 0:
-			print(result.stdout.decode('utf-8').rstrip())
-			sys.exit(3)
-		
-		# Configure MEM frequency
-		result = subprocess.run(['nvidia-smi', '-i', str(DEVICE), '-lmc', str(freq_mem)], stdout=subprocess.PIPE)
+			if result.returncode != 0:
+				print(result.stdout.decode('utf-8').rstrip())
+				sys.exit(3)
+			
+			# Configure MEM frequency
+			result = subprocess.run(['nvidia-smi', '-i', str(DEVICE), '-lmc', str(freq_mem)], stdout=subprocess.PIPE)
 
-		if result.returncode != 0:
-			print(result.stdout.decode('utf-8').rstrip())
-			sys.exit(4)
-		
+			if result.returncode != 0:
+				print(result.stdout.decode('utf-8').rstrip())
+				sys.exit(4)
+			
 	
 	if verbose > 2:
 		print("-----------------GPU INFORMATION-----------------")
 		print("GPU:", gpu_name)
 		print("Compute Capability:", compute_capability)
-		print("Supported CUDA Precisions:", ', '.join(cuda_precisions))
-		print("Tested CUDA Precisions:", ', '.join(target_vector))
+		print("Supported Vector Precisions:", ', '.join(vector_precisions))
+		print("Tested Vector Precisions:", ', '.join(target_vector))
 		if tensor_cores:
-			print("Supported Tensor Core Precisions:", ', '.join(tensor_core_precisions))
-			print("Tested Tensor Core Precisions:", ', '.join(target_tensor))
-		
-		# Print current GPU frequencies
-		result = subprocess.run(['nvidia-smi', '--query-gpu=clocks.sm,clocks.mem', '-i', str(DEVICE), '--format=csv,noheader'], stdout=subprocess.PIPE)
-		result = result.stdout.decode('utf-8').rstrip().split(' ')
-		real_freq_sm = result[0]
-		real_freq_mem = result[2]
-		print("Current SM Frequency:", real_freq_sm, "MHz")
-		print("Current Memory Frequency:", real_freq_mem, "MHz")
+			print("Supported Tensor Precisions:", ', '.join(tensor_core_precisions))
+			print("Tested Tensor Precisions:", ', '.join(target_tensor))
+	
+		if arch == 'nvidia':
+			# Print current GPU frequencies
+			result = subprocess.run(['nvidia-smi', '--query-gpu=clocks.sm,clocks.mem', '-i', str(DEVICE), '--format=csv,noheader'], stdout=subprocess.PIPE)
+			result = result.stdout.decode('utf-8').rstrip().split(' ')
+			real_freq_sm = result[0]
+			real_freq_mem = result[2]
+			print("Current SM Frequency:", real_freq_sm, "MHz")
+			print("Current Memory Frequency:", real_freq_mem, "MHz")
 
 	return compute_capability, target_vector, target_tensor
 
 
 
 def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_vector, target_tensor, vector_op, threads, blocks):
-	compute_capability, target_vector, target_tensor = check_hardware(verbose, set_freq, freq_sm, freq_mem, target_vector, target_tensor)
+	compute_capability, target_vector, target_tensor = check_hardware(verbose, set_freq, freq_sm, freq_mem, arch, target_vector, target_tensor)
 
 	if verbose == 1:
 		print("------------------------------")
@@ -203,6 +220,9 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_v
 			else:
 				print("On the Following Matrix Core Precisions: ", target_tensor)
 		print("------------------------------")
+
+	if arch=='amd':
+		exit(0)
 
 	# Compile benchmark generator
 	os.system("cd GPU && make -s clean && make -s")
