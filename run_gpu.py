@@ -221,8 +221,6 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_v
 				print("On the Following Matrix Core Precisions: ", target_tensor)
 		print("------------------------------")
 
-	if arch=='amd':
-		exit(0)
 
 	# Compile benchmark generator
 	os.system("cd GPU && make -s clean && make -s")
@@ -233,7 +231,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_v
 		# Generate benchmarks
 		#FLOPS
 		if vector_op != "fma":
-			result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--operation", vector_op, "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "vector", "--arch", str(arch), "--operation", vector_op, "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 			if result.returncode != 0:
 				print(result.stderr.decode('utf-8').rstrip())
 				sys.exit(5)
@@ -248,7 +246,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_v
 
 
 		# Always execute FMA
-		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "cuda", "--operation", "fma", "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "vector", "--arch", str(arch), "--operation", "fma", "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		if result.returncode != 0:
 			print(result.stderr.decode('utf-8').rstrip())
 			sys.exit(5)
@@ -260,7 +258,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_v
 		
 		outputs["fma"] = result.stdout.decode('utf-8').split(' ')[0]
 		print("Performance(" + precision + ", " + "fma" + "): ", result.stdout.decode('utf-8').rstrip())
-
+		exit(0)
 		#MEM Shared
 		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "shared", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		if result.returncode != 0:

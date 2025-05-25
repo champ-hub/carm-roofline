@@ -16,7 +16,8 @@ using namespace std;
 int main(int argc, char* argv[]) {
 	const struct option longopts[] = {{"test", required_argument, 0, 't'},
 									  {"compute", required_argument, 0, 'c'},
-									  {"target", required_argument, 0, 'a'},
+									  {"target", required_argument, 0, 'i'},
+									  {"arch", required_argument, 0, 'a'},
 									  {"precision", required_argument, 0, 'p'},
 									  {"operation", required_argument, 0, 'o'},
 									  {"help", no_argument, 0, 'h'},
@@ -27,19 +28,22 @@ int main(int argc, char* argv[]) {
 
 	int o;
 
-	string test, target, precision, operation;
-	int compute_capability = 0, threads_per_block = 0, num_blocks = 0;
+	string test, target, precision, operation, arch, compute_capability;
+	int threads_per_block = 0, num_blocks = 0;
 	int DEVICE = 0;
 
-	while ((o = getopt_long(argc, argv, "t:c:a:p:o:hs:b:d:", longopts, NULL)) != -1) switch (o) {
+	while ((o = getopt_long(argc, argv, "t:c:i:p:o:hs:b:d:", longopts, NULL)) != -1) switch (o) {
 			case 't':
 				test = optarg;
 				break;
 			case 'c':
-				compute_capability = atoi(optarg);
+				compute_capability = optarg;
+				break;
+			case 'i':
+				target = optarg;
 				break;
 			case 'a':
-				target = optarg;
+				arch = optarg;
 				break;
 			case 'p':
 				precision = optarg;
@@ -78,14 +82,14 @@ int main(int argc, char* argv[]) {
 				exit(EXIT_FAILURE);
 		}
 
-	if (compute_capability == 0) {
+	if (compute_capability.empty()) {
 		cerr << "ERROR: Compute Capability not set. Unable to compile benchmarks." << endl;
 		return 3;
 	}
 
 	if (test == "FLOPS") {
-		if (target == "cuda")
-			create_benchmark_flops(DEVICE, compute_capability, operation, precision,
+		if (target == "vector")
+			create_benchmark_flops(DEVICE, arch, compute_capability, operation, precision,
 								   threads_per_block, num_blocks);
 		else if (target == "tensor")
 			create_benchmark_tensor(DEVICE, compute_capability, precision, threads_per_block,
