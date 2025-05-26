@@ -189,6 +189,16 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
         except subprocess.CalledProcessError as e:
             print("SVE Compiler Error Output:", e.stderr.decode("utf-8"))
         if not os.path.exists(sve_ex):
+            SVE_SUPPORT_FLAG = False
+        else:
+            try:
+                result = subprocess.run([sve_ex], stdout=subprocess.PIPE)
+            except subprocess.CalledProcessError as e:
+                print("SVE Execution Error Output:", e.stderr.decode("utf-8"))
+
+            SVE_SUPPORT_FLAG = result.returncode == 0
+        
+        if not SVE_SUPPORT_FLAG:
             if (verbose > 2):
                 print("Vector Instruction ISAs Supported: NEON")
             if "sve" in isa_set:
@@ -204,11 +214,6 @@ def check_hardware(isa_set, freq, set_freq, verbose, precision, l1_size, l2_size
                 isa_set.remove("auto")
             return isa_set, int(l1_size), int(l2_size), int(l3_size), int(VLEN), int(LMUL)
         else:
-            try:
-                result = subprocess.run([sve_ex], stdout=subprocess.PIPE)
-            except subprocess.CalledProcessError as e:
-                print("SVE Execution Error Output:", e.stderr.decode("utf-8"))
-
             VLEN_Check = int(result.stdout.decode('utf-8'))
             os.remove(sve_ex)
             if (verbose > 2):
