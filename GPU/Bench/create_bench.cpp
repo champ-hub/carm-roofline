@@ -372,9 +372,16 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 	if (target == "shared") {
 		// Shared Memory
 		string text;
+		ifstream input;
+		ofstream output;
 
-		ifstream input("GPU/Test/nvidia/mem/shared.cu");
-		ofstream output("GPU/bin/test.cu");
+		if (arch == "nvidia") {
+			input.open("GPU/Test/nvidia/mem/shared.cu");
+			output.open("GPU/bin/test.cu");
+		} else {
+			input.open("GPU/Test/amd/mem/shared.hip");
+			output.open("GPU/bin/test.hip");
+		}
 
 		while (getline(input, text)) {
 			output << text << endl;
@@ -384,18 +391,24 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 
 			} else if (text == "// DEFINE PRECISION") {
 				string aux;
-				if (precision == "sp" || precision == "tf32")
-					aux = "float";
-				else if (precision == "dp")
-					aux = "double";
-				else if (precision == "int" || precision == "int8" || precision == "int4" ||
-						 precision == "int1")
-					aux = "int";
-				else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
-					aux = "half";
-				else if (precision == "bf16")
-					aux = "nv_bfloat16";
-
+				if (arch == "nvidia") {
+					if (precision == "sp" || precision == "tf32")
+						aux = "float";
+					else if (precision == "dp")
+						aux = "double";
+					else if (precision == "int" || precision == "int8" || precision == "int4" ||
+							precision == "int1")
+						aux = "int";
+					else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
+						aux = "half";
+					else if (precision == "bf16")
+						aux = "nv_bfloat16";
+				} else {
+					if (precision == "sp" || precision == "tf32" || precision == "int" || precision == "int8" || precision == "fp16_32" || precision == "hp" || precision == "bf16")
+						aux = "uint32_t";
+					else if (precision == "dp" || precision == "fp64") 
+						aux = "uint64_t";
+				}
 				output << "#define PRECISION " << aux << endl;
 
 			} else if (text == "// DEFINE DEVICE") {
@@ -410,7 +423,10 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 
 		string buffer;
 		cout << endl;
-		buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		if (arch == "nvidia")
+			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		else
+			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
 		int check = system(buffer.data());
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
@@ -420,9 +436,16 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 	} else if (target == "global") {
 		// Global Memory
 		string text;
+		ifstream input;
+		ofstream output;
 
-		ifstream input("GPU/Test/nvidia/mem/global.cu");
-		ofstream output("GPU/bin/test.cu");
+		if (arch == "nvidia") {
+			input.open("GPU/Test/nvidia/mem/global.cu");
+			output.open("GPU/bin/test.cu");
+		} else {
+			input.open("GPU/Test/amd/mem/global.hip");
+			output.open("GPU/bin/test.hip");
+		}
 
 		while (getline(input, text)) {
 			output << text << endl;
@@ -459,7 +482,10 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 
 		string buffer;
 		cout << endl;
-		buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		if (arch == "nvidia")
+			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		else
+			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
 		int check = system(buffer.data());
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
@@ -468,12 +494,16 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 	} else if (target == "L2") {
 		// L2 Cache
 		string text;
+		ifstream input;
+		ofstream output;
 
-		ifstream input("GPU/Test/nvidia/mem/l2.cu");
-		ofstream output("GPU/bin/test.cu");
-
-		// This test executes with a predefined number of threads and blocks for accurate
-		// testing
+		if (arch == "nvidia") {
+			input.open("GPU/Test/nvidia/mem/l2.cu");
+			output.open("GPU/bin/test.cu");
+		} else {
+			input.open("GPU/Test/amd/mem/l2.hip");
+			output.open("GPU/bin/test.hip");
+		}
 
 		while (getline(input, text)) {
 			output << text << endl;
@@ -506,7 +536,10 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 
 		string buffer;
 		cout << endl;
-		buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		if (arch == "nvidia")
+			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		else
+			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
 		int check = system(buffer.data());
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;

@@ -103,6 +103,4 @@ int main() {
 	hipFree(d_X);
 
 	return 0;
-
-	return 0;
 }

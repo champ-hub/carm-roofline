@@ -3,19 +3,19 @@
 #include <iostream>
 #include <vector>
 
-#define PRECISION float
-#define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 32768
+// DEFINE NUM_REPS
 
-#define NUM_REPS 64
+// DEFINE KERNEL PARAMETERS
 
-#define DEVICE 0
+// DEFINE PRECISION
+
+// DEFINE DEVICE
 
 using namespace std;
 
-__global__ void benchmark(float *dummy, int numIter) {
+__global__ void benchmark(PRECISION *dummy, int numIter) {
 	const uint32_t tid = threadIdx.x;
-	__shared__ uint32_t shmem[64];
+	__shared__ PRECISION shmem[64];
 
 	if (tid == 0) {
 #pragma unroll
@@ -26,12 +26,12 @@ __global__ void benchmark(float *dummy, int numIter) {
 
 	__syncthreads();
 
-	uint32_t index = tid;
+	PRECISION index = tid;
 	for (uint32_t iter = 0; iter < numIter; iter++)
 #pragma unroll
 		for (int j = 0; j < 128; j++) index = shmem[index];
 
-	dummy[tid] = (float)index;
+	dummy[tid] = index;
 }
 
 int main() {
@@ -93,8 +93,6 @@ int main() {
 	hipEventDestroy(stop);
 
 	hipFree(d_X);
-
-	return 0;
 
 	return 0;
 }
