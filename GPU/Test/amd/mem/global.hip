@@ -1,15 +1,17 @@
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>
 
 #include <iostream>
 #include <vector>
 
-#define PRECISION int
-#define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 32768
+// DEFINE NUM_REPS
 
-#define NUM_REPS 64
+// DEFINE KERNEL PARAMETERS
 
-#define DEVICE 0
+// DEFINE PRECISION
+
+// DEFINE DEVICE
 
 #define STRIDE 32768 * 8L
 

@@ -317,12 +317,14 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_v
 
 		ct = datetime.datetime.now()
 		date = ct.strftime('%Y-%m-%d %H:%M:%S')
-		update_csv(name, "Roofline", outputs, date, "cuda", precision, vector_op, threads, blocks, out)
+		update_csv(name, "Roofline", outputs, date, "cuda" if (arch == "nvidia") else "vector-amd", precision, vector_op, threads, blocks, out)
 		print("--------------------------------------------------")
 
 
 	# Tensor Core benchmarks
 	for precision in target_tensor:
+		if (arch == "amd"):
+			break
 		outputs = {}
 		# TENSOR FLOPS
 		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "tensor", "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)

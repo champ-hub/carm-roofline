@@ -464,8 +464,13 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 					aux = "int";
 				else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
 					aux = "half";
-				else if (precision == "bf16")
-					aux = "nv_bfloat16";
+				else if (precision == "bf16") {
+					if (arch == "nvidia")
+						aux = "nv_bfloat16";
+					else
+						aux = "hip_bfloat16";
+				}
+					
 
 				output << "#define PRECISION " << aux << endl;
 
