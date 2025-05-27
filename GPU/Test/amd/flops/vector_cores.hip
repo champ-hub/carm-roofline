@@ -47,7 +47,7 @@ __global__ void flops_benchmark(PRECISION *buf, uint32_t nSize, int iterations)
         {
 #pragma unroll
             for (int i = 0; i < 128; i++)
-                x = ptr[offset] * x + y;
+				// DEFINE LOOP
         }
     }
 

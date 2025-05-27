@@ -91,33 +91,43 @@ void create_benchmark_flops(int device, string arch, string compute_capability, 
 						  "d = __float2bfloat16(4.f);"
 					   << endl;
 		} else if (text.find("// DEFINE LOOP") != string::npos) {
-			if (precision == "hp" || precision == "bf16") {
-				if (operation == "fma") {
-					output << "\t\ta = __hfma(a, a, b);\n\t\tb = __hfma(b, b, c);\n\t\tc = "
-							  "__hfma(c, c, d);\n\t\td = __hfma(d, d, a);"
-						   << endl;
-				} else if (operation == "add") {
-					output << "\t\ta = __hadd(a, b);\n\t\tb = __hadd(b, c);\n\t\tc = "
-							  "__hadd(c, d);\n\t\td = __hadd(d, a);"
-						   << endl;
-				} else if (operation == "mul") {
-					output << "\t\ta = __hmul(a, b);\n\t\tb = __hmul(b, c);\n\t\tc = "
-							  "__hmul(c, d);\n\t\td = __hmul(d, a);"
-						   << endl;
+			if (arch == "nvidia") {
+				if (precision == "hp" || precision == "bf16") {
+					if (operation == "fma") {
+						output << "\t\ta = __hfma(a, a, b);\n\t\tb = __hfma(b, b, c);\n\t\tc = "
+								"__hfma(c, c, d);\n\t\td = __hfma(d, d, a);"
+							<< endl;
+					} else if (operation == "add") {
+						output << "\t\ta = __hadd(a, b);\n\t\tb = __hadd(b, c);\n\t\tc = "
+								"__hadd(c, d);\n\t\td = __hadd(d, a);"
+							<< endl;
+					} else if (operation == "mul") {
+						output << "\t\ta = __hmul(a, b);\n\t\tb = __hmul(b, c);\n\t\tc = "
+								"__hmul(c, d);\n\t\td = __hmul(d, a);"
+							<< endl;
+					}
+				} else {
+					if (operation == "fma") {
+						output << "\t\ta = a * a + b;\n\t\tb = b * b + c;\n\t\tc = c * c + d;\n\t\td = "
+								"d * d + a;"
+							<< endl;
+					} else if (operation == "add") {
+						output << "\t\ta = a + b;\n\t\tb = b + c;\n\t\tc = c + d;\n\t\td = "
+								"d + a;"
+							<< endl;
+					} else if (operation == "mul") {
+						output << "\t\ta = a * b;\n\t\tb = b * c;\n\t\tc = c * d;\n\t\td = "
+								"d * a;"
+							<< endl;
+					}
 				}
 			} else {
 				if (operation == "fma") {
-					output << "\t\ta = a * a + b;\n\t\tb = b * b + c;\n\t\tc = c * c + d;\n\t\td = "
-							  "d * d + a;"
-						   << endl;
+					output << "\t\t\t\tx = ptr[offset] * x + y;" << endl;
 				} else if (operation == "add") {
-					output << "\t\ta = a + b;\n\t\tb = b + c;\n\t\tc = c + d;\n\t\td = "
-							  "d + a;"
-						   << endl;
+					output << "\t\t\t\tx = ptr[offset] + x;" << endl;
 				} else if (operation == "mul") {
-					output << "\t\ta = a * b;\n\t\tb = b * c;\n\t\tc = c * d;\n\t\td = "
-							  "d * a;"
-						   << endl;
+					output << "\t\t\t\tx = ptr[offset] * x;" << endl;
 				}
 			}
 		}
