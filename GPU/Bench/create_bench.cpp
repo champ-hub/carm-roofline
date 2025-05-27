@@ -4,7 +4,6 @@
 #include <fstream>
 #include <iostream>
 #include <string>
-#include <sstream>
 
 using namespace std;
 
@@ -127,13 +126,13 @@ void create_benchmark_flops(int device, string arch, string compute_capability, 
 	input.close();
 	output.close();
 
-	ostringstream buffer;
+	string buffer;
 	cout << endl;
 	if (arch == "nvidia")
-		buffer << "make compute_capability=" << compute_capability << " -f GPU/Test/nvidia/Makefile";
+		buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
 	else 
-		buffer << "make compute_capability=" << compute_capability << " -f GPU/Test/amd/Makefile";
-	int check = system(buffer.str().data());
+		buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
+	int check = system(buffer.data());
 	if (check != 0) {
 		cerr << "ERROR: It was not possible to generate the benchmark." << endl;
 		exit(7);
@@ -340,10 +339,10 @@ void create_benchmark_tensor(int device, string compute_capability, string preci
 	input.close();
 	output.close();
 
-	ostringstream buffer;
+	string buffer;
 	cout << endl;
-	buffer << "make compute_capability=" << compute_capability << " -f GPU/Test/nvidia/Makefile";
-	int check = system(buffer.str().data());
+	buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+	int check = system(buffer.data());
 	if (check != 0) {
 		cerr << "ERROR: It was not possible to generate the benchmark." << endl;
 		exit(15);
@@ -398,10 +397,10 @@ void create_benchmark_mem(int device, string compute_capability, string target, 
 		input.close();
 		output.close();
 
-		ostringstream buffer;
+		string buffer;
 		cout << endl;
-		buffer << "make compute_capability=" << compute_capability << " -f GPU/Test/nvidia/Makefile";
-		int check = system(buffer.str().data());
+		buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		int check = system(buffer.data());
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
 			exit(12);
@@ -447,10 +446,10 @@ void create_benchmark_mem(int device, string compute_capability, string target, 
 		input.close();
 		output.close();
 
-		ostringstream buffer;
+		string buffer;
 		cout << endl;
-		buffer << "make compute_capability=" << compute_capability << " -f GPU/Test/nvidia/Makefile";
-		int check = system(buffer.str().data());
+		buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		int check = system(buffer.data());
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
 			exit(13);
@@ -494,10 +493,10 @@ void create_benchmark_mem(int device, string compute_capability, string target, 
 		input.close();
 		output.close();
 
-		ostringstream buffer;
+		string buffer;
 		cout << endl;
-		buffer << "make compute_capability=" << compute_capability << " -f GPU/Test/nvidia/Makefile";
-		int check = system(buffer.str().data());
+		buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		int check = system(buffer.data());
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
 			exit(22);
