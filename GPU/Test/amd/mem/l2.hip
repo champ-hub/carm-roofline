@@ -1,4 +1,5 @@
 #include <hip/hip_runtime.h>
+
 #include <iostream>
 #include <vector>
 
@@ -10,7 +11,6 @@
 
 #define DEVICE 0
 
-
 using namespace std;
 
 __global__ void benchmark(const PRECISION *d_X, PRECISION *dummy, int iterations, int cacheSize) {
@@ -20,9 +20,8 @@ __global__ void benchmark(const PRECISION *d_X, PRECISION *dummy, int iterations
 	sink = 0;
 
 	for (int i = 0; i < iterations; ++i)
-	#pragma unroll
-		for (int j = 0; j < cacheSize; j += THREADS_PER_BLOCK)
-			sink += d_X[id + j];
+#pragma unroll
+		for (int j = 0; j < cacheSize; j += THREADS_PER_BLOCK) sink += d_X[id + j];
 
 	dummy[id] = sink;
 }
@@ -52,19 +51,20 @@ int main() {
 		iterations *= 2;
 		hipEventRecord(start);
 
-		benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, d_X + csize, iterations, csize / sizeof(PRECISION));
+		benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, d_X + csize, iterations,
+													 csize / sizeof(PRECISION));
 		hipEventRecord(stop);
 		hipEventSynchronize(stop);
 
 		hipEventElapsedTime(&milliseconds, start, stop);
-
 	}
 
 	// Perform testing
 	for (int i = 0; i < NUM_REPS; i++) {
 		hipEventRecord(start);
 
-		benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, d_X + csize, iterations, csize / sizeof(PRECISION));
+		benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, d_X + csize, iterations,
+													 csize / sizeof(PRECISION));
 		hipEventRecord(stop);
 		hipEventSynchronize(stop);
 
@@ -95,5 +95,5 @@ int main() {
 
 	return 0;
 
-    return 0;
+	return 0;
 }

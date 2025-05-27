@@ -1,6 +1,7 @@
-#include <hip/hip_runtime.h>
-#include <hip/hip_fp16.h>
 #include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
+#include <hip/hip_runtime.h>
+
 #include <iostream>
 #include <vector>
 
@@ -16,31 +17,27 @@
 
 using namespace std;
 
-__global__ void flops_benchmark(PRECISION *buf, uint32_t nSize, int iterations)
-{
-    const uint32_t gid = hipBlockDim_x * hipBlockIdx_x + hipThreadIdx_x;
-    const uint32_t nThreads  = gridDim.x * blockDim.x;
-    const uint32_t nEntriesPerThread = (uint32_t) nSize / nThreads;
-    const uint32_t maxOffset = nEntriesPerThread * nThreads;
+__global__ void flops_benchmark(PRECISION *buf, uint32_t nSize, int iterations) {
+	const uint32_t gid = hipBlockDim_x * hipBlockIdx_x + hipThreadIdx_x;
+	const uint32_t nThreads = gridDim.x * blockDim.x;
+	const uint32_t nEntriesPerThread = (uint32_t)nSize / nThreads;
+	const uint32_t maxOffset = nEntriesPerThread * nThreads;
 
-    PRECISION *ptr;
-    const PRECISION y = (PRECISION) 1.0;
+	PRECISION *ptr;
+	const PRECISION y = (PRECISION)1.0;
 
-    ptr = &buf[gid];
-    PRECISION x = (PRECISION) 2.0;
+	ptr = &buf[gid];
+	PRECISION x = (PRECISION)2.0;
 
-    for(uint32_t offset=0; offset < maxOffset; offset += nThreads)
-    {
-        for(int j=0; j<iterations; j++)
-        {
+	for (uint32_t offset = 0; offset < maxOffset; offset += nThreads) {
+		for (int j = 0; j < iterations; j++) {
 #pragma unroll
-            for (int i = 0; i < 128; i++)
-				// DEFINE LOOP
-        }
-    }
+			for (int i = 0; i < 128; i++)
+			// DEFINE LOOP
+		}
+	}
 
-    ptr[0] = -x;
-
+	ptr[0] = -x;
 }
 
 int main() {
@@ -63,7 +60,8 @@ int main() {
 		iterations *= 2;
 		hipEventRecord(start);
 
-		flops_benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, NUM_BLOCKS*THREADS_PER_BLOCK, iterations);
+		flops_benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, NUM_BLOCKS * THREADS_PER_BLOCK,
+														   iterations);
 		hipEventRecord(stop);
 		hipEventSynchronize(stop);
 
@@ -74,7 +72,8 @@ int main() {
 	for (int i = 0; i < NUM_REPS; i++) {
 		hipEventRecord(start);
 
-		flops_benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, NUM_BLOCKS*THREADS_PER_BLOCK, iterations);
+		flops_benchmark<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, NUM_BLOCKS * THREADS_PER_BLOCK,
+														   iterations);
 		hipEventRecord(stop);
 		hipEventSynchronize(stop);
 
@@ -105,5 +104,5 @@ int main() {
 
 	return 0;
 
-    return 0;
+	return 0;
 }

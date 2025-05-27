@@ -1,4 +1,5 @@
 #include <hip/hip_runtime.h>
+
 #include <iostream>
 #include <vector>
 
@@ -16,25 +17,21 @@ __global__ void benchmark(float *dummy, int numIter) {
 	const uint32_t tid = threadIdx.x;
 	__shared__ uint32_t shmem[64];
 
+	if (tid == 0) {
+#pragma unroll
+		for (int i = 0; i < 63; i++) shmem[i] = i + 1;
 
-	if (tid == 0)
-	{
-	#pragma unroll
-	for (int i=0;i<63;i++)
-		shmem[i] = i+1;
-
-	shmem[63] = 0;
+		shmem[63] = 0;
 	}
 
 	__syncthreads();
 
 	uint32_t index = tid;
-	for(uint32_t iter = 0; iter < numIter; iter++)
+	for (uint32_t iter = 0; iter < numIter; iter++)
 #pragma unroll
-		for (int j = 0; j < 128; j++)
-			index = shmem[index];
+		for (int j = 0; j < 128; j++) index = shmem[index];
 
-	dummy[tid] = (float )index;
+	dummy[tid] = (float)index;
 }
 
 int main() {
@@ -62,7 +59,6 @@ int main() {
 		hipEventSynchronize(stop);
 
 		hipEventElapsedTime(&milliseconds, start, stop);
-
 	}
 
 	// Perform testing
@@ -100,5 +96,5 @@ int main() {
 
 	return 0;
 
-    return 0;
+	return 0;
 }

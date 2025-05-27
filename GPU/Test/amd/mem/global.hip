@@ -1,4 +1,5 @@
 #include <hip/hip_runtime.h>
+
 #include <iostream>
 #include <vector>
 
@@ -35,7 +36,6 @@ int main() {
 	float milliseconds = 0;
 	vector<float> time_series;
 
-
 	PRECISION *d_X;
 	hipMalloc((void **)&d_X, (NUM_BLOCKS * THREADS_PER_BLOCK + 64 * STRIDE) * sizeof(PRECISION));
 	PRECISION *d_Y;
@@ -56,7 +56,6 @@ int main() {
 		hipEventSynchronize(stop);
 
 		hipEventElapsedTime(&milliseconds, start, stop);
-
 	}
 
 	// Perform testing
@@ -82,7 +81,7 @@ int main() {
 		median = time_series[time_series.size() / 2];
 	}
 
-	double bytes =  sizeof(PRECISION) * 2. * iterations * 128 * THREADS_PER_BLOCK * NUM_BLOCKS / 1e9;
+	double bytes = sizeof(PRECISION) * 2. * iterations * 128 * THREADS_PER_BLOCK * NUM_BLOCKS / 1e9;
 	float bandwidth = bytes * 1e3 / median;
 
 	cout << bandwidth << " GB/s" << endl;
@@ -94,5 +93,5 @@ int main() {
 
 	return 0;
 
-    return 0;
+	return 0;
 }

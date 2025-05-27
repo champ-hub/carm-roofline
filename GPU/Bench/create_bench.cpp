@@ -9,8 +9,8 @@ using namespace std;
 
 const uint Num_Reps = 64;
 
-void create_benchmark_flops(int device, string arch, string compute_capability, string operation, string precision,
-							int threads_per_block, int num_blocks) {
+void create_benchmark_flops(int device, string arch, string compute_capability, string operation,
+							string precision, int threads_per_block, int num_blocks) {
 	if (!filesystem::is_directory("GPU/bin")) {
 		if (!filesystem::create_directory("GPU/bin")) {
 			cerr << "ERROR: Wasn't able to create bin directory" << endl;
@@ -52,9 +52,10 @@ void create_benchmark_flops(int device, string arch, string compute_capability, 
 			else if (precision == "bf16") {
 				if (arch == "nvidia")
 					aux = "nv_bfloat16";
-				else aux = "hip_bfloat16";
+				else
+					aux = "hip_bfloat16";
 			}
-				
+
 			output << "#define PRECISION " << aux << endl;
 
 		} else if (text == "// DEFINE DEVICE") {
@@ -95,30 +96,30 @@ void create_benchmark_flops(int device, string arch, string compute_capability, 
 				if (precision == "hp" || precision == "bf16") {
 					if (operation == "fma") {
 						output << "\t\ta = __hfma(a, a, b);\n\t\tb = __hfma(b, b, c);\n\t\tc = "
-								"__hfma(c, c, d);\n\t\td = __hfma(d, d, a);"
-							<< endl;
+								  "__hfma(c, c, d);\n\t\td = __hfma(d, d, a);"
+							   << endl;
 					} else if (operation == "add") {
 						output << "\t\ta = __hadd(a, b);\n\t\tb = __hadd(b, c);\n\t\tc = "
-								"__hadd(c, d);\n\t\td = __hadd(d, a);"
-							<< endl;
+								  "__hadd(c, d);\n\t\td = __hadd(d, a);"
+							   << endl;
 					} else if (operation == "mul") {
 						output << "\t\ta = __hmul(a, b);\n\t\tb = __hmul(b, c);\n\t\tc = "
-								"__hmul(c, d);\n\t\td = __hmul(d, a);"
-							<< endl;
+								  "__hmul(c, d);\n\t\td = __hmul(d, a);"
+							   << endl;
 					}
 				} else {
 					if (operation == "fma") {
-						output << "\t\ta = a * a + b;\n\t\tb = b * b + c;\n\t\tc = c * c + d;\n\t\td = "
-								"d * d + a;"
-							<< endl;
+						output << "\t\ta = a * a + b;\n\t\tb = b * b + c;\n\t\tc = c * c + "
+								  "d;\n\t\td = d * d + a;"
+							   << endl;
 					} else if (operation == "add") {
 						output << "\t\ta = a + b;\n\t\tb = b + c;\n\t\tc = c + d;\n\t\td = "
-								"d + a;"
-							<< endl;
+								  "d + a;"
+							   << endl;
 					} else if (operation == "mul") {
 						output << "\t\ta = a * b;\n\t\tb = b * c;\n\t\tc = c * d;\n\t\td = "
-								"d * a;"
-							<< endl;
+								  "d * a;"
+							   << endl;
 					}
 				}
 			} else {
@@ -140,7 +141,7 @@ void create_benchmark_flops(int device, string arch, string compute_capability, 
 	cout << endl;
 	if (arch == "nvidia")
 		buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
-	else 
+	else
 		buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
 	int check = system(buffer.data());
 	if (check != 0) {
@@ -359,8 +360,8 @@ void create_benchmark_tensor(int device, string compute_capability, string preci
 	}
 }
 
-void create_benchmark_mem(int device, string arch, string compute_capability, string target, string precision,
-						  int threads_per_block, int num_blocks) {
+void create_benchmark_mem(int device, string arch, string compute_capability, string target,
+						  string precision, int threads_per_block, int num_blocks) {
 	if (!filesystem::is_directory("GPU/bin")) {
 		if (!filesystem::create_directory("GPU/bin")) {
 			cerr << "ERROR: Wasn't able to create bin directory" << endl;
