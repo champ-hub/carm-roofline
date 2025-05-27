@@ -14,18 +14,6 @@
 
 // DEFINE TEST
 
-#define HIP_CHECK(expression)                  \
-{                                              \
-    const hipError_t status = expression;      \
-    if(status != hipSuccess){                  \
-        std::cerr << "HIP error "              \
-                  << status << ": "            \
-                  << hipGetErrorString(status) \
-                  << " at " << __FILE__ << ":" \
-                  << __LINE__ << std::endl;    \
-    }                                          \
-}
-
 using namespace std;
 
 __global__ void flops_benchmark(PRECISION *buf, uint32_t nSize, int iterations)
