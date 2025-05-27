@@ -3,13 +3,13 @@
 #include <iostream>
 #include <vector>
 
-#define PRECISION float
-#define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 32768
+// DEFINE NUM_REPS
 
-#define NUM_REPS 64
+// DEFINE KERNEL PARAMETERS
 
-#define DEVICE 0
+// DEFINE PRECISION
+
+// DEFINE DEVICE
 
 using namespace std;
 

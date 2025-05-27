@@ -507,7 +507,11 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 
 		while (getline(input, text)) {
 			output << text << endl;
-			if (text == "// DEFINE PRECISION") {
+			if (text == "// DEFINE KERNEL PARAMETERS") {
+				output << "#define THREADS_PER_BLOCK " << threads_per_block << endl;
+				output << "#define NUM_BLOCKS " << num_blocks << endl;
+
+			} else if (text == "// DEFINE PRECISION") {
 				string aux;
 				if (precision == "sp" || precision == "tf32")
 					aux = "float";
@@ -518,8 +522,13 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 					aux = "int";
 				else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
 					aux = "half";
-				else if (precision == "bf16")
-					aux = "nv_bfloat16";
+				else if (precision == "bf16") {
+					if (arch == "nvidia")
+						aux = "nv_bfloat16";
+					else
+						aux = "hip_bfloat16";
+				}
+					
 
 				output << "#define PRECISION " << aux << endl;
 

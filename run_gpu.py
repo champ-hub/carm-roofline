@@ -258,7 +258,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_v
 		
 		outputs["fma"] = result.stdout.decode('utf-8').split(' ')[0]
 		print("Performance(" + precision + ", " + "fma" + "): ", result.stdout.decode('utf-8').rstrip())
-		exit(0)
+
 		#MEM Shared
 		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "shared", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		if result.returncode != 0:
@@ -274,7 +274,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_v
 		print("Bandwith Shared Memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
 
 		# MEM L2
-		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "L2", "--precision", precision, "--compute", str(compute_capability), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "L2", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		if result.returncode != 0:
 			print(result.stderr.decode('utf-8').rstrip())
 			sys.exit(23)
