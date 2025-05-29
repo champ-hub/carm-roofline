@@ -231,18 +231,22 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_v
 		# Generate benchmarks
 		#FLOPS
 		if vector_op != "fma":
-			result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "vector", "--arch", str(arch), "--operation", vector_op, "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-			if result.returncode != 0:
-				print(result.stderr.decode('utf-8').rstrip())
-				sys.exit(5)
+			if arch == "amd" and precision == "int":
+				outputs["flops"] = 0
+				print("Performance(" + precision + ", " + vector_op + "): Currently not supported")
+			else:
+				result =  subprocess.run(["./GPU/Bench/Bench", "--test", "FLOPS","--target", "vector", "--arch", str(arch), "--operation", vector_op, "--precision", precision, "--compute", str(compute_capability),"--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+				if result.returncode != 0:
+					print(result.stderr.decode('utf-8').rstrip())
+					sys.exit(5)
 
-			result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
-			if result.returncode != 0:
-				print(result.stdout.decode('utf-8').rstrip())
-				exit(8)
-			
-			outputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
-			print("Performance(" + precision + ", " + vector_op + "): ", result.stdout.decode('utf-8').rstrip())
+				result = subprocess.run(["./GPU/bin/test"], stdout=subprocess.PIPE)
+				if result.returncode != 0:
+					print(result.stdout.decode('utf-8').rstrip())
+					exit(8)
+				
+				outputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
+				print("Performance(" + precision + ", " + vector_op + "): ", result.stdout.decode('utf-8').rstrip())
 
 
 		# Always execute FMA
