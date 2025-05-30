@@ -47,8 +47,8 @@ def process_metrics(report_dir, kernel_name, level):
 		# First group of counters: vector cores
 		try:
 			data = pd.read_csv(report_dir + "/pmc_1/tmp_counter_collection.csv", sep=',')
-		except pd.errors.EmptyDataError:
-			print(f"There is no kernel to profile with the name {kernel_name}")
+		except Exception:
+			print(f"There is no kernel to profile with the name {kernel_name} or profiling failed.")
 			shutil.rmtree(report_dir)
 			sys.exit(4)
 
@@ -66,8 +66,8 @@ def process_metrics(report_dir, kernel_name, level):
 		# fp64 + matrix
 		try:
 			data = pd.read_csv(report_dir + "/pmc_2/tmp_counter_collection.csv", sep=',')
-		except pd.errors.EmptyDataError:
-			print(f"There is no kernel to profile with the name {kernel_name}")
+		except Exception:
+			print(f"There is no kernel to profile with the name {kernel_name} or profiling failed.")
 			shutil.rmtree(report_dir)
 			sys.exit(4)
 
@@ -82,8 +82,8 @@ def process_metrics(report_dir, kernel_name, level):
 		# bytes
 		try:
 			data = pd.read_csv(report_dir + "/pmc_3/tmp_counter_collection.csv", sep=',')
-		except pd.errors.EmptyDataError:
-			print(f"There is no kernel to profile with the name {kernel_name}")
+		except Exception:
+			print(f"There is no kernel to profile with the name {kernel_name} or profiling failed.")
 			shutil.rmtree(report_dir)
 			sys.exit(4)
 
@@ -129,9 +129,9 @@ def update_csv(machine_name, app_name, performance, ai, bandwidth, execution_tim
 
 def run_ncu(machine_name, app_name, executable_path, no_tensor, level, kernel_name = "", additional_args = []):
 	tmp_file_path = os.path.dirname(os.path.realpath(__file__)) +'/counters'
-	#kernel = "" if kernel_name == "" else f' -k {kernel_name}'
+	kernel = "" if kernel_name == "" else f' --kernel-include-regex {kernel_name}'
 
-	options = f'-i {COUNTERS_PATH} -o tmp -d {tmp_file_path} --'.split(' ')
+	options = f'-i {COUNTERS_PATH} -o tmp -d {tmp_file_path} -T{kernel} --'.split(' ')
 
 	command = [ROCPROFV3_PATH, *options, executable_path, *additional_args]
 
