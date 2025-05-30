@@ -98,8 +98,46 @@ def process_metrics(report_dir, kernel_name, level):
 		results = [{"execution_time": execution_time/3, "bytes_requested": bytes_requested, "tensor_flops": 0, "half_flops": half_flops, "float_flops": float_flops, "double_flops": double_flops}]
 
 	else:
-		pass
+		with open(report_dir + "/pmc_1/tmp_counter_collection.csv", "a") as baseFile:
+			with open(report_dir + "/pmc_2/tmp_counter_collection.csv", "r") as copiedFile:
+				next(copiedFile)
+				shutil.copyfileobj(copiedFile, baseFile)
+			with open(report_dir + "/pmc_3/tmp_counter_collection.csv", "r") as copiedFile:
+				next(copiedFile)
+				shutil.copyfileobj(copiedFile, baseFile)
 
+		# First group of counters: vector cores
+		try:
+			data = pd.read_csv(report_dir + "/pmc_1/tmp_counter_collection.csv", sep=',')
+		except Exception:
+			print(f"There is no kernel to profile with the name {kernel_name} or profiling failed.")
+			shutil.rmtree(report_dir)
+			sys.exit(4)
+
+		reps = data.groupby("Kernel_Name")["Correlation_Id"].nunique()
+
+		results = []
+
+		grouped_data = data.groupby(['Kernel_Name', 'Counter_Name'])["Counter_Value"].sum()
+
+		time_data = data.groupby(['Kernel_Name', "Start_Timestamp"])["End_Timestamp"]
+
+		for kernel_name in grouped_data.index.levels[0]:
+			for key in time_data.groups.keys():
+				if key[0] == kernel_name:
+					execution_time += time_data.first()[key] - key[1]
+
+			half_flops = 64 * (grouped_data[kernel_name,'SQ_INSTS_VALU_ADD_F16']+2*grouped_data[kernel_name,'SQ_INSTS_VALU_FMA_F16']+grouped_data[kernel_name,'SQ_INSTS_VALU_MUL_F16'])
+
+			float_flops = 64 * (grouped_data[kernel_name,'SQ_INSTS_VALU_ADD_F32']+2*grouped_data[kernel_name,'SQ_INSTS_VALU_FMA_F32']+grouped_data[kernel_name,'SQ_INSTS_VALU_MUL_F32'])
+
+			double_flops = 64 * (grouped_data[kernel_name,'SQ_INSTS_VALU_ADD_F64']+2*grouped_data[kernel_name,'SQ_INSTS_VALU_FMA_F64']+grouped_data[kernel_name,'SQ_INSTS_VALU_MUL_F64'])
+
+			bytes_requested = (grouped_data[kernel_name,'SQ_LDS_IDX_ACTIVE']- grouped_data[kernel_name,'SQ_LDS_BANK_CONFLICT']) * 4 * 32 + grouped_data[kernel_name,'TCP_TOTAL_CACHE_ACCESSES_sum'] * 64
+
+			tmp={"kernel_name": kernel_name, "calls": reps[kernel_name], "execution_time": execution_time/3, "bytes_requested": bytes_requested, "tensor_flops": 0, "half_flops": half_flops, "float_flops": float_flops, "double_flops": double_flops}
+			execution_time = 0
+			results.append(tmp)
 
 	return results
 
