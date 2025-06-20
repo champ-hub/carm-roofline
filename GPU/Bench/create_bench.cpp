@@ -64,10 +64,18 @@ void create_benchmark_flops(int device, string arch, string compute_capability, 
 			output << "#define DEVICE " << device << endl;
 
 		} else if (text == "// DEFINE TEST") {
-			if (operation == "fma") {
-				output << "#define MULTIPLIER 2" << endl;
-			} else if (operation == "add" || operation == "mul") {
-				output << "#define MULTIPLIER 1" << endl;
+			if (precision == "hp2") {
+				if (operation == "fma") {
+					output << "#define MULTIPLIER 4" << endl;
+				} else if (operation == "add" || operation == "mul") {
+					output << "#define MULTIPLIER 2" << endl;
+				}
+			} else {
+				if (operation == "fma") {
+					output << "#define MULTIPLIER 2" << endl;
+				} else if (operation == "add" || operation == "mul") {
+					output << "#define MULTIPLIER 1" << endl;
+				}
 			}
 		} else if (text == "\t// DEFINE INITIALIZATION") {
 			if (precision == "sp")
