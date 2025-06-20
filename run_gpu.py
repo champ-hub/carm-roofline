@@ -101,6 +101,8 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, arch, target_vector, ta
 				tensor_core_precisions.append('int4')
 
 				if compute_capability >= 80:
+					if compute_capability == 80:
+						tensor_core_precisions.append('fp64')
 					tensor_core_precisions.append('bf16')
 					tensor_core_precisions.append('tf32')
 					tensor_core_precisions.append('int1')

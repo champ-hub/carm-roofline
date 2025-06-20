@@ -196,6 +196,8 @@ void create_benchmark_tensor(int device, string compute_capability, string preci
 				output << "#define M 16\n#define N 8\n#define K 64" << endl;
 			} else if (precision == "int1") {
 				output << "#define M 16L\n#define N 8L\n#define K 128L" << endl;
+			} else if (precision == "fp64") {
+				output << "#define M 8\n#define N 8\n#define K 4" << endl;
 			}
 
 		} else if (text == "// DEFINE PRECISION") {
@@ -234,6 +236,13 @@ void create_benchmark_tensor(int device, string compute_capability, string preci
 					   << " char" << endl;
 				output << "#define PRECISION_C"
 					   << " int" << endl;
+			} else if (precision == "fp64") {
+				output << "#define PRECISION_A"
+					   << " double" << endl;
+				output << "#define PRECISION_B"
+					   << " double" << endl;
+				output << "#define PRECISION_C"
+					   << " double" << endl;
 			}
 		} else if (text == "// DEFINE DEVICE") {
 			output << "#define DEVICE " << device << endl;
@@ -300,6 +309,8 @@ void create_benchmark_tensor(int device, string compute_capability, string preci
 				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
 					   << endl;
 				output << "int *C = reinterpret_cast<int *>(&fragsC[0]);" << endl;
+			} else if (precision == "fp64") {
+				output << "double A[1];\ndouble B[1];\ndouble C[2];" << endl;
 			}
 
 		} else if (text.find("// DEFINE LOOP") != string::npos) {
@@ -359,6 +370,11 @@ void create_benchmark_tensor(int device, string compute_capability, string preci
 				output << ": \"+r\"(C[0]), \"+r\"(C[1]), \"+r\"(C[2]), \"+r\"(C[3]) : \"r\"(A[0]), "
 						  "\"r\"(A[1]), \"r\"(B[0]));"
 					   << endl;
+			} else if (precision == "fp64") {
+				output << "asm volatile(\"mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 "
+						  " {%0,%1}, {%2}, {%3}, {%0,%1};\\n)\""
+					   << endl;
+				output << ": \"+d\"(C[0]), \"+d\"(C[1]) : \"d\"(A[0]), \"r\"(B[0]));\\n)\"" << endl;
 			}
 		}
 	}
