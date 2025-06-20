@@ -428,7 +428,7 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 				if (arch == "nvidia") {
 					if (precision == "sp" || precision == "tf32")
 						aux = "float";
-					else if (precision == "dp")
+					else if (precision == "dp" || precision == "fp64")
 						aux = "double";
 					else if (precision == "int" || precision == "int8" || precision == "int4" ||
 							 precision == "int1")
@@ -497,7 +497,7 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 				string aux;
 				if (precision == "sp" || precision == "tf32")
 					aux = "float";
-				else if (precision == "dp")
+				else if (precision == "dp" || precision == "fp64")
 					aux = "double";
 				else if (precision == "int" || precision == "int8" || precision == "int4" ||
 						 precision == "int1")
@@ -563,7 +563,7 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 				string aux;
 				if (precision == "sp" || precision == "tf32")
 					aux = "float";
-				else if (precision == "dp")
+				else if (precision == "dp" || precision == "fp64")
 					aux = "double";
 				else if (precision == "int" || precision == "int8" || precision == "int4" ||
 						 precision == "int1")
