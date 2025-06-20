@@ -310,7 +310,9 @@ void create_benchmark_tensor(int device, string compute_capability, string preci
 					   << endl;
 				output << "int *C = reinterpret_cast<int *>(&fragsC[0]);" << endl;
 			} else if (precision == "fp64") {
-				output << "double A[1];\ndouble B[1];\ndouble C[2];" << endl;
+				output << "double A[1];\ndouble B[1];\ndouble fragsC[2];" << endl;
+				output << "A[0] = d_A[0];\nB[0] = d_B[id];\nfragsC[0] = d_C[id];" << endl;
+				output << "double *C = reinterpret_cast<double *>(&fragsC[0]);" << endl;
 			}
 
 		} else if (text.find("// DEFINE LOOP") != string::npos) {
@@ -372,9 +374,9 @@ void create_benchmark_tensor(int device, string compute_capability, string preci
 					   << endl;
 			} else if (precision == "fp64") {
 				output << "asm volatile(\"mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 "
-						  " {%0,%1}, {%2}, {%3}, {%0,%1};\\n)\""
+						  " {%0,%1}, {%2}, {%3}, {%0,%1};\\n\""
 					   << endl;
-				output << ": \"+d\"(C[0]), \"+d\"(C[1]) : \"d\"(A[0]), \"r\"(B[0]));\\n)\"" << endl;
+				output << ": \"+d\"(C[0]), \"+d\"(C[1]) : \"d\"(A[0]), \"d\"(B[0]));" << endl;
 			}
 		}
 	}
