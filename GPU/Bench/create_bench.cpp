@@ -49,6 +49,8 @@ void create_benchmark_flops(int device, string arch, string compute_capability, 
 				aux = "int";
 			else if (precision == "hp")
 				aux = "half";
+			else if (precision == "hp2")
+				aux = "half2";
 			else if (precision == "bf16") {
 				if (arch == "nvidia")
 					aux = "nv_bfloat16";
@@ -84,6 +86,12 @@ void create_benchmark_flops(int device, string arch, string compute_capability, 
 				output << "\tPRECISION a = __float2half(1.f);\n\tPRECISION b = "
 						  "__float2half(2.f);\n\tPRECISION c = __float2half(3.f);\n\tPRECISION "
 						  "d = __float2half(4.f);"
+					   << endl;
+			else if (precision == "hp2")
+				output << "\tPRECISION a = __float2half2_rn(1.f);\n\tPRECISION b = "
+						  "__float2half2_rn(2.f);\n\tPRECISION c = "
+						  "__float2half2_rn(3.f);\n\tPRECISION "
+						  "d = __float2half2_rn(4.f);"
 					   << endl;
 			else if (precision == "bf16")
 				output << "\tPRECISION a = __float2bfloat16(1.f);\n\tPRECISION b = "
@@ -397,16 +405,20 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 					else if (precision == "dp")
 						aux = "double";
 					else if (precision == "int" || precision == "int8" || precision == "int4" ||
-							precision == "int1")
+							 precision == "int1")
 						aux = "int";
 					else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
 						aux = "half";
+					else if (precision == "hp2")
+						aux = "half2";
 					else if (precision == "bf16")
 						aux = "nv_bfloat16";
 				} else {
-					if (precision == "sp" || precision == "tf32" || precision == "int" || precision == "int8" || precision == "fp16_32" || precision == "hp" || precision == "bf16")
+					if (precision == "sp" || precision == "tf32" || precision == "int" ||
+						precision == "int8" || precision == "fp16_32" || precision == "hp" ||
+						precision == "bf16")
 						aux = "uint32_t";
-					else if (precision == "dp" || precision == "fp64") 
+					else if (precision == "dp" || precision == "fp64")
 						aux = "uint64_t";
 				}
 				output << "#define PRECISION " << aux << endl;
@@ -423,10 +435,12 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 
 		string buffer;
 		cout << endl;
-		if (arch == "nvidia")
-			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
-		else
+		if (arch == "nvidia") {
+			buffer =
+				"make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		} else
 			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
+
 		int check = system(buffer.data());
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
@@ -464,13 +478,14 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 					aux = "int";
 				else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
 					aux = "half";
+				else if (precision == "hp2")
+					aux = "half2";
 				else if (precision == "bf16") {
 					if (arch == "nvidia")
 						aux = "nv_bfloat16";
 					else
 						aux = "hip_bfloat16";
 				}
-					
 
 				output << "#define PRECISION " << aux << endl;
 
@@ -487,10 +502,12 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 
 		string buffer;
 		cout << endl;
-		if (arch == "nvidia")
-			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
-		else
+		if (arch == "nvidia") {
+			buffer =
+				"make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		} else
 			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
+
 		int check = system(buffer.data());
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
@@ -527,13 +544,14 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 					aux = "int";
 				else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
 					aux = "half";
+				else if (precision == "hp2")
+					aux = "half2";
 				else if (precision == "bf16") {
 					if (arch == "nvidia")
 						aux = "nv_bfloat16";
 					else
 						aux = "hip_bfloat16";
 				}
-					
 
 				output << "#define PRECISION " << aux << endl;
 
@@ -550,10 +568,12 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 
 		string buffer;
 		cout << endl;
-		if (arch == "nvidia")
-			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
-		else
+		if (arch == "nvidia") {
+			buffer =
+				"make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		} else
 			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
+
 		int check = system(buffer.data());
 		if (check != 0) {
 			cerr << "ERROR: It was not possible to generate the benchmark." << endl;

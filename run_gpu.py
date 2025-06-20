@@ -77,7 +77,7 @@ def update_csv(name, test, results, date, target, precision, inst, threads, bloc
 def check_hardware(verbose, set_freq, freq_sm, freq_mem, arch, target_vector, target_tensor):
 	compute_capability = 0
 	gpu_name = ''
-	vector_precisions = ['int', 'hp', 'sp', 'dp']
+	vector_precisions = ['int', 'hp', 'hp2', 'sp', 'dp']
 	tensor_cores = False
 	tensor_core_precisions = []
 
@@ -264,7 +264,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_v
 		print("Performance(" + precision + ", " + "fma" + "): ", result.stdout.decode('utf-8').rstrip())
 
 		#MEM Shared
-		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "shared", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "shared", "--arch", str(arch), "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		if result.returncode != 0:
 			print(result.stderr.decode('utf-8').rstrip())
 			sys.exit(9)
@@ -278,7 +278,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_v
 		print("Bandwith Shared Memory(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
 
 		# MEM L2
-		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "L2", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "L2", "--arch", str(arch), "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		if result.returncode != 0:
 			print(result.stderr.decode('utf-8').rstrip())
 			sys.exit(23)
@@ -292,7 +292,7 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_v
 		print("Bandwith L2 Cache(" + precision +"): ", result.stdout.decode('utf-8').rstrip())
 
 		#MEM Global
-		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "global", "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "global", "--arch", str(arch), "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		if result.returncode != 0:
 			print(result.stderr.decode('utf-8').rstrip())
 			sys.exit(9)
@@ -425,7 +425,7 @@ def main():
 	parser.add_argument('--freq_mem', dest='freq_mem', default=0, nargs='?', type=int, help='Desired MEM frequency during test')
 	parser.add_argument('--set_freq',  dest='set_freq', action='store_const', const=1, default=0, help='Set SM and MEM frequency to indicated one')
 
-	parser.add_argument('--vector', default=['auto'], nargs='+', choices=['none','auto','hp', 'int', 'sp', 'dp', 'bf16'], help='Set of CUDA core arithmetic precisions to test. If auto, all will be tested.')
+	parser.add_argument('--vector', default=['auto'], nargs='+', choices=['none','auto','hp', 'hp2', 'int', 'sp', 'dp', 'bf16'], help='Set of CUDA core arithmetic precisions to test. If auto, all will be tested.')
 	parser.add_argument('--tensor', default=['auto'], nargs='+', choices=['none','auto', 'fp16_32', 'fp16_16', 'tf32', 'bf16', 'int8', 'int4', 'int1'], help='Set of Tensor Core arithmetic precisions to test. If auto, all will be tested.')
 	parser.add_argument('--vector_op', dest='vector_op', default='add', nargs='?', choices=['fma', 'add', 'mul'], help="Desired operation to execute in CUDA Cores.")
 
