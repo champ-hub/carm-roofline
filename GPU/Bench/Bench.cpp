@@ -91,9 +91,14 @@ int main(int argc, char* argv[]) {
 		if (target == "vector")
 			create_benchmark_flops(DEVICE, arch, compute_capability, operation, precision,
 								   threads_per_block, num_blocks);
-		else if (target == "tensor")
-			create_benchmark_tensor(DEVICE, compute_capability, precision, threads_per_block,
+		else if (target == "tensor") {
+			if (arch == "nvidia") {
+				create_benchmark_tensor(DEVICE, compute_capability, precision, threads_per_block,
 									num_blocks);
+			} else {
+				create_benchmark_matrix(DEVICE, compute_capability, precision, threads_per_block, num_blocks);
+			}
+		}
 	} else if (test == "MEM") {
 		create_benchmark_mem(DEVICE, arch, compute_capability, target, precision, threads_per_block,
 							 num_blocks);

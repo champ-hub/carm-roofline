@@ -394,6 +394,64 @@ void create_benchmark_tensor(int device, string compute_capability, string preci
 	}
 }
 
+void create_benchmark_matrix(int device, string compute_capability, string precision,
+							 int threads_per_block, int num_blocks) {
+	if (!filesystem::is_directory("GPU/bin")) {
+		if (!filesystem::create_directory("GPU/bin")) {
+			cerr << "ERROR: Wasn't able to create bin directory" << endl;
+			exit(14);
+		}
+	}
+	// Tensor
+	string text;
+	ifstream input("GPU/Test/amd/flops/matrix_cores.hip");
+	ofstream output("GPU/bin/test.hip");
+
+	while (getline(input, text)) {
+		output << text << endl;
+		if (text == "// DEFINE KERNEL PARAMETERS") {
+			output << "#define THREADS_PER_BLOCK " << threads_per_block << endl;
+			output << "#define NUM_BLOCKS " << num_blocks << endl;
+
+			if (precision == "fp32") {
+				output << "#define M 32\n#define N 32\n#define K 2" << endl;
+			}
+
+		} else if (text == "// DEFINE PRECISION") {
+			if (precision == "fp32") {
+				output << "#define PRECISION float" << endl;
+			}
+			
+		} else if (text == "// DEFINE DEVICE") {
+			output << "#define DEVICE " << device << endl;
+		} else if (text == "// DEFINE NUM_REPS") {
+			output << "#define NUM_REPS " << Num_Reps << endl;
+
+		} else if (text == "\t// DEFINE INITIALIZATION") {
+			if (precision == "fp32") {
+				output << "float a = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(float)))) float;" << endl;
+			}
+
+		} else if (text.find("// DEFINE LOOP") != string::npos) {
+			if (precision == "fp32") {
+				output << "result = __builtin_amdgcn_mfma_f32_32x32x2f32(a, a, result, 0, 0, 0);" << endl;
+			}
+		}
+	}
+
+	input.close();
+	output.close();
+
+	string buffer;
+	cout << endl;
+	buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
+	int check = system(buffer.data());
+	if (check != 0) {
+		cerr << "ERROR: It was not possible to generate the benchmark." << endl;
+		exit(15);
+	}
+}
+
 void create_benchmark_mem(int device, string arch, string compute_capability, string target,
 						  string precision, int threads_per_block, int num_blocks) {
 	if (!filesystem::is_directory("GPU/bin")) {
@@ -440,7 +498,7 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 					else if (precision == "bf16")
 						aux = "nv_bfloat16";
 				} else {
-					if (precision == "sp" || precision == "tf32" || precision == "int" ||
+					if (precision == "sp" || precision == "fp32" || precision == "tf32" || precision == "int" ||
 						precision == "int8" || precision == "fp16_32" || precision == "hp" ||
 						precision == "bf16")
 						aux = "uint32_t";
@@ -495,7 +553,7 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 
 			} else if (text == "// DEFINE PRECISION") {
 				string aux;
-				if (precision == "sp" || precision == "tf32")
+				if (precision == "sp" || precision == "tf32" || precision == "fp32" )
 					aux = "float";
 				else if (precision == "dp" || precision == "fp64")
 					aux = "double";
@@ -561,7 +619,7 @@ void create_benchmark_mem(int device, string arch, string compute_capability, st
 
 			} else if (text == "// DEFINE PRECISION") {
 				string aux;
-				if (precision == "sp" || precision == "tf32")
+				if (precision == "sp" || precision == "tf32" || precision == "fp32" )
 					aux = "float";
 				else if (precision == "dp" || precision == "fp64")
 					aux = "double";
