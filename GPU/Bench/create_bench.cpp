@@ -421,6 +421,8 @@ void create_benchmark_matrix(int device, string compute_capability, string preci
 				output << "#define M 32\n#define N 32\n#define K 8" << endl;
 			} else if (precision == "bf16") {
 				output << "#define M 32\n#define N 32\n#define K 4" << endl;
+			} else if (precision == "int8") {
+				output << "#define M 32\n#define N 32\n#define K 8" << endl;
 			}
 
 		} else if (text == "// DEFINE PRECISION") {
@@ -430,6 +432,8 @@ void create_benchmark_matrix(int device, string compute_capability, string preci
 				output << "#define PRECISION double" << endl;
 			} else if (precision == "fp16_32" || precision == "bf16") {
 				output << "#define PRECISION float" << endl;
+			} else if (precision == "int8") {
+				output << "#define PRECISION int" << endl;
 			}
 			
 		} else if (text == "// DEFINE DEVICE") {
@@ -446,6 +450,8 @@ void create_benchmark_matrix(int device, string compute_capability, string preci
 				output << "using f16_2vec = __attribute__((__vector_size__(2 * sizeof(__2f16))))  float;\nf16_2vec a;\na[1] = a[0] = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(float)))) float;" << endl;
 			} else if (precision == "bf16") {
 				output << "using bf16_2vec = __attribute__((__vector_size__(1 * sizeof(__2i16))))  short;\nbf16_2vec a;\na[1] = a[0] = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(float)))) float;" << endl;
+			} else if (precision == "int8") {
+				output << "int a = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(int)))) int;" << endl;
 			}
 
 		} else if (text.find("// DEFINE LOOP") != string::npos) {
@@ -457,6 +463,8 @@ void create_benchmark_matrix(int device, string compute_capability, string preci
 				output << "result = __builtin_amdgcn_mfma_f32_32x32x8f16(a, a, result, 0, 0, 0);" << endl;
 			} else if (precision == "bf16") {
 				output << "result = __builtin_amdgcn_mfma_f32_32x32x4bf16(a, a, result, 0, 0, 0);" << endl;
+			} else if (precision == "int8") {
+				output << "result = __builtin_amdgcn_mfma_i32_32x32x8i8(a, a, result, 0, 0, 0);" << endl;
 			}
 		}
 	}
