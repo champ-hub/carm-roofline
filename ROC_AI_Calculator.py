@@ -79,6 +79,8 @@ def process_metrics(report_dir, kernel_name, level):
 
 		double_flops = 64 * (grouped_data['SQ_INSTS_VALU_ADD_F64']+2*grouped_data['SQ_INSTS_VALU_FMA_F64']+grouped_data['SQ_INSTS_VALU_MUL_F64'])
 
+		tensor_flops = 512 * (grouped_data['SQ_INSTS_VALU_MFMA_MOPS_F16'] + grouped_data['SQ_INSTS_VALU_MFMA_MOPS_BF16'] + grouped_data['SQ_INSTS_VALU_MFMA_MOPS_F32'] + grouped_data['SQ_INSTS_VALU_MFMA_MOPS_F64'] + grouped_data['SQ_INSTS_VALU_MFMA_MOPS_I8'])
+
 		# bytes
 		try:
 			data = pd.read_csv(report_dir + "/pmc_3/tmp_counter_collection.csv", sep=',')
@@ -95,7 +97,7 @@ def process_metrics(report_dir, kernel_name, level):
 
 		bytes_requested = (grouped_data['SQ_LDS_IDX_ACTIVE']- grouped_data['SQ_LDS_BANK_CONFLICT']) * 4 * 32 + grouped_data['TCP_TOTAL_CACHE_ACCESSES_sum'] * 64
 
-		results = [{"execution_time": execution_time/3, "bytes_requested": bytes_requested, "tensor_flops": 0, "half_flops": half_flops, "float_flops": float_flops, "double_flops": double_flops}]
+		results = [{"execution_time": execution_time/3, "bytes_requested": bytes_requested, "tensor_flops": tensor_flops, "half_flops": half_flops, "float_flops": float_flops, "double_flops": double_flops}]
 
 	else:
 		with open(report_dir + "/pmc_1/tmp_counter_collection.csv", "a") as baseFile:
@@ -133,9 +135,11 @@ def process_metrics(report_dir, kernel_name, level):
 
 			double_flops = 64 * (grouped_data[kernel_name,'SQ_INSTS_VALU_ADD_F64']+2*grouped_data[kernel_name,'SQ_INSTS_VALU_FMA_F64']+grouped_data[kernel_name,'SQ_INSTS_VALU_MUL_F64'])
 
+			tensor_flops = 512 * (grouped_data['SQ_INSTS_VALU_MFMA_MOPS_F16'] + grouped_data['SQ_INSTS_VALU_MFMA_MOPS_BF16'] + grouped_data['SQ_INSTS_VALU_MFMA_MOPS_F32'] + grouped_data['SQ_INSTS_VALU_MFMA_MOPS_F64'] + grouped_data['SQ_INSTS_VALU_MFMA_MOPS_I8'])
+
 			bytes_requested = (grouped_data[kernel_name,'SQ_LDS_IDX_ACTIVE']- grouped_data[kernel_name,'SQ_LDS_BANK_CONFLICT']) * 4 * 32 + grouped_data[kernel_name,'TCP_TOTAL_CACHE_ACCESSES_sum'] * 64
 
-			tmp={"kernel_name": kernel_name, "calls": reps[kernel_name], "execution_time": execution_time/3, "bytes_requested": bytes_requested, "tensor_flops": 0, "half_flops": half_flops, "float_flops": float_flops, "double_flops": double_flops}
+			tmp={"kernel_name": kernel_name, "calls": reps[kernel_name], "execution_time": execution_time/3, "bytes_requested": bytes_requested, "tensor_flops": tensor_flops, "half_flops": half_flops, "float_flops": float_flops, "double_flops": double_flops}
 			execution_time = 0
 			results.append(tmp)
 
