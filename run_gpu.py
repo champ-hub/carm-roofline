@@ -132,7 +132,7 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, arch, target_vector, ta
 
 					if compute_capability == 'gfx942':
 						tensor_core_precisions.append('tf32')
-						#implement fp8 and tf32
+						tensor_core_precisions.append('fp8')
 
 	# Check valid arithmetic precisions
 	if target_vector[0] == 'auto':
@@ -345,6 +345,9 @@ def run_roofline(verbose, name, out, set_freq, freq_sm, freq_mem, arch, target_v
 		outputs["flops"] = result.stdout.decode('utf-8').split(' ')[0]
 		print("Performance Tensor(" + precision + "): ", result.stdout.decode('utf-8').rstrip())
 
+		if precision == "fp8":
+			print("Warning: Memory tests for FP8 are performed using FP32, as the FP8 does not support the arithmetic operations required for the memory benchmarks.")
+
 		#MEM Shared
 		result =  subprocess.run(["./GPU/Bench/Bench", "--test", "MEM","--target", "shared", "--arch", str(arch), "--precision", precision, "--compute", str(compute_capability), "--threads", str(threads), "--blocks", str(blocks), "--device", str(DEVICE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		if result.returncode != 0:
@@ -427,7 +430,7 @@ def main():
 	parser.add_argument('--set_freq',  dest='set_freq', action='store_const', const=1, default=0, help='Set SM and MEM frequency to indicated one')
 
 	parser.add_argument('--vector', default=['auto'], nargs='+', choices=['none','auto','hp', 'hp2', 'int', 'sp', 'dp', 'bf16'], help='Set of CUDA core arithmetic precisions to test. If auto, all will be tested.')
-	parser.add_argument('--tensor', default=['auto'], nargs='+', choices=['none','auto', 'fp16_32', 'fp16_16', 'tf32', 'bf16', 'int8', 'int4', 'int1', 'fp64','fp32'], help='Set of Tensor Core arithmetic precisions to test. If auto, all will be tested.')
+	parser.add_argument('--tensor', default=['auto'], nargs='+', choices=['none','auto', 'fp16_32', 'fp16_16', 'tf32', 'bf16', 'fp8', 'int8', 'int4', 'int1', 'fp64','fp32'], help='Set of Tensor Core arithmetic precisions to test. If auto, all will be tested.')
 	parser.add_argument('--vector_op', dest='vector_op', default='add', nargs='?', choices=['fma', 'add', 'mul'], help="Desired operation to execute in CUDA Cores.")
 
 	parser.add_argument('--threads', default=1024, nargs='?', type=int, help='Num of threads per block to execute in the benchmarks')
