@@ -431,10 +431,12 @@ void create_benchmark_matrix(int device, string compute_capability, string preci
 				} else {
 					output << "#define M 32\n#define N 32\n#define K 8" << endl;
 				}
+			} else if (precision == "tf32") {
+				output << "#define M 32\n#define N 32\n#define K 4" << endl;
 			}
 
 		} else if (text == "// DEFINE PRECISION") {
-			if (precision == "fp32") {
+			if (precision == "fp32" || precision == "tf32") {
 				output << "#define PRECISION float" << endl;
 			} else if (precision == "fp64") {
 				output << "#define PRECISION double" << endl;
@@ -468,6 +470,8 @@ void create_benchmark_matrix(int device, string compute_capability, string preci
 				} else {
 					output << "int a = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(int)))) int;" << endl;
 				}
+			} else if (precision == "tf32") {
+				output << "using f32_2vec = __attribute__((__vector_size__(2 * sizeof(float)))) float;\nf32_2vec a;\na[1] = a[0] = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(float)))) float;" << endl;
 			}
 
 		} else if (text.find("// DEFINE LOOP") != string::npos) {
@@ -489,6 +493,8 @@ void create_benchmark_matrix(int device, string compute_capability, string preci
 				} else {
 					output << "result = __builtin_amdgcn_mfma_i32_32x32x8i8(a, a, result, 0, 0, 0);" << endl;
 				}
+			} else if (precision == "tf32") {
+				output << "result = __builtin_amdgcn_mfma_f32_32x32x4_xf32(a, a, result, 0, 0, 0);" << endl;
 			}
 		}
 	}

@@ -131,7 +131,8 @@ def check_hardware(verbose, set_freq, freq_sm, freq_mem, arch, target_vector, ta
 					tensor_core_precisions.append('fp64')
 
 					if compute_capability == 'gfx942':
-						pass #implement fp8 and tf32
+						tensor_core_precisions.append('tf32')
+						#implement fp8 and tf32
 
 	# Check valid arithmetic precisions
 	if target_vector[0] == 'auto':
