@@ -436,7 +436,7 @@ def read_config(config_file):
 
     return name, int(l1_size), int(l2_size), int(l3_size)
 
-def plot_roofline(name, data, date, isa, precision, threads, num_ld, num_st, inst, interleaved):
+def plot_roofline(name, data, date, isa, precision, threads, num_ld, num_st, inst, interleaved, out_path):
     if plot_numpy == None:
         print("No Matplotlib and/or Numpy found, in order to draw CARM graphs make sure to install them.")
         return
@@ -478,9 +478,9 @@ def plot_roofline(name, data, date, isa, precision, threads, num_ld, num_st, ins
     plt.rcParams.update(new_rc_params)
     plt.tight_layout()
     if(interleaved):
-        plt.savefig('carm_results/Roofline/' + name + '_roofline_' + str(date) + '_' + isa + "_" + str(precision) + "_" + str(threads) + "_Threads_" + str(num_ld) + "Load_" + str(num_st) + "Store_" + inst + "_Interleaved"'.svg')
+        plt.savefig(f'{out_path}/roofline/' + name + '_roofline_' + str(date) + '_' + isa + "_" + str(precision) + "_" + str(threads) + "_Threads_" + str(num_ld) + "Load_" + str(num_st) + "Store_" + inst + "_Interleaved"'.svg')
     else:
-        plt.savefig('carm_results/Roofline/' + name + '_roofline_' + str(date) + '_' + isa + "_" + str(precision) + "_" + str(threads) + "_Threads_" + str(num_ld) + "Load_" + str(num_st) + "Store_" + inst +'.svg')
+        plt.savefig(f'{out_path}/roofline/' + name + '_roofline_' + str(date) + '_' + isa + "_" + str(precision) + "_" + str(threads) + "_Threads_" + str(num_ld) + "Load_" + str(num_st) + "Store_" + inst +'.svg')
     
 def update_csv(name, test_type, data, data_cycles, date, isa, precision, threads, num_ld, num_st, inst, interleaved, l1_size, l2_size, l3_size, dram_bytes, VLEN, LMUL, out_path):
 
