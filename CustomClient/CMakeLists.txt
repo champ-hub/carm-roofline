@@ -198,3 +198,4 @@ configure_DynamoRIO_global(OFF ON)
 
 
 add_sample_client(opcoder     "opcoder.c"       "drmgr;drreg;drx")
+add_sample_client(flops_bytes "flops_bytes.c" "drmgr;drreg;drx;drutil")
