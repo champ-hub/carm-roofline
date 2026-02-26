@@ -24,6 +24,11 @@ The tool is currently under active development, new features will be added in th
 - Optional:
     - Intel SDE (only tested with 9.33.0)  - for DBI application analysis (x86)
 
+To install all the required dependencies for the GUI:
+```sh
+pip install matplotlib numpy dash "dash[diskcache]" pandas plotly dash_daq dash_bootstrap_components
+```
+
 ## How to use (CLI)
 
 The first step is optional and consists in creating a configuration file for the system to test under the **config** folder. This configuration file is optional in x86 systems since the tool is able to automatically scan the cache sizes present, however this detection can sometimes be wrong (you can check what cache sizes have been detected by using -v 3), so a configuration file is still advised. You can also skip the configuration file by using the arguments: 
