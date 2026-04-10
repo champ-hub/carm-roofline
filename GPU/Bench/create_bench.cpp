@@ -1,0 +1,733 @@
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <string>
+
+using namespace std;
+
+const uint Num_Reps = 64;
+
+void create_benchmark_flops(int device, string arch, string compute_capability, string operation,
+							string precision, int threads_per_block, int num_blocks) {
+	if (!filesystem::is_directory("GPU/bin")) {
+		if (!filesystem::create_directory("GPU/bin")) {
+			cerr << "ERROR: Wasn't able to create bin directory" << endl;
+			exit(6);
+		}
+	}
+	// Vector cores
+	string text;
+	ifstream input;
+	ofstream output;
+
+	if (arch == "nvidia") {
+		input.open("GPU/Test/nvidia/flops/cuda_cores.cu");
+		output.open("GPU/bin/test.cu");
+	} else {
+		input.open("GPU/Test/amd/flops/vector_cores.hip");
+		output.open("GPU/bin/test.hip");
+	}
+
+	while (getline(input, text)) {
+		output << text << endl;
+		if (text == "// DEFINE KERNEL PARAMETERS") {
+			output << "#define THREADS_PER_BLOCK " << threads_per_block << endl;
+			output << "#define NUM_BLOCKS " << num_blocks << endl;
+
+		} else if (text == "// DEFINE NUM_REPS") {
+			output << "#define NUM_REPS " << Num_Reps << endl;
+
+		} else if (text == "// DEFINE PRECISION") {
+			string aux;
+			if (precision == "sp")
+				aux = "float";
+			else if (precision == "dp")
+				aux = "double";
+			else if (precision == "int")
+				aux = "int";
+			else if (precision == "hp")
+				aux = "half";
+			else if (precision == "hp2")
+				aux = "half2";
+			else if (precision == "bf16") {
+				if (arch == "nvidia")
+					aux = "nv_bfloat16";
+				else
+					aux = "hip_bfloat16";
+			}
+
+			output << "#define PRECISION " << aux << endl;
+
+		} else if (text == "// DEFINE DEVICE") {
+			output << "#define DEVICE " << device << endl;
+
+		} else if (text == "// DEFINE TEST") {
+			if (precision == "hp2") {
+				if (operation == "fma") {
+					output << "#define MULTIPLIER 4" << endl;
+				} else if (operation == "add" || operation == "mul") {
+					output << "#define MULTIPLIER 2" << endl;
+				}
+			} else {
+				if (operation == "fma") {
+					output << "#define MULTIPLIER 2" << endl;
+				} else if (operation == "add" || operation == "mul") {
+					output << "#define MULTIPLIER 1" << endl;
+				}
+			}
+		} else if (text == "\t// DEFINE INITIALIZATION") {
+			if (precision == "sp")
+				output << "\tPRECISION a = 1.f;\n\tPRECISION b = 2.f;\n\tPRECISION c = "
+						  "3.f;\n\tPRECISION d = 4.f;"
+					   << endl;
+			else if (precision == "dp")
+				output << "\tPRECISION a = 1.;\n\tPRECISION b = 2.;\n\tPRECISION c = "
+						  "3.;\n\tPRECISION d = 4.;"
+					   << endl;
+			else if (precision == "int")
+				output << "\tPRECISION a = 1;\n\tPRECISION b = 2;\n\tPRECISION c = "
+						  "3;\n\tPRECISION d = 4;"
+					   << endl;
+			else if (precision == "hp")
+				output << "\tPRECISION a = __float2half(1.f);\n\tPRECISION b = "
+						  "__float2half(2.f);\n\tPRECISION c = __float2half(3.f);\n\tPRECISION "
+						  "d = __float2half(4.f);"
+					   << endl;
+			else if (precision == "hp2")
+				output << "\tPRECISION a = __float2half2_rn(1.f);\n\tPRECISION b = "
+						  "__float2half2_rn(2.f);\n\tPRECISION c = "
+						  "__float2half2_rn(3.f);\n\tPRECISION "
+						  "d = __float2half2_rn(4.f);"
+					   << endl;
+			else if (precision == "bf16")
+				output << "\tPRECISION a = __float2bfloat16(1.f);\n\tPRECISION b = "
+						  "__float2bfloat16(2.f);\n\tPRECISION c = "
+						  "__float2bfloat16(3.f);\n\tPRECISION "
+						  "d = __float2bfloat16(4.f);"
+					   << endl;
+		} else if (text.find("// DEFINE LOOP") != string::npos) {
+			if (arch == "nvidia") {
+				if (precision == "hp" || precision == "bf16") {
+					if (operation == "fma") {
+						output << "\t\ta = __hfma(a, a, b);\n\t\tb = __hfma(b, b, c);\n\t\tc = "
+								  "__hfma(c, c, d);\n\t\td = __hfma(d, d, a);"
+							   << endl;
+					} else if (operation == "add") {
+						output << "\t\ta = __hadd(a, b);\n\t\tb = __hadd(b, c);\n\t\tc = "
+								  "__hadd(c, d);\n\t\td = __hadd(d, a);"
+							   << endl;
+					} else if (operation == "mul") {
+						output << "\t\ta = __hmul(a, b);\n\t\tb = __hmul(b, c);\n\t\tc = "
+								  "__hmul(c, d);\n\t\td = __hmul(d, a);"
+							   << endl;
+					}
+				} else {
+					if (operation == "fma") {
+						output << "\t\ta = a * a + b;\n\t\tb = b * b + c;\n\t\tc = c * c + "
+								  "d;\n\t\td = d * d + a;"
+							   << endl;
+					} else if (operation == "add") {
+						output << "\t\ta = a + b;\n\t\tb = b + c;\n\t\tc = c + d;\n\t\td = "
+								  "d + a;"
+							   << endl;
+					} else if (operation == "mul") {
+						output << "\t\ta = a * b;\n\t\tb = b * c;\n\t\tc = c * d;\n\t\td = "
+								  "d * a;"
+							   << endl;
+					}
+				}
+			} else {
+				if (operation == "fma") {
+					output << "\t\t\t\tx = ptr[offset] * x + y;" << endl;
+				} else if (operation == "add") {
+					output << "\t\t\t\tx = ptr[offset] + x;" << endl;
+				} else if (operation == "mul") {
+					output << "\t\t\t\tx = ptr[offset] * x;" << endl;
+				}
+			}
+		}
+	}
+
+	input.close();
+	output.close();
+
+	string buffer;
+	cout << endl;
+	if (arch == "nvidia")
+		buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+	else
+		buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
+	int check = system(buffer.data());
+	if (check != 0) {
+		cerr << "ERROR: It was not possible to generate the benchmark." << endl;
+		exit(7);
+	}
+}
+
+void create_benchmark_tensor(int device, string compute_capability, string precision,
+							 int threads_per_block, int num_blocks) {
+	if (!filesystem::is_directory("GPU/bin")) {
+		if (!filesystem::create_directory("GPU/bin")) {
+			cerr << "ERROR: Wasn't able to create bin directory" << endl;
+			exit(14);
+		}
+	}
+	// Tensor
+	string text;
+
+	ifstream input("GPU/Test/nvidia/flops/tensor_cores.cu");
+	ofstream output("GPU/bin/test.cu");
+
+	while (getline(input, text)) {
+		output << text << endl;
+		if (text == "// DEFINE KERNEL PARAMETERS") {
+			output << "#define THREADS_PER_BLOCK " << threads_per_block << endl;
+			output << "#define NUM_BLOCKS " << num_blocks << endl;
+
+			if (precision == "fp16_16" || precision == "fp16_32" || precision == "bf16") {
+				output << "#define M 16\n#define N 8\n#define K 16" << endl;
+			} else if (precision == "tf32") {
+				output << "#define M 16\n#define N 8\n#define K 8" << endl;
+			} else if (precision == "int8") {
+				output << "#define M 16\n#define N 8\n#define K 32" << endl;
+			} else if (precision == "int4") {
+				output << "#define M 16\n#define N 8\n#define K 64" << endl;
+			} else if (precision == "int1") {
+				output << "#define M 16L\n#define N 8L\n#define K 128L" << endl;
+			} else if (precision == "fp64") {
+				output << "#define M 8\n#define N 8\n#define K 4" << endl;
+			}
+
+		} else if (text == "// DEFINE PRECISION") {
+			if (precision == "fp16_16") {
+				output << "#define PRECISION_A"
+					   << " half" << endl;
+				output << "#define PRECISION_B"
+					   << " half" << endl;
+				output << "#define PRECISION_C"
+					   << " half" << endl;
+			} else if (precision == "fp16_32") {
+				output << "#define PRECISION_A"
+					   << " half" << endl;
+				output << "#define PRECISION_B"
+					   << " half" << endl;
+				output << "#define PRECISION_C"
+					   << " float" << endl;
+			} else if (precision == "bf16") {
+				output << "#define PRECISION_A"
+					   << " nv_bfloat16" << endl;
+				output << "#define PRECISION_B"
+					   << " nv_bfloat16" << endl;
+				output << "#define PRECISION_C"
+					   << " float" << endl;
+			} else if (precision == "tf32") {
+				output << "#define PRECISION_A"
+					   << " float" << endl;
+				output << "#define PRECISION_B"
+					   << " float" << endl;
+				output << "#define PRECISION_C"
+					   << " float" << endl;
+			} else if (precision == "int8" || precision == "int4" || precision == "int1") {
+				output << "#define PRECISION_A"
+					   << " char" << endl;
+				output << "#define PRECISION_B"
+					   << " char" << endl;
+				output << "#define PRECISION_C"
+					   << " int" << endl;
+			} else if (precision == "fp64") {
+				output << "#define PRECISION_A"
+					   << " double" << endl;
+				output << "#define PRECISION_B"
+					   << " double" << endl;
+				output << "#define PRECISION_C"
+					   << " double" << endl;
+			}
+		} else if (text == "// DEFINE DEVICE") {
+			output << "#define DEVICE " << device << endl;
+		} else if (text == "// DEFINE NUM_REPS") {
+			output << "#define NUM_REPS " << Num_Reps << endl;
+
+		} else if (text == "\t// DEFINE INITIALIZATION") {
+			if (precision == "fp16_16") {
+				output << "half fragsA[8];\nhalf fragsB[4];\nhalf fragsC[4];" << endl;
+				output << "fragsA[0] = d_A[id];\nfragsB[0] = d_B[id];\nfragsC[0] = d_C[id];"
+					   << endl;
+				output << "uint32_t const *A = reinterpret_cast<uint32_t const *>(&fragsA[0]);"
+					   << endl;
+				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
+					   << endl;
+				output << "uint32_t *C = reinterpret_cast<uint32_t *>(&fragsC[0]);" << endl;
+
+			} else if (precision == "fp16_32") {
+				output << "half fragsA[8];\nhalf fragsB[4];\nfloat fragsC[4];" << endl;
+				output << "fragsA[0] = d_A[id];\nfragsB[0] = d_B[id];\nfragsC[0] = d_C[id];"
+					   << endl;
+				output << "uint32_t const *A = reinterpret_cast<uint32_t const *>(&fragsA[0]);"
+					   << endl;
+				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
+					   << endl;
+				output << "float *C = reinterpret_cast<float *>(&fragsC[0]);" << endl;
+
+			} else if (precision == "bf16") {
+				output << "nv_bfloat16 fragsA[8];\nnv_bfloat16 fragsB[4];\nfloat fragsC[4];"
+					   << endl;
+				output << "fragsA[0] = d_A[id];\nfragsB[0] = d_B[id];\nfragsC[0] = d_C[id];"
+					   << endl;
+				output << "uint32_t const *A = reinterpret_cast<uint32_t const *>(&fragsA[0]);"
+					   << endl;
+				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
+					   << endl;
+				output << "float *C = reinterpret_cast<float *>(&fragsC[0]);" << endl;
+
+			} else if (precision == "tf32") {
+				output << "float fragsA[4];\nfloat fragsB[2];\nfloat fragsC[4];" << endl;
+				output << "fragsA[0] = d_A[id];\nfragsB[0] = d_B[id];\nfragsC[0] = d_C[id];"
+					   << endl;
+				output << "uint32_t const *A = reinterpret_cast<uint32_t const *>(&fragsA[0]);"
+					   << endl;
+				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
+					   << endl;
+				output << "float *C = reinterpret_cast<float *>(&fragsC[0]);" << endl;
+
+			} else if (precision == "int8" || precision == "int4") {
+				output << "char fragsA[16];\nchar fragsB[8];\nint fragsC[4];" << endl;
+				output << "fragsA[0] = d_A[id];\nfragsB[0] = d_B[id];\nfragsC[0] = d_C[id];"
+					   << endl;
+				output << "uint32_t const *A = reinterpret_cast<uint32_t const *>(&fragsA[0]);"
+					   << endl;
+				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
+					   << endl;
+				output << "int *C = reinterpret_cast<int *>(&fragsC[0]);" << endl;
+			} else if (precision == "int1") {
+				output << "char fragsA[8];\nchar fragsB[4];\nint fragsC[4];" << endl;
+				output << "fragsA[0] = d_A[id];\nfragsB[0] = d_B[id];\nfragsC[0] = d_C[id];"
+					   << endl;
+				output << "uint32_t const *A = reinterpret_cast<uint32_t const *>(&fragsA[0]);"
+					   << endl;
+				output << "uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);"
+					   << endl;
+				output << "int *C = reinterpret_cast<int *>(&fragsC[0]);" << endl;
+			} else if (precision == "fp64") {
+				output << "double A[1];\ndouble B[1];\ndouble fragsC[2];" << endl;
+				output << "A[0] = d_A[0];\nB[0] = d_B[id];\nfragsC[0] = d_C[id];" << endl;
+				output << "double *C = reinterpret_cast<double *>(&fragsC[0]);" << endl;
+			}
+
+		} else if (text.find("// DEFINE LOOP") != string::npos) {
+			if (precision == "fp16_16") {
+				output << "asm volatile(\"mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 "
+						  "{%0,%1}, {%2,%3,%4,%5}, {%2,%3}, {%0,%1};\\n\""
+					   << endl;
+				output << ": \"+r\"(C[0]), \"+r\"(C[1]) : \"r\"(A[0]), \"r\"(A[1]), "
+						  "\"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
+					   << endl;
+
+			} else if (precision == "fp16_32") {
+				output << "asm volatile(\"mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 "
+						  "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\\n\""
+					   << endl;
+				output << ": \"+f\"(C[0]), \"+f\"(C[1]), \"+f\"(C[2]), \"+f\"(C[3]) : \"r\"(A[0]), "
+						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
+					   << endl;
+
+			} else if (precision == "bf16") {
+				output << "asm volatile(\"mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 "
+						  "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\\n\""
+					   << endl;
+				output << ": \"+f\"(C[0]), \"+f\"(C[1]), \"+f\"(C[2]), \"+f\"(C[3]) : \"r\"(A[0]), "
+						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
+					   << endl;
+
+			} else if (precision == "tf32") {
+				output << "asm volatile(\"mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 "
+						  "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\\n\""
+					   << endl;
+				output << ": \"+f\"(C[0]), \"+f\"(C[1]), \"+f\"(C[2]), \"+f\"(C[3]) : \"r\"(A[0]), "
+						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
+					   << endl;
+
+			} else if (precision == "int8") {
+				output << "asm volatile(\"mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 "
+						  "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\\n\""
+					   << endl;
+				output << ": \"+r\"(C[0]), \"+r\"(C[1]), \"+r\"(C[2]), \"+r\"(C[3]) : \"r\"(A[0]), "
+						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
+					   << endl;
+
+			} else if (precision == "int4") {
+				output << "asm volatile(\"mma.sync.aligned.m16n8k64.row.col.s32.s4.s4.s32 "
+						  "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\\n\""
+					   << endl;
+				output << ": \"+r\"(C[0]), \"+r\"(C[1]), \"+r\"(C[2]), \"+r\"(C[3]) : \"r\"(A[0]), "
+						  "\"r\"(A[1]), \"r\"(A[2]), \"r\"(A[3]), \"r\"(B[0]), \"r\"(B[1]));"
+					   << endl;
+
+			} else if (precision == "int1") {
+				output
+					<< "asm volatile(\"mma.sync.aligned.m16n8k128.row.col.s32.b1.b1.s32.xor.popc "
+					   "{%0,%1,%2,%3}, {%4,%5}, {%6}, {%0,%1,%2,%3};\\n\""
+					<< endl;
+				output << ": \"+r\"(C[0]), \"+r\"(C[1]), \"+r\"(C[2]), \"+r\"(C[3]) : \"r\"(A[0]), "
+						  "\"r\"(A[1]), \"r\"(B[0]));"
+					   << endl;
+			} else if (precision == "fp64") {
+				output << "asm volatile(\"mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 "
+						  " {%0,%1}, {%2}, {%3}, {%0,%1};\\n\""
+					   << endl;
+				output << ": \"+d\"(C[0]), \"+d\"(C[1]) : \"d\"(A[0]), \"d\"(B[0]));" << endl;
+			}
+		}
+	}
+
+	input.close();
+	output.close();
+
+	string buffer;
+	cout << endl;
+	buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+	int check = system(buffer.data());
+	if (check != 0) {
+		cerr << "ERROR: It was not possible to generate the benchmark." << endl;
+		exit(15);
+	}
+}
+
+void create_benchmark_matrix(int device, string compute_capability, string precision,
+							 int threads_per_block, int num_blocks) {
+	if (!filesystem::is_directory("GPU/bin")) {
+		if (!filesystem::create_directory("GPU/bin")) {
+			cerr << "ERROR: Wasn't able to create bin directory" << endl;
+			exit(14);
+		}
+	}
+	// Tensor
+	string text;
+	ifstream input("GPU/Test/amd/flops/matrix_cores.hip");
+	ofstream output("GPU/bin/test.hip");
+
+	while (getline(input, text)) {
+		output << text << endl;
+		if (text == "// DEFINE KERNEL PARAMETERS") {
+			output << "#define THREADS_PER_BLOCK " << threads_per_block << endl;
+			output << "#define NUM_BLOCKS " << num_blocks << endl;
+
+			if (precision == "fp32") {
+				output << "#define M 32\n#define N 32\n#define K 2" << endl;
+			} else if (precision == "fp64") {
+				output << "#define M 16\n#define N 16\n#define K 4" << endl;
+			} else if (precision == "fp16_32") {
+				output << "#define M 32\n#define N 32\n#define K 8" << endl;
+			} else if (precision == "bf16") {
+				if (compute_capability == "gfx942") {
+					output << "#define M 32\n#define N 32\n#define K 8" << endl;
+				} else {
+					output << "#define M 32\n#define N 32\n#define K 4" << endl;
+				}
+			} else if (precision == "int8") {
+				if (compute_capability == "gfx942") {
+					output << "#define M 32\n#define N 32\n#define K 16" << endl;
+				} else {
+					output << "#define M 32\n#define N 32\n#define K 8" << endl;
+				}
+			} else if (precision == "tf32") {
+				output << "#define M 32\n#define N 32\n#define K 4" << endl;
+			} else if (precision == "fp8") {
+				output << "#define M 32\n#define N 32\n#define K 16" << endl;
+			}
+
+		} else if (text == "// DEFINE PRECISION") {
+			if (precision == "fp32" || precision == "tf32") {
+				output << "#define PRECISION float" << endl;
+			} else if (precision == "fp64") {
+				output << "#define PRECISION double" << endl;
+			} else if (precision == "fp16_32" || precision == "bf16" || precision == "fp8") {
+				output << "#define PRECISION float" << endl;
+			} else if (precision == "int8") {
+				output << "#define PRECISION int" << endl;
+			}
+
+		} else if (text == "// DEFINE DEVICE") {
+			output << "#define DEVICE " << device << endl;
+		} else if (text == "// DEFINE NUM_REPS") {
+			output << "#define NUM_REPS " << Num_Reps << endl;
+
+		} else if (text == "\t// DEFINE INITIALIZATION") {
+			if (precision == "fp32") {
+				output << "float a = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(float)))) float;" << endl;
+			} else if (precision == "fp64") {
+				output << "double a = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(4 * sizeof(double)))) double;" << endl;
+			} else if (precision == "fp16_32") {
+				output << "using f16_2vec = __attribute__((__vector_size__(2 * sizeof(__2f16))))  float;\nf16_2vec a;\na[1] = a[0] = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(float)))) float;" << endl;
+			} else if (precision == "bf16") {
+				if (compute_capability == "gfx942") {
+					output << "using bf16_4vec = __attribute__((__vector_size__(2 * sizeof(__2i16))))  short;\nbf16_4vec a;\na[3] = a[2] = a[1] = a[0] = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(float)))) float;" << endl;
+				} else {
+					output << "using bf16_2vec = __attribute__((__vector_size__(1 * sizeof(__2i16))))  short;\nbf16_2vec a;\na[1] = a[0] = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(float)))) float;" << endl;
+				}
+			} else if (precision == "int8") {
+				if (compute_capability == "gfx942") {
+					output << "long a = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(int)))) int;" << endl;
+				} else {
+					output << "int a = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(int)))) int;" << endl;
+				}
+			} else if (precision == "tf32") {
+				output << "using f32_2vec = __attribute__((__vector_size__(2 * sizeof(float)))) float;\nf32_2vec a;\na[1] = a[0] = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(float)))) float;" << endl;
+			} else if (precision == "fp8") {
+				output << "double a = threadIdx.x;\nusing resultType = __attribute__((__vector_size__(16 * sizeof(float)))) float;" << endl;
+			}
+
+		} else if (text.find("// DEFINE LOOP") != string::npos) {
+			if (precision == "fp32") {
+				output << "result = __builtin_amdgcn_mfma_f32_32x32x2f32(a, a, result, 0, 0, 0);" << endl;
+			} else if (precision == "fp64") {
+				output << "result = __builtin_amdgcn_mfma_f64_16x16x4f64(a, a, result, 0, 0, 0);" << endl;
+			} else if (precision == "fp16_32") {
+				output << "result = __builtin_amdgcn_mfma_f32_32x32x8f16(a, a, result, 0, 0, 0);" << endl;
+			} else if (precision == "bf16") {
+				if (compute_capability == "gfx942") {
+					output << "result = __builtin_amdgcn_mfma_f32_32x32x8bf16_1k(a, a, result, 0, 0, 0);" << endl;
+				} else {
+					output << "result = __builtin_amdgcn_mfma_f32_32x32x4bf16(a, a, result, 0, 0, 0);" << endl;
+				}
+			} else if (precision == "int8") {
+				if (compute_capability == "gfx942") {
+					output << "result = __builtin_amdgcn_mfma_i32_32x32x16_i8(a, a, result, 0, 0, 0);" << endl;
+				} else {
+					output << "result = __builtin_amdgcn_mfma_i32_32x32x8i8(a, a, result, 0, 0, 0);" << endl;
+				}
+			} else if (precision == "tf32") {
+				output << "result = __builtin_amdgcn_mfma_f32_32x32x4_xf32(a, a, result, 0, 0, 0);" << endl;
+			} else if (precision == "fp8") {
+				output << "result = __builtin_amdgcn_mfma_f32_32x32x16_fp8_fp8(a, a, result, 0, 0, 0);" << endl;
+			}
+		}
+	}
+
+	input.close();
+	output.close();
+
+	string buffer;
+	cout << endl;
+	buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
+	int check = system(buffer.data());
+	if (check != 0) {
+		cerr << "ERROR: It was not possible to generate the benchmark." << endl;
+		exit(15);
+	}
+}
+
+void create_benchmark_mem(int device, string arch, string compute_capability, string target,
+						  string precision, int threads_per_block, int num_blocks) {
+	if (!filesystem::is_directory("GPU/bin")) {
+		if (!filesystem::create_directory("GPU/bin")) {
+			cerr << "ERROR: Wasn't able to create bin directory" << endl;
+			exit(11);
+		}
+	}
+
+	if (target == "shared") {
+		// Shared Memory
+		string text;
+		ifstream input;
+		ofstream output;
+
+		if (arch == "nvidia") {
+			input.open("GPU/Test/nvidia/mem/shared.cu");
+			output.open("GPU/bin/test.cu");
+		} else {
+			input.open("GPU/Test/amd/mem/shared.hip");
+			output.open("GPU/bin/test.hip");
+		}
+
+		while (getline(input, text)) {
+			output << text << endl;
+			if (text == "// DEFINE KERNEL PARAMETERS") {
+				output << "#define THREADS_PER_BLOCK " << threads_per_block << endl;
+				output << "#define NUM_BLOCKS " << num_blocks << endl;
+
+			} else if (text == "// DEFINE PRECISION") {
+				string aux;
+				if (arch == "nvidia") {
+					if (precision == "sp" || precision == "tf32")
+						aux = "float";
+					else if (precision == "dp" || precision == "fp64")
+						aux = "double";
+					else if (precision == "int" || precision == "int8" || precision == "int4" ||
+							 precision == "int1")
+						aux = "int";
+					else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
+						aux = "half";
+					else if (precision == "hp2")
+						aux = "half2";
+					else if (precision == "bf16")
+						aux = "nv_bfloat16";
+				} else {
+					if (precision == "sp" || precision == "fp32" || precision == "tf32" || precision == "int" ||
+						precision == "int8" || precision == "fp16_32" || precision == "hp" ||
+						precision == "bf16" || precision == "fp8")
+						aux = "uint32_t";
+					else if (precision == "dp" || precision == "fp64")
+						aux = "uint64_t";
+				}
+				output << "#define PRECISION " << aux << endl;
+
+			} else if (text == "// DEFINE DEVICE") {
+				output << "#define DEVICE " << device << endl;
+			} else if (text == "// DEFINE NUM_REPS") {
+				output << "#define NUM_REPS " << Num_Reps << endl;
+			}
+		}
+
+		input.close();
+		output.close();
+
+		string buffer;
+		cout << endl;
+		if (arch == "nvidia") {
+			buffer =
+				"make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		} else
+			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
+
+		int check = system(buffer.data());
+		if (check != 0) {
+			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
+			exit(12);
+		}
+
+	} else if (target == "global") {
+		// Global Memory
+		string text;
+		ifstream input;
+		ofstream output;
+
+		if (arch == "nvidia") {
+			input.open("GPU/Test/nvidia/mem/global.cu");
+			output.open("GPU/bin/test.cu");
+		} else {
+			input.open("GPU/Test/amd/mem/global.hip");
+			output.open("GPU/bin/test.hip");
+		}
+
+		while (getline(input, text)) {
+			output << text << endl;
+			if (text == "// DEFINE KERNEL PARAMETERS") {
+				output << "#define THREADS_PER_BLOCK " << threads_per_block << endl;
+				output << "#define NUM_BLOCKS " << num_blocks << endl;
+
+			} else if (text == "// DEFINE PRECISION") {
+				string aux;
+				if (precision == "sp" || precision == "tf32" || precision == "fp32" || precision == "fp8")
+					aux = "float";
+				else if (precision == "dp" || precision == "fp64")
+					aux = "double";
+				else if (precision == "int" || precision == "int8" || precision == "int4" ||
+						 precision == "int1")
+					aux = "int";
+				else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
+					aux = "half";
+				else if (precision == "hp2")
+					aux = "half2";
+				else if (precision == "bf16") {
+					if (arch == "nvidia")
+						aux = "nv_bfloat16";
+					else
+						aux = "hip_bfloat16";
+				}
+
+				output << "#define PRECISION " << aux << endl;
+
+			} else if (text == "// DEFINE DEVICE") {
+				output << "#define DEVICE " << device << endl;
+
+			} else if (text == "// DEFINE NUM_REPS") {
+				output << "#define NUM_REPS " << Num_Reps << endl;
+			}
+		}
+
+		input.close();
+		output.close();
+
+		string buffer;
+		cout << endl;
+		if (arch == "nvidia") {
+			buffer =
+				"make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		} else
+			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
+
+		int check = system(buffer.data());
+		if (check != 0) {
+			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
+			exit(13);
+		}
+	} else if (target == "L2") {
+		// L2 Cache
+		string text;
+		ifstream input;
+		ofstream output;
+
+		if (arch == "nvidia") {
+			input.open("GPU/Test/nvidia/mem/l2.cu");
+			output.open("GPU/bin/test.cu");
+		} else {
+			input.open("GPU/Test/amd/mem/l2.hip");
+			output.open("GPU/bin/test.hip");
+		}
+
+		while (getline(input, text)) {
+			output << text << endl;
+			if (text == "// DEFINE KERNEL PARAMETERS") {
+				output << "#define THREADS_PER_BLOCK " << threads_per_block << endl;
+				output << "#define NUM_BLOCKS " << num_blocks << endl;
+
+			} else if (text == "// DEFINE PRECISION") {
+				string aux;
+				if (precision == "sp" || precision == "tf32" || precision == "fp32" || precision == "fp8")
+					aux = "float";
+				else if (precision == "dp" || precision == "fp64")
+					aux = "double";
+				else if (precision == "int" || precision == "int8" || precision == "int4" ||
+						 precision == "int1")
+					aux = "int";
+				else if (precision == "hp" || precision == "fp16_16" || precision == "fp16_32")
+					aux = "half";
+				else if (precision == "hp2")
+					aux = "half2";
+				else if (precision == "bf16") {
+					if (arch == "nvidia")
+						aux = "nv_bfloat16";
+					else
+						aux = "hip_bfloat16";
+				}
+
+				output << "#define PRECISION " << aux << endl;
+
+			} else if (text == "// DEFINE DEVICE") {
+				output << "#define DEVICE " << device << endl;
+
+			} else if (text == "// DEFINE NUM_REPS") {
+				output << "#define NUM_REPS " << Num_Reps << endl;
+			}
+		}
+
+		input.close();
+		output.close();
+
+		string buffer;
+		cout << endl;
+		if (arch == "nvidia") {
+			buffer =
+				"make compute_capability=" + compute_capability + " -f GPU/Test/nvidia/Makefile";
+		} else
+			buffer = "make compute_capability=" + compute_capability + " -f GPU/Test/amd/Makefile";
+
+		int check = system(buffer.data());
+		if (check != 0) {
+			cerr << "ERROR: It was not possible to generate the benchmark." << endl;
+			exit(22);
+		}
+	}
+}

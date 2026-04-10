@@ -1,0 +1,236 @@
+[project]
+name = "carm-roofline"
+version = "1.0.0.dev2"
+description = "CARM: Cache-Aware Roofline Model benchmarking and visualization toolkit"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+authors = [
+    {name = "CHaMP Team"}
+]
+keywords = ["benchmark", "roofline", "performance", "hpc", "cache", "simd"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Software Development :: Testing",
+    "Topic :: System :: Benchmark",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Operating System :: POSIX :: Linux",
+]
+
+dependencies = [
+    "rich>=14.3.2",
+    "rich-argparse>=1.7.0",
+    "numpy>=1.24.4",
+    "matplotlib>=3.7.2",
+    "tomli>=2.0.0",
+]
+
+[project.optional-dependencies]
+# GUI/visualization dependencies
+gui = [
+    "dash[diskcache]",
+    "dash-bootstrap-components",
+    "dash-daq",
+    "plotly",
+    "pandas",
+]
+
+# Development tools
+dev = [
+    "pytest>=8.4.2",
+    "ruff>=0.14.14",
+    "pre-commit>=4.3.0",
+    "mypy>=1.8.0",
+]
+
+# Analysis tools dependencies (optional)
+analysis = [
+    # PAPI and DynamoRIO are system-level dependencies
+    # Listed here for documentation purposes
+]
+
+# All optional dependencies combined
+all = [
+    "carm-roofline[gui,dev]",
+]
+
+[project.scripts]
+carm = "carm:main"
+
+[project.urls]
+Homepage = "https://github.com/champ-hub/carm-roofline"
+Repository = "https://github.com/champ-hub/carm-roofline"
+Issues = "https://github.com/champ-hub/carm-roofline/issues"
+
+[build-system]
+requires = ["setuptools>=64.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+py-modules = [
+    "arguments",
+    "carm",
+    "context",
+    "error",
+    "exec_interface",
+    "output_utils",
+    "run_config",
+    "units",
+    "utils",
+]
+
+[tool.setuptools.packages.find]
+include = ["architecture*", "benchmark*", "gui*", "test_bench*"]
+
+[tool.setuptools.package-data]
+architecture = ["tests/**/*.c", "tests/**/*.h"]
+test_bench = ["test_bench.c", "test_bench.h", "wrapper.inl"]
+gui = ["assets/*"]
+
+# ============================================================================
+# Ruff Configuration (migrated from ruff.toml)
+# ============================================================================
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+# Exclude legacy and third-party code
+exclude = [
+    "legacy_bench_gen",
+    "run.py",
+    "run_gpu.py",
+    "*AI_Calculator.py",
+    "utils.py",
+    "output_utils.py",
+    "test_bench",
+    "Test",
+    "CustomClient",
+    "refactor_tests",  # Test code with temporary workarounds
+    "venv",
+    ".venv*"
+]
+
+[tool.ruff.lint]
+# Start with a focused but helpful rule set; expand later as refactoring stabilizes.
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "I",      # import sorting (isort)
+    "UP",     # pyupgrade
+    "B",      # bugbear
+    "C4",     # flake8-comprehensions
+    "Q",      # flake8-quotes
+    "RUF",    # ruff-specific rules
+    "W",      # pycodestyle warnings
+    "N803",   # invalid-argument-name
+    "N804",   # invalid-first-argument-name-for-class-method
+    "UP",     # pyupgrade
+    "A",      # flake8-builtins
+    "FA",     # flake8-future-annotations
+    "ISC",    # flake8-implicit-str-concat
+    "ICN003", # banned-import-from
+    "PIE",    # flake8-pie
+    "T20",    # flake8-print
+    "RSE",    # flake8-raise
+    "RET504", # unnecessary-assign
+    "SIM",    # flake8-simplify
+    "TID251", # banned-api
+    "PLE",    # Pylint Error
+    "PLW",    # Pylint Warning
+    # "COM",    # flake8-commas
+    # "TD",     # flake8-todos
+    # "PLC",    # Pylint Convention
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"gui/dashboard.py" = ["PLW0603"]
+
+[tool.ruff.lint.isort]
+# Configure import sorting to match common Python conventions
+known-first-party = ["architecture", "benchmark", "exec_interface", "arguments", "gui"]
+force-single-line = false  # Allow grouped imports for readability
+combine-as-imports = true  # Combine "as" imports on same line
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
+
+# ============================================================================
+# Pytest Configuration
+# ============================================================================
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["refactor_tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-r N", # no summary
+    "--strict-markers",
+    "--strict-config",
+]
+
+# Test markers for filtering
+markers = [
+    "unit: Fast unit tests for individual components",
+    "integration: Tests involving multiple components or I/O",
+    "slow: Long-running tests (e.g., full benchmark suites)",
+    "golden: Tests comparing against golden reference outputs",
+    "x86: Tests specific to x86 architecture",
+    "arm: Tests specific to ARM architecture",
+    "riscv: Tests specific to RISC-V architecture",
+]
+
+# ============================================================================
+# MyPy Configuration
+# ============================================================================
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+strict_equality = true
+show_error_codes = true
+show_column_numbers = true
+cache_fine_grained = true
+warn_unused_configs = true
+
+# Exclude legacy code from type checking
+exclude = [
+    "legacy_bench_gen/",
+    "refactor_tests/",
+    "run.py",
+    "run_gpu.py",
+    ".*AI_Calculator.py",
+    "gui/dashboard.py",
+    "gui/gui_utils.py",
+    "utils.py",
+    "output_utils.py",
+    "plot_timing_distribution.py",
+    "misc-tools/",
+    "build/"
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "gui.dashboard",
+    "gui.gui_utils",
+    "utils",
+]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "plotly.*",
+    "dash.*",
+    "diskcache.*",
+]
+ignore_missing_imports = true

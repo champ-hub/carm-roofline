@@ -1,0 +1,55 @@
+---
+# CARM Roofline - clang-format configuration
+# Based on LLVM style with project-specific adjustments
+
+BasedOnStyle: LLVM
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 120
+
+# Braces
+BreakBeforeBraces: Linux
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Alignment
+AlignAfterOpenBracket: AlwaysBreak
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignEscapedNewlines: Left
+AlignOperands: true
+AlignTrailingComments: true
+
+# Spaces
+SpaceAfterCStyleCast: true
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesInCStyleCastParentheses: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Pointers and references
+PointerAlignment: Right
+DerivePointerAlignment: false
+
+# Line breaks
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowShortCaseLabelsOnASingleLine: false
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+ContinuationIndentWidth: 8
+
+# Includes
+SortIncludes: true
+IncludeBlocks: Regroup
+
+# Miscellaneous
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+IndentCaseLabels: false
