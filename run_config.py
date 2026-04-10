@@ -48,6 +48,6 @@ class RunConfig(InsertsArguments):
             "--output-fmt",
             nargs="+",
             action=enum_action(OutputKind),
-            default={OutputKind.TABLE, OutputKind.PLOT, OutputKind.JSON},
-            help="Output format(s): table, plot, json, csv (default: table plot json)",
+            default={OutputKind.TABLE, OutputKind.PLOT, OutputKind.JSON, OutputKind.CSV},
+            help="Output format(s): table, plot, json, csv (default: table plot json csv)",
         )

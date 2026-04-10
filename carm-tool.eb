@@ -1,7 +1,7 @@
 easyblock = 'PythonPackage'
 
 name = 'carm-roofline'
-version = '1.0.0-dev'
+version = '1.0.0.dev2'
 
 homepage = 'https://github.com/champ-hub/carm-roofline'
 description = """CARM roofline benchmarking tool"""

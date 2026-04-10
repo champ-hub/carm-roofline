@@ -1,40 +1,43 @@
 
-# CARM Roofline
+# The CARM Tool
 
-CARM is a Cache-Aware Roofline Model toolkit for CPU benchmarking and visualization.
+
+Cache-Aware Roofline Model (CARM) toolkit - benchmark, visualize and profile Intel, AMD, ARM, RISC-V CPUs and NVIDIA, AMD GPUs.
 
 The package provides:
 
-- automatic microbenchmark generation for supported ISAs
+- automatic benchmarking for supported ISAs
 - arithmetic, memory, and roofline benchmark modes
-- CLI output in table, JSON, CSV, and plot formats
 - optional web GUI for interactive result visualization
+
+> [WARNING]
+> The development branch and associated python package are still experimental, and do not include all features yet. For a stable release, please refer to the main branch.
 
 ## Installation
 
 Install from PyPI:
 
 ```bash
+# command-line interface only:
 pip install carm-roofline
+# with GUI extras:
+pip install carm-roofline[gui]
+# with all extras (GUI + development tools):
+pip install carm-roofline[all]
 ```
 
-Install with optional GUI dependencies:
+To avoid conflicts with other packages, we recommend installing in a virtual environment:
 
 ```bash
-pip install "carm-roofline[gui]"
-```
-
-Install all extras (GUI + development tools):
-
-```bash
-pip install "carm-roofline[all]"
+python -m venv carm-env
+source carm-env/bin/activate
+pip install carm-roofline[all]
 ```
 
 ## Requirements
 
-- Python 3.10+
-- Linux (POSIX)
-- GCC toolchain (for compiling benchmark binaries)
+- Python 3.9+
+- GCC (for compiling benchmark binaries)
 
 ## Command-Line Interface
 
@@ -48,7 +51,7 @@ Available subcommands:
 
 - `benchmark` - run benchmark suites
 - `gui` - launch the results dashboard
-- `profile` - reserved (not implemented yet)
+- `profile` - coming soon
 
 Show help:
 
