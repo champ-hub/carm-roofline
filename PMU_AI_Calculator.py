@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import subprocess
 import os
@@ -13,134 +15,153 @@ import utils as ut
 if not hasattr(time, 'time_ns'):
     time.time_ns = lambda: int(time.time() * 1e9)
 
-#Define a global set to store the names of JSON files that have been read
-read_files = set()
+def _load_json_objects(file_path):
+    with open(file_path, 'r') as file:
+        content = file.read()
+
+    decoder = json.JSONDecoder()
+    index = 0
+    objects = []
+
+    while index < len(content):
+        while index < len(content) and content[index].isspace():
+            index += 1
+
+        if index >= len(content):
+            break
+
+        obj, next_index = decoder.raw_decode(content, index)
+        objects.append(obj)
+        index = next_index
+
+    return objects
+
+
+def _find_json_files(root_dir):
+    json_files = []
+    for root, _, files in os.walk(root_dir):
+        for file_name in files:
+            if file_name.endswith('.json'):
+                json_files.append(os.path.join(root, file_name))
+    return json_files
+
+def _run_single_papi_event(command, papi_event, run_label, papi_output_folder):
+    if os.path.isdir(papi_output_folder):
+        shutil.rmtree(papi_output_folder)
+    os.makedirs(papi_output_folder, exist_ok=True)
+
+    os.environ["PAPI_OUTPUT_DIRECTORY"] = papi_output_folder
+    os.environ["PAPI_EVENTS"] = papi_event
+
+    print("------------------------------")
+    print(f"Running Provided Application For {run_label} PMU Data\n")
+    try:
+        subprocess.run(command, check=True)
+    except subprocess.CalledProcessError as e:
+        print("Error executing the command:", e)
+
+    result = analysePAPI(papi_event, papi_output_folder)
+
+    if os.path.isdir(papi_output_folder):
+        shutil.rmtree(papi_output_folder)
+
+    return result
+
 
 #Run PAPI with provided application
-def runPAPI(executable_path, debug, additional_args=None):
+def runPAPI(executable_path, _debug, additional_args=None):
     additional_args = additional_args or []
     #Construct the command with the provided paths and additional arguments
     command = [executable_path, *additional_args]
 
     PAPI_output_folder = "carm_pmu_output"
-    os.environ["PAPI_OUTPUT_DIRECTORY"] = PAPI_output_folder
-
-    #Setup environment to test Memory Operations
-    PAPI_Event = "PAPI_LST_INS"
-    os.environ["PAPI_EVENTS"] = PAPI_Event
+    event_sequence = [
+        ("PAPI_LST_INS", "Memory Instructions"),
+        ("PAPI_SP_OPS", "SP FP Operations"),
+        ("PAPI_DP_OPS", "DP FP Operations"),
+    ]
 
     print("\n------------------------------")
-    print("Running Provided Application For Memory Instructions PMU Data\n")
-    try:
-        subprocess.run(command, check=True)
-    except subprocess.CalledProcessError as e:
-        print("Error executing the command:", e)
-    
-    total_real_time_nsec_mem, total_papi_mem_ins, thread_count = analysePAPI(PAPI_Event)
+    event_results = {}
+    thread_count = 0
+    for event_name, event_label in event_sequence:
+        total_real_time_nsec, total_event_ops, current_thread_count = _run_single_papi_event(
+            command, event_name, event_label, PAPI_output_folder
+        )
+        event_results[event_name] = (total_real_time_nsec, total_event_ops)
+        thread_count = current_thread_count
 
-    #Modify environment to test SP FP Operations
-    PAPI_Event = "PAPI_SP_OPS"
-    os.environ["PAPI_EVENTS"] = PAPI_Event
-    print("------------------------------")
-    print("Running Provided Application For SP FP Operations PMU Data\n")
-    try:
-        subprocess.run(command, check=True)
-    except subprocess.CalledProcessError as e:
-        print("Error executing the command:", e)
-    
-    total_real_time_nsec_sp, total_papi_sp_ops, thread_count = analysePAPI(PAPI_Event)
-
-    #Modify environment to test DP FP Operations
-    PAPI_Event = "PAPI_DP_OPS"
-    os.environ["PAPI_EVENTS"] = PAPI_Event
-
-    print("------------------------------")
-    print("Running Provided Application For DP FP Operations PMU Data\n")
-    try:
-        subprocess.run(command, check=True)
-    except subprocess.CalledProcessError as e:
-        print("Error executing the command:", e)
-    
-    total_real_time_nsec_dp, total_papi_dp_ops, thread_count = analysePAPI(PAPI_Event)
-
-    #Remove intermediate output when not in debug mode
-    if not debug:
-        if os.path.isdir(PAPI_output_folder):
-            shutil.rmtree(PAPI_output_folder)
-        else:
-            print(f"Warning: Directory {PAPI_output_folder} does not exist, something went wrong")
+    total_real_time_nsec_mem, total_papi_mem_ins = event_results["PAPI_LST_INS"]
+    total_real_time_nsec_sp, total_papi_sp_ops = event_results["PAPI_SP_OPS"]
+    total_real_time_nsec_dp, total_papi_dp_ops = event_results["PAPI_DP_OPS"]
 
     return float((total_real_time_nsec_mem + total_real_time_nsec_sp + total_real_time_nsec_dp)/3), total_papi_mem_ins, total_papi_sp_ops, total_papi_dp_ops, thread_count
-    
 
-def analysePAPI(PAPI_Event):
-    global read_files
 
-    PAPI_output = "./carm_pmu_output/papi_hl_output"
-    try:
-        files = os.listdir(PAPI_output)
-        # Continue with processing `files`...
-        
-    except FileNotFoundError:
-        print(f"Error: The directory '{PAPI_output}' was not found, does the analyzed executable contain the necessary ROI definitions using the PAPI high-level interface?")
-        sys.exit(1)  # Exit the program with a non-zero status
-
-    # If you need to handle the case where it exists but is not a directory:
-    except NotADirectoryError:
-        print(f"Error: The directory '{PAPI_output}' was not found, does the analyzed executable contain the necessary ROI definitions using the PAPI high-level interface?")
+def analysePAPI(PAPI_Event, papi_output_root):
+    if not os.path.isdir(papi_output_root):
+        print(f"Error: The directory '{papi_output_root}' was not found, does the analyzed executable contain the necessary ROI definitions using the PAPI high-level interface?")
         sys.exit(1)
-    #files = os.listdir(PAPI_output)
 
-    #Filter out files that have already been read
-    new_files = [file for file in files if file not in read_files]
+    json_files = _find_json_files(papi_output_root)
+    if not json_files:
+        print(f"Error: No JSON output found in '{papi_output_root}'.")
+        sys.exit(1)
 
-    #Ensure there's exactly one new file in the folder
-    if len(new_files) != 1:
-        print("Error: Folder should contain exactly one new file.")
-        sys.exit(1)
-    
-    #Get the path of the new JSON file
-    new_file_path = os.path.join(PAPI_output, new_files[0])
-    
-    #Ensure the file is a JSON file
-    if not new_file_path.endswith('.json'):
-        print("Error: File in folder is not a JSON file.")
-        sys.exit(1)
-    
-    #Read and return the JSON data
-    with open(new_file_path, 'r') as file:
-        json_data = json.load(file)
-        #Add the file name to the set of read files
-        read_files.add(new_files[0])
-    
-    thread_count = len(json_data['threads'])
-    total_papi_sp_ops = 0
+    total_papi_event_ops = 0
     total_real_time_nsec = 0
-    
-    for thread_id, thread_info in json_data['threads'].items():
-        regions = thread_info['regions']
-        thread_papi_sp_ops = sum(int(region_info.get(PAPI_Event, 0)) for region_info in regions.values())
-        thread_real_time_nsec = sum(int(region_info.get('real_time_nsec', 0)) for region_info in regions.values())
-        total_papi_sp_ops += int(thread_papi_sp_ops)
-        total_real_time_nsec += int(thread_real_time_nsec)
-    total_real_time_nsec = total_real_time_nsec / thread_count
+    thread_count = 0
 
-    return total_real_time_nsec, total_papi_sp_ops, thread_count
+    for file_path in json_files:
+        try:
+            json_objects = _load_json_objects(file_path)
+        except json.JSONDecodeError as err:
+            print(f"Error: Failed to parse JSON data in '{file_path}': {err}")
+            sys.exit(1)
+
+        for json_data in json_objects:
+            threads = json_data.get('threads', {}) if isinstance(json_data, dict) else {}
+            if not isinstance(threads, dict):
+                continue
+
+            thread_count += len(threads)
+            for thread_info in threads.values():
+                regions = thread_info.get('regions', {}) if isinstance(thread_info, dict) else {}
+                if not isinstance(regions, dict):
+                    continue
+
+                for region_info in regions.values():
+                    total_papi_event_ops += int(region_info.get(PAPI_Event, 0))
+                    total_real_time_nsec += int(region_info.get('real_time_nsec', 0))
+
+    if thread_count == 0:
+        print(f"Error: No thread data found while parsing '{papi_output_root}'.")
+        sys.exit(1)
+
+    total_real_time_nsec = total_real_time_nsec / thread_count
+    return total_real_time_nsec, total_papi_event_ops, thread_count
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Run an executable with PAPI instrumentation.")
 
     parser.add_argument("executable_path", help="Path to the executable provided by the user.")
-    parser.add_argument('-d', '--debug',  dest='debug', action='store_const', const=1, default=0, help='Will conserve the raw PMU output from PAPI for debugging')
+    parser.add_argument('-d', '--debug',  dest='debug', action='store_const', const=1, default=0, help='Ignored: output is always cleaned after each PAPI event run')
     parser.add_argument('-dr', '--drawroof',  dest='drawroof', action='store_const', const=1, default=0, help='Plot application in a chosen roofline chart localy (work in progress).')
     parser.add_argument('-c', '--choice', default=0, nargs='?', type = int, help='Automatically choose a roofline chart for the application analysis, --drawroof is required for this (Default: 0).')
     parser.add_argument("additional_args", nargs="...", help="Additional arguments for the user's application.")
     parser.add_argument('-n','--name', default='unnamed', nargs='?', type = str, help='Name for the machine running the app. (Default: unnamed)')
     parser.add_argument('-an','--app_name', default='', nargs='?', type = str, help='Name for the app.')
-    parser.add_argument('--isa', default='', nargs='?', choices=['avx512', 'avx', 'avx2', 'sse', 'scalar', 'neon', 'armscalar', 'riscvscalar', 'riscvvector', ''], help='Main ISA used by the application, if not sure leave blank (optional only for naming facilitation).')    
+    parser.add_argument('--isa', default='', nargs='?', choices=['avx512', 'avx', 'avx2', 'sse', 'scalar', 'neon', 'armscalar', 'riscvscalar', 'riscvvector', ''], help='Main ISA used by the application, if not sure leave blank (optional only for naming facilitation).')
+    parser.add_argument('--vlen', nargs='?', type=int, help="scales the ld/st size")
 
     args = parser.parse_args()
+
+    if args.vlen is None:
+        scale = 1
+    else:
+        scale = args.vlen // 8
+
 
     CPU_Type = platform.machine()
     if CPU_Type != "x86_64" and CPU_Type != "aarch64":
@@ -154,10 +175,15 @@ if __name__ == "__main__":
 
     total_fp = total_sp + total_dp
 
+    if total_fp == 0:
+        print("Error: Total FP operations is zero (SP + DP).")
+        print("This usually means the target did not emit PAPI_SP_OPS/PAPI_DP_OPS in ROI regions.")
+        sys.exit(1)
+
     sp_ratio = float (total_sp / total_fp)
     dp_ratio = float (total_dp / total_fp)
 
-    memory_bytes = total_mem * (sp_ratio * 4 + dp_ratio * 8)
+    memory_bytes = total_mem * (sp_ratio * 4 + dp_ratio * 8) * scale
 
     if dp_ratio > 0.9:
         precision = "dp"
@@ -184,7 +210,7 @@ if __name__ == "__main__":
 
     ct = datetime.datetime.now()
     date = ct.strftime('%Y-%m-%d %H:%M:%S')
-    
+
     #Plot Roofline
     if args.drawroof:
         print("Manual application plotting not implemented iet, results can be viewed using the GUI")

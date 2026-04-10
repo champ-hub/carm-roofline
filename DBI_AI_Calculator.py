@@ -1,3 +1,4 @@
+from __future__ import annotations
 import argparse
 import subprocess
 import os
@@ -30,7 +31,7 @@ x86_Scalar_fp_operations = {
     "vaddss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
     "addss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
     "vsubss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
-    "subss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},  
+    "subss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
     "vmulss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
     "mulss": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
     "vfmadd132ss": {"count": 0, "string": "Scalar (2x 32 bit)", "factor": 2},
@@ -133,7 +134,7 @@ x86_Scalar_int_operations = {
     "div": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
     "idiv": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
     "xadd": {"count": 0, "string": "Scalar (1x 32 bit)", "factor": 1},
-    
+
 }
 
 x86_SSE_int_operations = {
@@ -208,14 +209,14 @@ def check_sde_exists(path_sde):
     if os.path.exists(sde_exec):
         print(f"SDE executable found in: '{path_sde}'.")
         return True
-        
+
     else:
         print(f"No SDE folder found in: '{sde_exec}'.")
         return False
 
 #Check if DynamoRIO Client is present
 def check_client_exists(path):
-    
+
     drrun_path = os.path.join(path, 'bin64', 'drrun')
 
     #Check for the existence of the 'drrun' executable
@@ -229,8 +230,8 @@ def check_client_exists(path):
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     cmake_command = f"cmake -DDynamoRIO_DIR={path}/cmake {script_dir}/CustomClient"
-    
-    
+
+
 
     #Construct the path to the build folder
     build_dir = "./carm_dbi_build"
@@ -243,7 +244,7 @@ def check_client_exists(path):
             subprocess.run(f"mkdir carm_dbi_build && cd carm_dbi_build && {cmake_command} && make opcoder", check=True, shell=True)
         except subprocess.CalledProcessError as e:
             print("Error executing the command:", e)
-    
+
     #Construct the path to the client file
     path_client = os.path.join(build_dir, "bin/libopcoder.so")
 
@@ -257,7 +258,7 @@ def check_client_exists(path):
         except subprocess.CalledProcessError as e:
             print("Error executing the command:", e)
     return True
-    
+
 #Run SDE with provided application
 def runSDE(sde_path, roi, executable_path, additional_args):
     #Construct the command with the provided paths and additional arguments
@@ -273,7 +274,7 @@ def runSDE(sde_path, roi, executable_path, additional_args):
 
     print("------------------------------")
     print("Running Provided Application For Opcode Data\n")
-    
+
     try:
         subprocess.run(command_args, check=True)
     except subprocess.CalledProcessError as e:
@@ -299,7 +300,7 @@ def runDynamoRIO(dynamo_path, roi, executable_path, additional_args):
         subprocess.run(command_args, check=True)
     except subprocess.CalledProcessError as e:
         print("Error executing the command:", e)
-    
+
     #os.remove("timing_results.txt")
 
 #Run provided application for timming measurements
@@ -330,7 +331,7 @@ def runApplication(roi, executable_path, additional_args):
         os.remove("carm_timing_results.txt")
         return float(seconds * 1e9)
     else:
-    
+
         try:
             start=time.time_ns()
             subprocess.run(executable_path, check=True, shell=True)
@@ -338,7 +339,7 @@ def runApplication(roi, executable_path, additional_args):
         except subprocess.CalledProcessError as e:
             print("Error executing the command:", e)
         return end-start
-    
+
 
 def analyseSDE():
     #Regular expressions for each metric
@@ -367,7 +368,7 @@ def analyseSDE():
     except Exception as e:
         print("Exception occurred:", e)
         return None
-    
+
 
 def analyseDynamoRIOx86():
     arith = False
@@ -377,7 +378,7 @@ def analyseDynamoRIOx86():
     memory_bytes = 0
     with open('carm_dbi_output.txt', 'r') as file:
         for line in file:
-            #Arithmetic Section       
+            #Arithmetic Section
             if "Floating Point and Integer opcode execution counts" in line:
                 arith = True
                 continue
@@ -441,7 +442,7 @@ def analyseDynamoRIOx86():
                             else:
                                 x86_not_supported[opcode] = count
                         else:
-                            x86_not_supported[opcode] = count            
+                            x86_not_supported[opcode] = count
             #Memory Section
             elif mem:
 
@@ -454,7 +455,7 @@ def analyseDynamoRIOx86():
                 if len(parts) == 2:
                     count, rest = parts
                     count = int(count.strip())
-                    
+
                     #Check if the "|" character is present in the rest of the line
                     if "error" in rest:
                         continue
@@ -506,7 +507,7 @@ def analyseDynamoRIOARM():
 
     with open('carm_dbi_output.txt', 'r') as file:
         for line in file:
-            # Arithmetic Section       
+            # Arithmetic Section
             if "Floating Point and Integer opcode execution counts" in line:
                 arith = True
                 continue
@@ -522,7 +523,7 @@ def analyseDynamoRIOARM():
                 if len(parts) == 2:
                     count, rest = parts
                     count = int(count.strip())
-                    
+
                     #Check if the "|" character is present in the rest of the line
                     if "error" in rest:
                         continue
@@ -574,7 +575,7 @@ def analyseDynamoRIOARM():
                     else:
                         #If the opcode doesn't exist, create a new list with the entry
                         ARM_INT_operations[opcode] = [(count, description)]
-                            
+
             #Memory Section
             elif mem:
 
@@ -587,7 +588,7 @@ def analyseDynamoRIOARM():
                 if len(parts) == 2:
                     count, rest = parts
                     count = int(count.strip())
-                    
+
                     #Check if the "|" character is present in the rest of the line
                     if "error" in rest:
                         continue
@@ -609,7 +610,7 @@ def analyseDynamoRIOARM():
                             #If "TOTAL" is not present, set the opcode to the whole rest of the line and description to None
                             opcode = rest.strip()
                             description = None
-                
+
                 #Store the count, opcode, and description in the dictionary
                 #Check if the opcode already exists in the dictionary
                 if opcode in memory_operations:
@@ -649,7 +650,7 @@ def printDynamoRIOx86():
                 print(f"\n{count:12} : {opcode : <12}  {description}")
                 total_entry_printed = True
 
-    #FLOATING POINT OPERATIONS        
+    #FLOATING POINT OPERATIONS
     #AVX512 Floating Point Operations
     sorted_ops = sorted(x86_AVX512_fp_operations.items(), key=lambda item: item[1]["count"], reverse=False)
     all_zero = all(data["count"] == 0 for _, data in sorted_ops)
@@ -686,7 +687,7 @@ def printDynamoRIOx86():
 
     if not all_zero:
         print("\nSSE Floating Point Operations:")
-        
+
     #Print the sorted opcodes with counts greater than 0
     for opcode, data in sorted_ops:
         count = data["count"]
@@ -701,7 +702,7 @@ def printDynamoRIOx86():
 
     if not all_zero:
         print("\nScalar Floating Point Operations:")
-        
+
     #Print the sorted opcodes with counts greater than 0
     for opcode, data in sorted_ops:
         count = data["count"]
@@ -717,7 +718,7 @@ def printDynamoRIOx86():
 
     if not all_zero:
         print("\nAVX512 Integer Operations:")
-        
+
     #Print the sorted opcodes with counts greater than 0
     for opcode, data in sorted_ops:
         count = data["count"]
@@ -732,7 +733,7 @@ def printDynamoRIOx86():
 
     if not all_zero:
         print("\nAVX2 Integer Operations:")
-        
+
     #Print the sorted opcodes with counts greater than 0
     for opcode, data in sorted_ops:
         count = data["count"]
@@ -747,7 +748,7 @@ def printDynamoRIOx86():
 
     if not all_zero:
         print("\nSSE Integer Operations:")
-        
+
     #Print the sorted opcodes with counts greater than 0
     for opcode, data in sorted_ops:
         count = data["count"]
@@ -762,7 +763,7 @@ def printDynamoRIOx86():
 
     if not all_zero:
         print("\nScalar Integer Operations:")
-        
+
     #Print the sorted opcodes with counts greater than 0
     for opcode, data in sorted_ops:
         count = data["count"]
@@ -805,7 +806,7 @@ def printDynamoRIOARM():
                 print(f"\n{count:12} : {opcode : <12}  {description}")
                 total_entry_printed = True
 
-    #FLOATING POINT OPERATIONS        
+    #FLOATING POINT OPERATIONS
     print("\nFloating Point Operations:")
     for opcode, entries in ARM_FP_operations.items():
         total_entry_printed = False
@@ -820,7 +821,7 @@ def printDynamoRIOARM():
                 print(f"\n{count:12} : {opcode : <12}  {description}")
                 total_entry_printed = True
 
-    #FLOATING POINT OPERATIONS        
+    #FLOATING POINT OPERATIONS
     print("\nInteger Operations:\n")
     for opcode, entries in ARM_INT_operations.items():
         total_entry_printed = False
@@ -858,9 +859,9 @@ if __name__ == "__main__":
     parser.add_argument('-t', '--threads', default='0', nargs='?', type = int, help='Number of threads used by the application (optional only for naming facilitation).')
     parser.add_argument('-p', '--precision', default='', nargs='?', choices=['dp', 'sp'], help='Data Precision used by the application (optional only for naming facilitation).')
     parser.add_argument("executable_path", help="Path to the executable provided by the user")
-    
+
     parser.add_argument("additional_args", nargs="...", help="Additional arguments for the user's application.")
-   
+
 
     args = parser.parse_args()
 
@@ -889,11 +890,11 @@ if __name__ == "__main__":
         method = "SDE"
         if args.roi:
             method += "-ROI"
-                
+
     else:
         #Run the client with the provided executable and arguments
         runDynamoRIO(args.dbi_path, args.roi, args.executable_path, args.additional_args)
-        
+
         if CPU_Type == "x86_64":
             fp_ops, memory_bytes, integer_ops = analyseDynamoRIOx86()
             printDynamoRIOx86()
@@ -935,5 +936,5 @@ if __name__ == "__main__":
     if args.drawroof:
         print("Manual application plotting not implemented iet, results can be viewed using the GUI")
         #ut.plot_roofline_with_dot(args.executable_path, gflops, ai, args.choice, args.roi, date, "dbi")
-    
+
     ut.update_csv(args.name, args.executable_path, gflops, ai, bandwidth, time_taken_seconds, args.app_name, date, args.isa, args.precision, args.threads, method, 1, 1)

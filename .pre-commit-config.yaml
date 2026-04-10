@@ -1,0 +1,70 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.13
+    hooks:
+      # Run the linter.
+      - id: ruff-check
+        exclude: ^venv/
+      # Run the formatter.
+      - id: ruff-format
+        exclude: ^venv/
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0  # Use the ref you want to point at
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v19.1.5
+    hooks:
+      - id: clang-format
+        types_or: [c, c++]
+        args: [--style=file]
+        exclude: |
+          (?x)^(
+            legacy_bench_gen/|
+            Bench/|
+            config/|
+            CustomClient/|
+            GPU/|
+            dbi_carm_roi.h|
+            Test/|
+            misc-tools/
+          )
+
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: 'v1.8.0'
+    hooks:
+      - id: mypy
+        pass_filenames: false
+        args: [--config-file=pyproject.toml, .]
+        additional_dependencies: [
+          'types-PyYAML',
+          'rich',
+          'rich-argparse',
+          'numpy',
+          'matplotlib',
+          'tomli'
+        ]
+        exclude: |
+          (?x)(
+            ^legacy_bench_gen/|
+            ^refactor_tests/|
+            ^run\.py$|
+            ^run_gpu\.py$|
+            AI_Calculator\.py$|
+            ^gui/gui_utils\.py$|
+            ^gui/dashboard\.py$|
+            ^utils\.py$|
+            ^output_utils\.py$|
+            ^plot_timing_distribution\.py$|
+            ^test_bench/|
+            ^Test/|
+            ^CustomClient/|
+            ^build/|
+            ^misc-tools/
+          )

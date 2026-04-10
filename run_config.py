@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from arguments import InsertsArguments, enum_action
+from benchmark.output.base import OutputKind
+from output_utils import warn
+
+
+class RunConfig(InsertsArguments):
+    """General configuration for the run."""
+
+    def __init__(self, args: argparse.Namespace):
+        super().__init__()
+        self.verbose: int = args.verbose
+        self.name: str = args.name
+        self.dry_run: bool = args.dry_run
+        self.output_dir: Path = args.output_dir
+        self.output_formats: set[OutputKind] = set(args.output_fmt)
+        if self.dry_run:
+            warn("Dry run enabled: no benchmarks will be executed.")
+
+    @staticmethod
+    def insert_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--verbose",
+            "-v",
+            default=3,
+            nargs="?",
+            type=int,
+            choices=(0, 1, 2, 3, 4),
+            help="Level of detail of terminal output (0 -> None 1 -> Only ISA/configuration errors and test "
+            "specifications, 2 -> Test results, 3 -> Configuration values selected/detected, 4 -> Debug info)",
+        )
+        parser.add_argument("--name", default="unnamed", nargs="?", type=str, help="Name of the results file")
+        parser.add_argument(
+            "--dry-run", action="store_true", help="Only generate the benchmark code, do not compile or run tests"
+        )
+        parser.add_argument(
+            "--output-dir",
+            default=Path("carm_results"),
+            nargs="?",
+            type=Path,
+            help="Directory to write result files (default: carm_results)",
+        )
+        parser.add_argument(
+            "--output-fmt",
+            nargs="+",
+            action=enum_action(OutputKind),
+            default={OutputKind.TABLE, OutputKind.PLOT, OutputKind.JSON},
+            help="Output format(s): table, plot, json, csv (default: table plot json)",
+        )

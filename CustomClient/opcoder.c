@@ -336,7 +336,7 @@ file_t file = dr_open_file("carm_dbi_output.txt", DR_FILE_WRITE_OVERWRITE);
                     for (j = 1; j<6; j++){
                         if (countArithx86[cur_isa][indices[i]][j] != 0) {
                             totalflag += 1;
-                        } 
+                        }
                     }
                     if (totalflag > 1){
                         len = dr_snprintf(msg + sofar, sizeof(msg) / sizeof(msg[0]) - sofar,
@@ -384,7 +384,7 @@ file_t file = dr_open_file("carm_dbi_output.txt", DR_FILE_WRITE_OVERWRITE);
                     for (j = 1; j<11; j++){
                         if (countArithARM[cur_isa][indices[i]][j] != 0) {
                             totalflag += 1;
-                        } 
+                        }
                     }
                     if (totalflag > 1){
                         len = dr_snprintf(msg + sofar, sizeof(msg) / sizeof(msg[0]) - sofar,
@@ -438,7 +438,7 @@ file_t file = dr_open_file("carm_dbi_output.txt", DR_FILE_WRITE_OVERWRITE);
                 for (j = 1; j<9; j++){
                     if (countMem[cur_isa][indices[i]][j] != 0) {
                         totalflag += 1;
-                    } 
+                    }
                 }
                 if (totalflag > 1){
                     len = dr_snprintf(msg + sofar, sizeof(msg) / sizeof(msg[0]) - sofar,
@@ -532,10 +532,10 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst
     drmgr_disable_auto_predication(drcontext, bb);
     if (drmgr_is_first_instr(drcontext, instr)) {
         instr_t *ins;
-        
+
         uint isa_idx = get_count_isa_idx(drcontext);
         char disas_instr[256];
-        
+
         for (ins = instrlist_first_app(bb); ins != NULL; ins = instr_get_next_app(ins)) {
             #if defined(AARCH64)
                 Iop=1;
@@ -566,7 +566,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst
                     //FP and Integer Section (and other operations)
                     instr_disassemble_to_buffer(drcontext, ins, disas_instr, 256);
                     if (strstr(disas_instr, "add") != NULL || strstr(disas_instr, "sub") != NULL || strstr(disas_instr, "mul") != NULL || strstr(disas_instr, "fmla") != NULL || strstr(disas_instr, "madd") != NULL){
-                        
+
                         //1x64 and 1x32 Float Special Case
                         if (disas_instr[0] == 'f' && strstr(disas_instr, "$0x") == NULL && (strstr(disas_instr, "%d") != NULL) || (strstr(disas_instr, "%s") != NULL)){
                             //1x64 Float
@@ -586,7 +586,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst
                                     Iop = AddIops[i].Iop;
                                     codeArith = AddIops[i].coding;
                                     break;
-                                }	
+                                }
                             }
                         }
                         drx_insert_counter_update(drcontext, bb, instr,
@@ -626,7 +626,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst
                 int j;
                 int codeMem = 8;
                 int codeArith = 5;
-                
+
                 instr_disassemble_to_buffer(drcontext, ins, disas_instr, 256);
                 if (strstr(disas_instr, "face") != NULL){
                     countopcodes = true;
@@ -671,7 +671,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst
                                                 IF_AARCHXX_OR_RISCV64_(SPILL_SLOT_MAX + 1) &
                                                 countArithx86[isa_idx][instr_get_opcode(ins)][codeArith],
                                                 1,
-                                                //DRX_COUNTER_LOCK is not yet supported on ARM 
+                                                //DRX_COUNTER_LOCK is not yet supported on ARM
                                                 DRX_COUNTER_64BIT | DRX_COUNTER_LOCK);
                         }
                         else{
@@ -682,7 +682,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst
                                     break;
                                 }
                             }
-                            
+
                             drx_insert_counter_update(drcontext, bb, instr,
                                                     /* We're using drmgr, so these slots
                                                     * here won't be used: drreg's slots will be.
@@ -734,10 +734,10 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst
                                                 IF_AARCHXX_OR_RISCV64_(SPILL_SLOT_MAX + 1) &
                                                     count[isa_idx][instr_get_opcode(ins)],
                                                 1,
-                                                //DRX_COUNTER_LOCK is not yet supported on ARM 
+                                                //DRX_COUNTER_LOCK is not yet supported on ARM
                                                 DRX_COUNTER_64BIT | DRX_COUNTER_LOCK);
                         }
-                        
+
                     }
                 }
                 else{
@@ -745,7 +745,7 @@ event_app_instruction(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst
                 }
             #endif
         }
-    
+
     }
     return DR_EMIT_DEFAULT;
 }

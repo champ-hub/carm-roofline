@@ -193,15 +193,15 @@ def flops_mix(mix_file):
         key = '*mem-read-1'
         if key in instruction_group_count:
             total_read += instruction_group_count[key]
-        
+
         key = '*mem-read-2'
         if key in instruction_group_count:
             total_read += (instruction_group_count[key]*2)
-        
+
         key = '*mem-read-4'
         if key in instruction_group_count:
             total_read += (instruction_group_count[key]*4)
-        
+
         key = '*mem-read-8'
         if key in instruction_group_count:
             total_read += (instruction_group_count[key]*8)

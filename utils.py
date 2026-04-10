@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import sys
 import math
@@ -44,7 +45,7 @@ def ensure_list(marker_dict, attr_name, default_value, n_points):
         #If marker[attr_name] doesn't exist or is not a list, convert it to a repeated list.
         if attr_name not in marker_dict:
             return [default_value] * n_points
-        
+
         val = marker_dict[attr_name]
         if isinstance(val, list):
             return val
@@ -63,7 +64,7 @@ def custom_round(value, digits=4):
         str_val = format(dec_val, 'f')
         if 'e' in str_val or 'E' in str_val:  #Check for scientific notation
             return round(value, digits)
-        
+
         #Count positions until first non-zero digit after the decimal
         decimal_part = str_val.split('.')[1]
         leading_zeros = 0
@@ -72,11 +73,11 @@ def custom_round(value, digits=4):
                 leading_zeros += 1
             else:
                 break
-        
+
         #Adjust the number of digits based on the position of the first significant digit
         total_digits = digits + leading_zeros
         return round(value, total_digits)
-    
+
 def positive_int(value):
     ivalue = int(value)
     if ivalue <= 0:
@@ -204,10 +205,10 @@ def plot_roofline_with_dot(executable_path, exec_flops, exec_ai, choice, roi, da
     min_flops = 0.25
     while exec_ai < min_ai :
         min_ai /= 2
-    
+
     while exec_flops < min_flops :
         min_flops /= 2
-    
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     #Construct the path to the build folder
@@ -232,7 +233,7 @@ def plot_roofline_with_dot(executable_path, exec_flops, exec_ai, choice, roi, da
         plt.plot(ai, carm_eq(ai, data["L3"], data["FP_FMA"]), 'k', linestyle='dashed', lw = 3, label='L3')
         plt.plot(ai, carm_eq(ai, data["DRAM"], data["FP_FMA"]), 'k', linestyle='dotted', lw = 3, label='DRAM')
         plt.plot(ai, carm_eq(ai, data["L1"], data["FP"]), 'k', linestyle='dashdot', lw = 3, label=title["inst"])
-    
+
     #Plot dot at exec_gflops and exec_ai
     plt.scatter(exec_ai, exec_flops, color='red', label=executable_name, zorder=5)
 
@@ -280,7 +281,7 @@ def update_csv(machine, executable_path, exec_flops, exec_ai, bandwidth, time, n
         os.mkdir('carm_results')
     if(os.path.isdir('carm_results/applications') == False):
         os.mkdir('carm_results/applications')
-    
+
     if (isa in ["rvv0.7", "rvv1.0"]):
         isa = str(isa) + "_vl" + str(VLEN) + "_lmul" + str(LMUL)
 
