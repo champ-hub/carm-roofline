@@ -114,7 +114,7 @@ carm gui --results-dir carm_results --gui-port 8050
 
 ## Publications and Citation
 
-If you use CARM in papers or reports, please cite:
+If you use the CARM and the CARM Tool in papers or reports, please cite:
 
 <p>
   <a href="https://doi.org/10.1109/L-CA.2013.6" alt="Publication">
