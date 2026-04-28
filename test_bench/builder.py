@@ -364,6 +364,9 @@ def run_microbenchmarks(
             error_msg += f"stderr:\n{result.stderr}"
         raise RuntimeError(error_msg)
 
+    if result.stderr:
+        debug(f"Benchmark debug output:\n{result.stderr}")
+
     detail("Microbenchmarks completed successfully")
     return str(result.stdout)
 
