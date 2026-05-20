@@ -2427,6 +2427,18 @@ _register_filter_dropdown_callbacks("2")
 
 @app.callback(
     [
+        *[Output(f"{field_id}-dynamic-dropdown", "value") for field_id, _ in FILTER_DROPDOWN_FIELDS],
+        *[Output(f"{field_id}-dynamic-dropdown2", "value") for field_id, _ in FILTER_DROPDOWN_FIELDS],
+    ],
+    Input("filename", "value"),
+    prevent_initial_call=True,
+)
+def reset_filter_dropdown_values(_selected_file: str | None) -> list[None]:
+    return [None] * (len(FILTER_DROPDOWN_FIELDS) * 2)
+
+
+@app.callback(
+    [
         Output(component_id="graphs", component_property="figure"),
         Output("graph-size-update", "children"),
         Output("graph-lines", "data"),
@@ -2540,7 +2552,6 @@ def analysis(
     min_gflops2 = 1e99
     change_annotation = 0
 
-    # Get queries for both sets of inputs
     query1 = construct_query(isa, precision, threads, loads, stores, interleaved, dram_bytes, fp_inst, date)
     query2 = construct_query(isa2, precision2, threads2, loads2, stores2, interleaved2, dram_bytes2, fp_inst2, date2)
 
