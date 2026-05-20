@@ -48,7 +48,7 @@
 
 CARM (Cache-Aware Roofline Model) is a micro-benchmarking tool that constructs roofline performance models across multiple CPU architectures (x86, ARM, RISC-V) and GPU platforms (ROCm, CUDA). It measures arithmetic performance and memory bandwidth at different cache levels to guide optimization.
 
-**Key outputs**: CSV/JSON/table result files in `carm_results/` (configurable via `--output-file`/`--output-format`) and web GUI visualization via `gui/dashboard.py`.
+**Key outputs**: CSV/JSON/table result files in the platform user data directory for the `carm` app (configurable via `--output-file`/`--output-format`) and web GUI visualization via `gui/dashboard.py`.
 
 **⚠️ ACTIVE REFACTORING**: The codebase is undergoing significant restructuring
 - `carm.py` is the **new main entry point** with unified output format handling (replaces deprecated `run.py`)
@@ -188,7 +188,7 @@ carm.py
      6. Parse: parse_benchmark_output(benchmarks, output) → populate results
      → Returns dict[str, ISABenchmarkSuite] with populated results
   → print_and_plot_results(context, benchmark_suites)
-  → Output to carm_results/<test>/<format> (default) or --output-file
+  → Output to platform user data dir for `carm`/<test>/<format> (default) or --output-file
 ```
 
 **Dry run mode**: Stops after step 3 (header generation).

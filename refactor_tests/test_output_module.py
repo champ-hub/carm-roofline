@@ -15,6 +15,7 @@ import pytest
 
 from benchmark.benchmarking import LoadStoreRatio, TestType as BenchmarkTestType
 from benchmark.output import OutputKind
+from results_paths import default_results_root
 from units import Frequency, Operations, Performance, Seconds
 
 
@@ -229,7 +230,7 @@ def _make_fake_context(isa_names: list[str], freq_hz: float = 3.0e9, nominal_hz:
             self.verbose = 2
             self.name = "test"
             self.dry_run = False
-            self.output_dir = Path("carm_results")
+            self.output_dir = default_results_root()
             self.output_formats = {OutputKind.TABLE}
 
     return types.SimpleNamespace(
