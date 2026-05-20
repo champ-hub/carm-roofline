@@ -23,9 +23,10 @@ classifiers = [
 dependencies = [
     "rich>=14.3.2",
     "rich-argparse>=1.7.0",
-    "numpy>=1.24.4",
+    "numpy>=2.0.0",
     "matplotlib>=3.7.2",
     "tomli>=2.0.0",
+    "platformdirs>=4.0.0",
 ]
 
 [project.optional-dependencies]
@@ -78,6 +79,7 @@ py-modules = [
     "error",
     "exec_interface",
     "output_utils",
+    "results_paths",
     "run_config",
     "units",
     "utils",

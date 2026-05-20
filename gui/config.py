@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from arguments import InsertsArguments
+from results_paths import default_results_root
 
 
 class GUIConfig(InsertsArguments):
@@ -21,8 +22,8 @@ class GUIConfig(InsertsArguments):
         parser.add_argument(
             "--results-dir",
             type=Path,
-            default=Path("carm_results"),
-            help="Results directory root (default: carm_results, relative to current working directory)",
+            default=default_results_root(),
+            help="Results directory root (default: <user-data-directory>/carm)",
         )
         parser.add_argument("--gui-host", default="127.0.0.1", help="Host address for the Dash server")
         parser.add_argument("--gui-port", type=int, default=8050, help="Port for the Dash server")

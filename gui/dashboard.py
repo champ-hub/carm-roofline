@@ -25,8 +25,10 @@ import plotly.graph_objects as go
 from dash import ALL, DiskcacheManager, Input, Output, State, callback_context, dcc, html, no_update
 from dash.exceptions import PreventUpdate
 
-# Local Python Scripts
 import utils as ut
+
+# Local Python Scripts
+from results_paths import default_results_root
 
 from . import gui_utils as gut
 
@@ -40,7 +42,7 @@ cache = diskcache.Cache(str(cache_dir))
 background_callback_manager = DiskcacheManager(cache)
 
 
-DEFAULT_RESULTS_ROOT = (Path.cwd() / "carm_results").resolve()
+DEFAULT_RESULTS_ROOT = default_results_root()
 RESULTS_ROOT = DEFAULT_RESULTS_ROOT
 roof_results_path = str((RESULTS_ROOT / "roofline").resolve())
 csv_files = []

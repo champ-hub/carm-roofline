@@ -48,7 +48,8 @@ repos:
           'rich-argparse',
           'numpy',
           'matplotlib',
-          'tomli'
+          'tomli',
+          'platformdirs',
         ]
         exclude: |
           (?x)(

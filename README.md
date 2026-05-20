@@ -84,12 +84,12 @@ carm benchmark --dry-run --test arithmetic --test-time 1 --verbose 4
 
 ## Output and Results
 
-By default, results are written under `carm_results`.
+By default, results are written under the platform user data directory for the `carm` app (via platformdirs). On linux, this is typically `~/.local/share/carm/`, on Windows, `%APPDATA%\carm\`, and on MacOS, `~/Library/Application Support/carm/`.
 
 Control output directory and format(s):
 
 ```bash
-carm benchmark --output-dir carm_results --output-fmt table json csv plot
+carm benchmark --output-dir ./carm_results --output-fmt table json csv plot
 ```
 
 Use `--name` to label result files:
@@ -109,7 +109,7 @@ carm gui
 Custom results location and port:
 
 ```bash
-carm gui --results-dir carm_results --gui-port 8050
+carm gui --results-dir ./carm_results --gui-port 8050
 ```
 
 ## Publications and Citation

@@ -6,6 +6,7 @@ from pathlib import Path
 from arguments import InsertsArguments, enum_action
 from benchmark.output.base import OutputKind
 from output_utils import warn
+from results_paths import default_results_root
 
 
 class RunConfig(InsertsArguments):
@@ -39,10 +40,10 @@ class RunConfig(InsertsArguments):
         )
         parser.add_argument(
             "--output-dir",
-            default=Path("carm_results"),
+            default=default_results_root(),
             nargs="?",
             type=Path,
-            help="Directory to write result files (default: carm_results)",
+            help="Directory to write result files (default: platform user data dir for app 'carm')",
         )
         parser.add_argument(
             "--output-fmt",
