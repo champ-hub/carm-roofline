@@ -102,7 +102,7 @@ class Benchmarking(InsertsArguments):
         self.data_type: DataType = args.data_type
         self.threads: int = args.threads
         self.interleaved: bool = args.interleaved
-        self.instruction: ArithmeticOperation = args.instruction
+        self.instructions: set[ArithmeticOperation] = set(args.instruction)
         self.num_ops: Operations = Operations(args.num_ops)
         self.ld_st_ratio: LoadStoreRatio = args.ld_st_ratio
         self.arith_mem_ratio: int = args.arith_mem_ratio
@@ -163,10 +163,10 @@ class Benchmarking(InsertsArguments):
         )
         parser.add_argument(
             "--instruction",
-            default=ArithmeticOperation.fma,
-            nargs="?",
+            default=[ArithmeticOperation.add, ArithmeticOperation.fma],
+            nargs="+",
             action=enum_action(ArithmeticOperation),
-            help="Arithmetic instruction benchmarked (Default: 'fma')",
+            help="Arithmetic instruction(s) to benchmark (Default: add fma)",
         )
         parser.add_argument(
             "--ld-st-ratio",

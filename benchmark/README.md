@@ -76,7 +76,7 @@ Encapsulates all benchmark configuration via the `InsertsArguments` pattern:
 - `precision: DataType` - f32 or f64
 - `threads: int` - Number of threads to use
 - `interleaved: bool` - NUMA interleaved thread mapping
-- `instruction: ArithmeticOperation | None` - Specific arithmetic operation to test
+- `instructions: set[ArithmeticOperation]` - Arithmetic operations to test (default: add, fma)
 - `num_ops: int` - Number of operations per benchmark
 - `ld_st_ratio: LoadStoreRatio` - Load/store ratio for memory tests
 - `arith_mem_ratio: tuple[int, int] | None` - Arithmetic/memory ratio for mixed tests
@@ -116,7 +116,7 @@ Via `insert_arguments()` static method:
 - `--precision/-p` - f32 or f64
 - `--threads` - Number of threads
 - `--interleaved` - Enable NUMA interleaved mapping
-- `--instruction/-ins` - Specific instruction to test
+- `--instruction` - One or more arithmetic instructions to test (space-separated; default: add fma)
 - `--num_ops` - Operations per benchmark
 - `--ld_st_ratio` - Load:store ratio (e.g., "2:1")
 - `--arith_mem_ratio` - Arithmetic:memory ratio for mixed tests

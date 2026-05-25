@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from units import ArithmeticIntensity, Bandwidth, Performance
+from units import ArithmeticIntensity, Bandwidth
 
 from .arithmetic import ArithmeticBenchmarkSuite
 from .base import ISABenchmarkSuite
@@ -52,22 +52,6 @@ class RooflineBenchmarkSuite(ISABenchmarkSuite):
         suite.merge(mem_suite)
 
         return suite
-
-    def get_peak_performance(self) -> Performance:
-        """Get peak GOPS from arithmetic portion of roofline suite.
-
-        Returns:
-            Peak GOPS from arithmetic benchmarks, or None if unavailable.
-        """
-        arith_benchmarks = self.get_arithmetic_benchmarks()
-        if len(arith_benchmarks) > 1:
-            raise ValueError("Expected exactly one arithmetic benchmark for peak performance calculation")
-
-        arith_benchmark = next(iter(arith_benchmarks.values()))
-        if arith_benchmark.results is None:
-            raise ValueError("Arithmetic benchmark missing performance result for roofline benchmarking")
-
-        return arith_benchmark.results.performance
 
     def get_bandwidth_by_level(self) -> dict[str, Bandwidth]:
         """Get peak bandwidth for each cache level from memory benchmarks.
