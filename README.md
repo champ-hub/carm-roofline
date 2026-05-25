@@ -75,7 +75,7 @@ Other usage examples:
 # Short roofline benchmark (1 second per micro-bench)
 carm benchmark --test roofline --test-time 1
 # Arithmetic-only
-carm benchmark --test arithmetic --instruction add --data-type f32
+carm benchmark --test arithmetic --instruction add mul fma --data-type f32
 # Memory-only
 carm benchmark --test memory --mem-target L2 --ld-st-ratio 2:1
 # Dry run (generate benchmark code, skip compile/execute):
@@ -84,7 +84,7 @@ carm benchmark --dry-run --test arithmetic --test-time 1 --verbose 4
 
 ## Output and Results
 
-By default, results are written under the platform user data directory for the `carm` app (via platformdirs). On linux, this is typically `~/.local/share/carm/`, on Windows, `%APPDATA%\carm\`, and on MacOS, `~/Library/Application Support/carm/`.
+By default, results are written to the user data directory (via platformdirs). On linux, this is typically `~/.local/share/carm/`, on Windows, `%APPDATA%\carm\`, and on MacOS, `~/Library/Application Support/carm/`.
 
 Control output directory and format(s):
 
