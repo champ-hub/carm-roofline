@@ -188,6 +188,12 @@ class _Suite:
         for k, v in attrs.items():
             setattr(self, k, v)
 
+    def get_arithmetic_benchmarks(self):
+        """Return only arithmetic benchmarks from this suite."""
+        from benchmark.benchmark import ArithmeticBenchmark
+
+        return {name: bench for name, bench in self.benchmarks.items() if isinstance(bench, ArithmeticBenchmark)}
+
 
 def _make_fake_context(isa_names: list[str], freq_hz: float = 3.0e9, nominal_hz: float | None = None):
     """Create a minimal context-like object for output handlers."""
@@ -220,10 +226,13 @@ def _make_fake_context(isa_names: list[str], freq_hz: float = 3.0e9, nominal_hz:
 
     class _FakeBenchmarking:
         def __init__(self):
+            from benchmark.generation.code_gen.operation import ArithmeticOperation
+
             self.test = BenchmarkTestType.ARITHMETIC
             self.threads = 1
             self.interleaved = False
             self.data_type = None
+            self.instructions = {ArithmeticOperation.fma}
 
     class _FakeRunConfig:
         def __init__(self):
@@ -448,7 +457,9 @@ def test_arithmetic_cli_prints_gops(capsys):
 
 def test_arithmetic_plot_saves_file(monkeypatch, tmp_path, capsys):
     """Arithmetic plot saves image file when matplotlib is available."""
-    from benchmark.benchmark import ArithmeticBenchmarkResult
+    from benchmark.benchmark import ArithmeticBenchmarkResult, ArithmeticBenchmark, ArithmeticBenchmarkParams
+    from benchmark.generation.code_gen.operation import ArithmeticOperation
+    from units import Operations
 
     # install fake matplotlib into sys.modules
     mpl, _pyplot = make_fake_matplotlib()
@@ -458,10 +469,17 @@ def test_arithmetic_plot_saves_file(monkeypatch, tmp_path, capsys):
     # reload handlers so they pick up fake matplotlib
     arithmetic, _, _, _ = reload_handlers(monkeypatch)
 
-    # Create proper ArithmeticBenchmarkResult
-    r1 = ArithmeticBenchmarkResult(time_taken=Seconds(100.0), num_repetitions=1000, performance=Performance(5.0))
+    # Create proper ArithmeticBenchmark with results
+    params = ArithmeticBenchmarkParams(
+        data_type=None,
+        thread_affinity=[0],
+        operation=ArithmeticOperation.add,
+        num_ops=Operations(1000),
+    )
+    bench = ArithmeticBenchmark(params=params, spec=None)
+    bench.results = ArithmeticBenchmarkResult(time_taken=Seconds(100.0), num_repetitions=1000, performance=Performance(5.0))
 
-    s1 = _Suite(benchmarks=[_Benchmark("b1", r1)])
+    s1 = _Suite(benchmarks={"b1": bench})
     isa_suites = {"isa1": s1}
 
     arithmetic._write_plot(isa_suites, tmp_path)
@@ -518,7 +536,7 @@ def test_roofline_legacy_csv_compatibility(tmp_path):
     context.benchmarking.test = TestType.ROOFLINE
     # Ensure we use known values
     context.benchmarking.data_type = DataType.f32
-    context.benchmarking.instruction = ArithmeticOperation.fma
+    context.benchmarking.instructions = {ArithmeticOperation.fma}
     context.benchmarking.threads = 2
     context.benchmarking.ld_st_ratio = LoadStoreRatio(2, 1)
 
@@ -605,9 +623,9 @@ def test_roofline_legacy_csv_compatibility(tmp_path):
         "I/Cycle",
     ]
 
-    # FP_FMA columns should be zero by compatibility behavior
-    assert rows[2][19] == "0"
-    assert rows[2][20] == "0"
+    # FP_FMA columns should mirror FP columns when FMA is the primary instruction
+    assert rows[2][19] == rows[2][17]
+    assert rows[2][20] == rows[2][18]
 
     # Ensure legacy parser compatibility (parses by fixed column index)
     from gui.gui_utils import read_csv_file
@@ -644,7 +662,7 @@ def test_roofline_csv_gates_by_format(tmp_path):
     context = _make_fake_context(["isa1"], freq_hz=3.0e9)
     context.benchmarking.test = TestType.ROOFLINE
     context.benchmarking.data_type = DataType.f32
-    context.benchmarking.instruction = ArithmeticOperation.fma
+    context.benchmarking.instructions = {ArithmeticOperation.fma}
     context.benchmarking.threads = 1
     context.benchmarking.ld_st_ratio = LoadStoreRatio(2, 1)
 

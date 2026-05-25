@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from benchmark.generation.code_gen.operation import ArithmeticOperation
 from output_utils import info, warn
 from units import Cycles
 
@@ -167,7 +168,12 @@ def _collect_memory_metrics(
     return bandwidth_by_level, ipc_by_level
 
 
-def _collect_fp_metrics(context: CARMContext, suite: ISABenchmarkSuite, isa_name: str) -> tuple[float, float]:
+def _collect_fp_metrics(
+    context: CARMContext,
+    suite: ISABenchmarkSuite,
+    isa_name: str,
+    operation: ArithmeticOperation | None = None,
+) -> tuple[float, float]:
     frequency = context.architecture.get_frequency_for_isa(isa_name)
     fp_gflops = 0.0
     fp_ipc = 0.0
@@ -178,6 +184,8 @@ def _collect_fp_metrics(context: CARMContext, suite: ISABenchmarkSuite, isa_name
 
     for bench in suite.get_arithmetic_benchmarks().values():
         if bench.results is None:
+            continue
+        if operation is not None and bench.params.operation != operation:
             continue
         fp_gflops = float(bench.results.performance.value) / 1e9
         ops_per_inst = isa_instance.ops_per_inst(bench.params.data_type, bench.params.operation)
@@ -214,8 +222,19 @@ def _write_csv(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite], o
 
         bandwidth_by_level, icycle_by_level = _collect_memory_metrics(context, suite, isa)
 
-        fp_inst = context.benchmarking.instruction.name
-        fp_gflops, fp_icycle = _collect_fp_metrics(context, suite, isa)
+        # Select primary instruction: prefer non-fma if available, else fall back to fma
+        primary_instruction = next(
+            (op for op in context.benchmarking.instructions if op != ArithmeticOperation.fma),
+            ArithmeticOperation.fma,
+        )
+
+        fp_inst = primary_instruction.name
+        fp_gflops, fp_icycle = _collect_fp_metrics(context, suite, isa, operation=primary_instruction)
+
+        fma_gflops = 0.0
+        fma_icycle = 0.0
+        if ArithmeticOperation.fma in context.benchmarking.instructions:
+            fma_gflops, fma_icycle = _collect_fp_metrics(context, suite, isa, operation=ArithmeticOperation.fma)
 
         def round_helper(x: float) -> str:
             return f"{x:.3g}" if x < 1 else f"{x:.3f}"
@@ -240,8 +259,8 @@ def _write_csv(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite], o
             round_helper(icycle_by_level["DRAM"]),
             round_helper(fp_gflops),
             round_helper(fp_icycle),
-            0,
-            0,
+            round_helper(fma_gflops),
+            round_helper(fma_icycle),
         ]
 
         secondary_headers = [

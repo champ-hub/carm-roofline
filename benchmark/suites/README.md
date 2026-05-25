@@ -118,24 +118,24 @@ def generate(cls, context: CARMContext, isa_name: str) -> ArithmeticBenchmarkSui
     isa_instance = isa_class.from_architecture(context.architecture)
     suite = cls(isa_name=isa_instance.name)
 
-    # Generate benchmarks for selected operation
-    operation = context.benchmarking.instruction or ArithmeticOperation.fma
-    for data_type in [context.benchmarking.precision]:
-        params = ArithmeticBenchmarkParams(
-            operation=operation,
-            num_ops=context.benchmarking.num_ops,
-            data_type=data_type,
-            num_threads=1,
-        )
-        spec = isa_instance.generate_arithmetic_benchmark(params)
-        benchmark = ArithmeticBenchmark(params=params, spec=spec)
-        suite.add_benchmark(benchmark)
+    # Generate benchmarks for selected operations
+    for operation in context.benchmarking.instructions:
+        for data_type in [context.benchmarking.precision]:
+            params = ArithmeticBenchmarkParams(
+                operation=operation,
+                num_ops=context.benchmarking.num_ops,
+                data_type=data_type,
+                num_threads=1,
+            )
+            spec = isa_instance.generate_arithmetic_benchmark(params)
+            benchmark = ArithmeticBenchmark(params=params, spec=spec)
+            suite.add_benchmark(benchmark)
 
     return suite
 ```
 
 **Key Features:**
-- Iterates over operations (all or specified via `--instruction`)
+- Iterates over all requested operations (default: add, fma)
 - Uses configured precision (f32/f64)
 - Calls ISA's `generate_arithmetic_benchmark()` for code generation
 - Creates `ArithmeticBenchmark` objects with params and spec

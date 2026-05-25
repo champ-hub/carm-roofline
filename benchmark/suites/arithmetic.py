@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from units import Performance
-
 from ..benchmark import ArithmeticBenchmark
 from ..generation import ArithmeticBenchmarkParams
 from .base import ISABenchmarkSuite
@@ -19,7 +17,7 @@ if TYPE_CHECKING:
 class ArithmeticBenchmarkSuite(ISABenchmarkSuite):
     """Suite for arithmetic-only benchmarks (TestType.ARITHMETIC).
 
-    Measures peak arithmetic performance for a specific operation.
+    Measures peak arithmetic performance across one or more operations.
     """
 
     @classmethod
@@ -61,29 +59,17 @@ class ArithmeticBenchmarkSuite(ISABenchmarkSuite):
         # This also helps us deal with SMT, ensuring threads are properly distributed across cores
         thread_affinity = architecture.memory_topology.plan_thread_affinity(benchmark.threads, 1)
 
-        # Generate arithmetic benchmark
-        params = ArithmeticBenchmarkParams(
-            data_type=benchmark.data_type,
-            thread_affinity=thread_affinity.cpu_ids,
-            operation=benchmark.instruction,
-            num_ops=benchmark.num_ops,
-        )
-        spec = isa.generate_arithmetic(params, context)
+        for operation in benchmark.instructions:
+            params = ArithmeticBenchmarkParams(
+                data_type=benchmark.data_type,
+                thread_affinity=thread_affinity.cpu_ids,
+                operation=operation,
+                num_ops=benchmark.num_ops,
+            )
+            spec = isa.generate_arithmetic(params, context)
 
-        # Add to ISA suite using the benchmark's authoritative name
-        arith_benchmark = ArithmeticBenchmark(params=params, spec=spec)
-        suite.add_benchmark(arith_benchmark.name, arith_benchmark)
+            # Add to ISA suite using the benchmark's authoritative name
+            arith_benchmark = ArithmeticBenchmark(params=params, spec=spec)
+            suite.add_benchmark(arith_benchmark.name, arith_benchmark)
 
         return suite
-
-    def get_peak_performance(self) -> Performance:
-        """Get peak GOPS from arithmetic portion of roofline suite.
-
-        Returns:
-            Peak GOPS from arithmetic benchmarks, or None if unavailable.
-        """
-        arith_benchmarks = self.get_arithmetic_benchmarks()
-        if len(arith_benchmarks) > 1:
-            raise ValueError("Expected exactly one arithmetic benchmark for peak performance calculation")
-
-        return super().get_peak_performance()

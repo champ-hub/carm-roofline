@@ -29,26 +29,19 @@ def _collect_gops_by_isa(isa_suites: dict[str, ISABenchmarkSuite]) -> dict[str, 
     gops_by_isa: dict[str, float] = {}
 
     for isa, suite in sorted(isa_suites.items(), key=lambda kv: kv[0]):
-        benches: dict[str, Any]
-        if hasattr(suite, "get_arithmetic_benchmarks"):
-            benches = suite.get_arithmetic_benchmarks()
-        else:
-            benches = getattr(suite, "benchmarks", {})
-
         values: list[float] = []
-        for bench in benches.values():
-            res = getattr(bench, "results", None)
-            if not isinstance(res, ArithmeticBenchmarkResult):
+        for bench in suite.get_arithmetic_benchmarks().values():
+            if not isinstance(bench.results, ArithmeticBenchmarkResult):
                 continue
 
-            gops_value = float(res.performance.value) / 1e9
+            gops_value = float(bench.results.performance.value) / 1e9
             if not math.isfinite(gops_value):
                 warn(f"Skipping invalid GOPS value for ISA {isa}: {gops_value}")
                 continue
             values.append(gops_value)
 
         if values:
-            gops_by_isa[isa] = sum(values) / len(values)
+            gops_by_isa[isa] = max(values)
 
     return gops_by_isa
 
@@ -64,47 +57,53 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
         isa_cls.name: isa_cls.from_architecture(context.architecture) for isa_cls in context.architecture.isa
     }
 
-    arithmetic_metrics: dict[str, dict[str, Any]] = {}
+    arithmetic_metrics: list[dict[str, Any]] = []
 
     for isa, suite in sorted(isa_suites.items(), key=lambda kv: kv[0]):
         frequency = context.architecture.get_frequency_for_isa(isa)
-        benches = suite.get_arithmetic_benchmarks()
-        assert len(benches) == 1, "Expected exactly one arithmetic benchmark per ISA for summary output"
-        benchmark_name, benchmark = next(iter(benches.items()))
-        res = benchmark.results
-        assert isinstance(res, ArithmeticBenchmarkResult), "Expected ArithmeticBenchmarkResult for arithmetic summary"
-
         isa_instance = isa_instances.get(isa)
         if isa_instance is None:
             warn(f"No ISA instance available for {isa}; skipping metrics")
             continue
 
-        ops_per_inst = isa_instance.ops_per_inst(benchmark.params.data_type, benchmark.params.operation)
-        total_insts = (benchmark.params.num_ops.value // ops_per_inst) * res.num_repetitions if ops_per_inst else 0
-        cycles = Cycles.from_time_and_frequency(res.time_taken, frequency)
-        ipc = 0.0 if cycles.value == 0 else total_insts / cycles.value
-        ops_per_cycle = ops_per_inst * ipc
+        benches = suite.get_arithmetic_benchmarks()
+        for benchmark_name, benchmark in benches.items():
+            res = benchmark.results
+            assert isinstance(res, ArithmeticBenchmarkResult), (
+                "Expected ArithmeticBenchmarkResult for arithmetic summary"
+            )
 
-        arithmetic_metrics[isa] = {
-            "benchmark": benchmark_name,
-            "gops": float(res.performance.value) / 1e9,
-            "gops_display": str(res.performance),
-            "ipc": ipc,
-            "frequency_hz": float(frequency.value),
-            "frequency_display": str(frequency),
-            "ops_per_instruction": ops_per_inst,
-            "ops_per_cycle": ops_per_cycle,
-            "time_seconds": float(res.time_taken.value),
-            "time_display": str(res.time_taken),
-            "repetitions": int(res.num_repetitions),
-            "cycles": float(cycles.value),
-            "cycles_display": str(cycles),
-        }
+            ops_per_inst = isa_instance.ops_per_inst(benchmark.params.data_type, benchmark.params.operation)
+            total_insts = (benchmark.params.num_ops.value // ops_per_inst) * res.num_repetitions if ops_per_inst else 0
+            cycles = Cycles.from_time_and_frequency(res.time_taken, frequency)
+            ipc = 0.0 if cycles.value == 0 else total_insts / cycles.value
+            ops_per_cycle = ops_per_inst * ipc
+
+            arithmetic_metrics.append(
+                {
+                    "isa": isa,
+                    "operation": benchmark.params.operation.name,
+                    "benchmark": benchmark_name,
+                    "gops": float(res.performance.value) / 1e9,
+                    "gops_display": str(res.performance),
+                    "ipc": ipc,
+                    "frequency_hz": float(frequency.value),
+                    "frequency_display": str(frequency),
+                    "ops_per_instruction": ops_per_inst,
+                    "ops_per_cycle": ops_per_cycle,
+                    "time_seconds": float(res.time_taken.value),
+                    "time_display": str(res.time_taken),
+                    "repetitions": int(res.num_repetitions),
+                    "cycles": float(cycles.value),
+                    "cycles_display": str(cycles),
+                }
+            )
 
     table = Table(title="Arithmetic Performance Summary")
 
     # normal output columns
     table.add_column("ISA", style="cyan")
+    table.add_column("Op", style="magenta")
     table.add_column("GOPS", justify="right")
     table.add_column("IPC", justify="right")
     table.add_column("Frequency", justify="right")
@@ -116,7 +115,8 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
         table.add_column("Repetitions", justify="right")
         table.add_column("Cycles", justify="right")
 
-    for isa, metrics in sorted(arithmetic_metrics.items(), key=lambda kv: kv[0]):
+    # sort rows by ISA and operation
+    for metrics in sorted(arithmetic_metrics, key=lambda row: (row["isa"], row["operation"])):
         ipc = float(metrics["ipc"])
 
         if print_extra:
@@ -130,7 +130,8 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
             extra_args = ()
 
         table.add_row(
-            isa,
+            metrics["isa"],
+            metrics["operation"],
             str(metrics["gops_display"]),
             f"{ipc:.2f}",
             str(metrics["frequency_display"]),
@@ -152,34 +153,36 @@ def _write_json(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) 
 
     for isa, suite in sorted(isa_suites.items(), key=lambda kv: kv[0]):
         frequency = context.architecture.get_frequency_for_isa(isa)
-        benches = suite.get_arithmetic_benchmarks()
-        assert len(benches) == 1, "Expected exactly one arithmetic benchmark per ISA for JSON output"
-        benchmark_name, benchmark = next(iter(benches.items()))
-        res = benchmark.results
-        assert isinstance(res, ArithmeticBenchmarkResult), "Expected ArithmeticBenchmarkResult for arithmetic JSON"
-
         isa_instance = isa_instances.get(isa)
         if isa_instance is None:
             warn(f"No ISA instance available for {isa}; skipping metrics")
             continue
 
-        ops_per_inst = isa_instance.ops_per_inst(benchmark.params.data_type, benchmark.params.operation)
-        total_insts = (benchmark.params.num_ops.value // ops_per_inst) * res.num_repetitions if ops_per_inst else 0
-        cycles = Cycles.from_time_and_frequency(res.time_taken, frequency)
-        ipc = 0.0 if cycles.value == 0 else total_insts / cycles.value
+        benches = suite.get_arithmetic_benchmarks()
+        isa_results: dict[str, object] = {}
+        for benchmark_name, benchmark in benches.items():
+            res = benchmark.results
+            assert isinstance(res, ArithmeticBenchmarkResult), "Expected ArithmeticBenchmarkResult for arithmetic JSON"
 
-        results[isa] = {
-            "benchmark": benchmark_name,
-            "operation": benchmark.params.operation.name,
-            "gops": float(res.performance.value) / 1e9,
-            "ipc": ipc,
-            "frequency_hz": float(frequency.value),
-            "ops_per_instruction": ops_per_inst,
-            "ops_per_cycle": ops_per_inst * ipc,
-            "time_seconds": float(res.time_taken.value),
-            "repetitions": int(res.num_repetitions),
-            "cycles": float(cycles.value),
-        }
+            ops_per_inst = isa_instance.ops_per_inst(benchmark.params.data_type, benchmark.params.operation)
+            total_insts = (benchmark.params.num_ops.value // ops_per_inst) * res.num_repetitions if ops_per_inst else 0
+            cycles = Cycles.from_time_and_frequency(res.time_taken, frequency)
+            ipc = 0.0 if cycles.value == 0 else total_insts / cycles.value
+
+            isa_results[benchmark.params.operation.name] = {
+                "benchmark": benchmark_name,
+                "operation": benchmark.params.operation.name,
+                "gops": float(res.performance.value) / 1e9,
+                "ipc": ipc,
+                "frequency_hz": float(frequency.value),
+                "ops_per_instruction": ops_per_inst,
+                "ops_per_cycle": ops_per_inst * ipc,
+                "time_seconds": float(res.time_taken.value),
+                "repetitions": int(res.num_repetitions),
+                "cycles": float(cycles.value),
+            }
+
+        results[isa] = isa_results
 
     out_dir = context.run_config.output_dir / "arithmetic"
     out_dir.mkdir(parents=True, exist_ok=True)
