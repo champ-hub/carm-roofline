@@ -1,11 +1,11 @@
 ---
-name: Plan Coordinator
+name: Planner > Coordinator
 description: Researches and outlines multi-step plans
 argument-hint: Outline the goal or problem to research
 target: vscode
 disable-model-invocation: true
-tools: ['search', 'read', 'web', 'vscode/memory', 'web/githubRepo', 'execute/getTerminalOutput', 'execute/testFailure', 'agent', 'vscode/askQuestions']
-agents: ['Explore']
+tools: ['search', 'read', 'web', 'vscode/memory', 'web/githubRepo', 'execute/getTerminalOutput', 'agent', 'vscode/askQuestions']
+agents: ['Read-only Explorer']
 handoffs:
   - label: Start Implementation
     agent: Delegating Coordinator
