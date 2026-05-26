@@ -183,12 +183,9 @@ interleaved  : time = 0.058432 s, Bandwidth = 137.26 GB/s, checksum = 9.876543e+
 | `make_power_of_two_ticks` | `(min_val, max_val) -> tuple[list, list]` | Generate log2 tick values + HTML superscript labels for Plotly axes |
 | `ensure_list` | `(marker_dict, attr_name, default_value, n_points) -> list` | Coerce a marker attribute to a list of length n_points |
 | `custom_round` | `(value, digits=4) -> float` | Smart rounding: uses extra precision for sub-1 values to preserve significant digits |
-| `positive_int` | `(value) -> int` | argparse validator: raises `ArgumentTypeError` if not a positive integer |
-| `round_power_of_2` | `(number) -> int` | Returns the next power of 2 above `number` |
 | `carm_eq` | `(ai, bw, fp) -> np.ndarray` | Roofline equation: `min(ai * bw, fp)` using numpy |
 | `parse_title_line` | `(line: str) -> dict` | Parses legacy `.out` file header line into dict with keys: `name`, `isa`, `precision`, `threads`, `load`, `store`, `inst` |
 | `read_roofline_data` | `(filename: str) -> tuple[dict, dict, dict]` | Reads legacy `.out` roofline result file → `(title, data, data_cycles)` where data keys are `L1`, `L2`, `L3`, `DRAM`, `FP`, `FP_FMA` |
-| `read_data_from_files` | `(directory: str, autochoice: int) -> tuple[dict, dict, dict]` | Lists `carm_results/roofline/*.out` files, prompts user (or auto-selects), returns parsed data |
 | `plot_roofline_with_dot` | `(executable_path, exec_flops, exec_ai, choice, roi, date, method)` | Generates full matplotlib roofline SVG saved to `carm_results/applications/<name>_<...>.svg` |
 | `update_csv` | `(machine, executable_path, exec_flops, exec_ai, bandwidth, time, name, date, isa, precision, threads, method, VLEN, LMUL)` | Appends or creates `carm_results/applications/<machine>_applications.csv` |
 
