@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Integration tests for ISA code generation.
 
@@ -32,7 +33,7 @@ from benchmark.generation import (
 )
 from benchmark.generation.code_gen.operation import ArithmeticOperation, Operation
 from benchmark.generation.isa import BaseISA
-from benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams, BenchParamError
+from benchmark.generation.parameters import ArithmeticBenchmarkParams, BenchParamError, MemoryBenchmarkParams
 from test_bench.builder import MicrobenchmarkFunctionSpec
 from units import Bytes, Operations
 
@@ -588,10 +589,18 @@ class TestISACompleteness:
 class TestEdgeCases:
     """Edge case tests for loop splitting and size validation (Issues #3 and #4)."""
 
-    @pytest.mark.parametrize("isa_name", [
-        "x86_scalar", "x86_sse", "x86_avx", "x86_avx2",
-        "arm_scalar", "arm_neon", "riscv_scalar",
-    ])
+    @pytest.mark.parametrize(
+        "isa_name",
+        [
+            "x86_scalar",
+            "x86_sse",
+            "x86_avx",
+            "x86_avx2",
+            "arm_scalar",
+            "arm_neon",
+            "riscv_scalar",
+        ],
+    )
     def test_single_operation_arithmetic(self, mock_context, isa_name: str):
         """Test arithmetic benchmark with single operation (edge case)."""
         isa = TestISACodegen.instantiate_isa(isa_name)
@@ -611,14 +620,19 @@ class TestEdgeCases:
 
         # Should have outer loop but no inner loop (NO leading underscore)
         assert "outer_loop%=" in spec.body
-        assert "inner_loop%=" not in spec.body, (
-            f"Single operation should not create inner loop in {isa_name}"
-        )
+        assert "inner_loop%=" not in spec.body, f"Single operation should not create inner loop in {isa_name}"
 
-    @pytest.mark.parametrize("isa_name", [
-        "x86_scalar", "x86_sse", "x86_avx",
-        "arm_scalar", "arm_neon", "riscv_scalar",
-    ])
+    @pytest.mark.parametrize(
+        "isa_name",
+        [
+            "x86_scalar",
+            "x86_sse",
+            "x86_avx",
+            "arm_scalar",
+            "arm_neon",
+            "riscv_scalar",
+        ],
+    )
     def test_very_large_operation_count(self, mock_context, isa_name: str):
         """Test arithmetic benchmark with very large operation count."""
         isa = TestISACodegen.instantiate_isa(isa_name)
@@ -636,18 +650,18 @@ class TestEdgeCases:
         assert len(spec.body) > 0
 
         # Should definitely have inner loop (NO leading underscore)
-        assert "inner_loop%=" in spec.body, (
-            f"Large operation count should create inner loop in {isa_name}"
-        )
+        assert "inner_loop%=" in spec.body, f"Large operation count should create inner loop in {isa_name}"
 
-    @pytest.mark.parametrize("isa_name,data_type", [
-        ("x86_avx", DataType.f32),
-        ("x86_avx", DataType.f64),
-        ("arm_neon", DataType.f32),
-    ])
+    @pytest.mark.parametrize(
+        "isa_name,data_type",
+        [
+            ("x86_avx", DataType.f32),
+            ("x86_avx", DataType.f64),
+            ("arm_neon", DataType.f32),
+        ],
+    )
     def test_memory_size_too_small(self, mock_context, isa_name: str, data_type: DataType):
         """Test that very small memory sizes raise appropriate errors."""
-        from benchmark.generation.parameters import BenchParamError
 
         isa = TestISACodegen.instantiate_isa(isa_name)
         bytes_per_inst = isa.bytes_per_inst(data_type)
@@ -666,9 +680,15 @@ class TestEdgeCases:
         with pytest.raises(BenchParamError, match="too small"):
             isa.generate_memory(params, mock_context)
 
-    @pytest.mark.parametrize("isa_name", [
-        "x86_avx", "x86_sse", "arm_neon", "riscv_scalar",
-    ])
+    @pytest.mark.parametrize(
+        "isa_name",
+        [
+            "x86_avx",
+            "x86_sse",
+            "arm_neon",
+            "riscv_scalar",
+        ],
+    )
     def test_memory_exact_boundary_size(self, mock_context, isa_name: str):
         """Test memory benchmark with size exactly matching instruction boundary."""
         isa = TestISACodegen.instantiate_isa(isa_name)
@@ -691,12 +711,15 @@ class TestEdgeCases:
         assert isinstance(spec, MicrobenchmarkFunctionSpec)
         assert len(spec.body) > 0
 
-    @pytest.mark.parametrize("isa_name,num_ld,num_st", [
-        ("x86_avx", 4, 0),  # Many loads
-        ("x86_avx", 0, 4),  # Many stores
-        ("x86_avx", 8, 8),  # Many of both
-        ("arm_neon", 4, 4),
-    ])
+    @pytest.mark.parametrize(
+        "isa_name,num_ld,num_st",
+        [
+            ("x86_avx", 4, 0),  # Many loads
+            ("x86_avx", 0, 4),  # Many stores
+            ("x86_avx", 8, 8),  # Many of both
+            ("arm_neon", 4, 4),
+        ],
+    )
     def test_memory_high_load_store_ratio(self, mock_context, isa_name: str, num_ld: int, num_st: int):
         """Test memory benchmarks with high load/store counts."""
         isa = TestISACodegen.instantiate_isa(isa_name)
@@ -753,12 +776,15 @@ class TestEdgeCases:
 
         assert '[read_ptr] "m" (read_ptr)' in spec.body
 
-    @pytest.mark.parametrize("isa_name,operation", [
-        ("x86_avx", ArithmeticOperation.add),
-        ("x86_avx", ArithmeticOperation.mul),
-        ("x86_avx", ArithmeticOperation.fma),
-        ("x86_avx", ArithmeticOperation.div),
-    ])
+    @pytest.mark.parametrize(
+        "isa_name,operation",
+        [
+            ("x86_avx", ArithmeticOperation.add),
+            ("x86_avx", ArithmeticOperation.mul),
+            ("x86_avx", ArithmeticOperation.fma),
+            ("x86_avx", ArithmeticOperation.div),
+        ],
+    )
     def test_exact_max_loop_size_boundary(self, mock_context, isa_name: str, operation: ArithmeticOperation):
         """Test arithmetic with num_ops exactly at max_loop_size boundary."""
         isa = TestISACodegen.instantiate_isa(isa_name)
@@ -822,16 +848,17 @@ class TestEdgeCases:
         assert len(spec.body) > 0
 
         # Should have inner loop now (NO leading underscore)
-        assert "inner_loop%=" in spec.body, (
-            f"Just over max_loop_size boundary should create inner loop"
-        )
+        assert "inner_loop%=" in spec.body, "Just over max_loop_size boundary should create inner loop"
 
-    @pytest.mark.parametrize("isa_name,divisor", [
-        ("x86_avx", 2),
-        ("x86_avx", 4),
-        ("x86_avx", 8),
-        ("arm_neon", 2),
-    ])
+    @pytest.mark.parametrize(
+        "isa_name,divisor",
+        [
+            ("x86_avx", 2),
+            ("x86_avx", 4),
+            ("x86_avx", 8),
+            ("arm_neon", 2),
+        ],
+    )
     def test_exact_divisibility_by_max_loop_size(self, mock_context, isa_name: str, divisor: int):
         """Test num_ops exactly divisible by max_loop_size."""
         isa = TestISACodegen.instantiate_isa(isa_name)
@@ -882,13 +909,16 @@ class TestEdgeCases:
         assert len(spec.body) > 0
         assert "outer_loop%=" in spec.body
 
-    @pytest.mark.parametrize("isa_name,cache_level", [
-        ("x86_avx", "L1"),
-        ("x86_avx", "L2"),
-        ("x86_avx", "L3"),
-        ("arm_neon", "L1"),
-        ("arm_neon", "L2"),
-    ])
+    @pytest.mark.parametrize(
+        "isa_name,cache_level",
+        [
+            ("x86_avx", "L1"),
+            ("x86_avx", "L2"),
+            ("x86_avx", "L3"),
+            ("arm_neon", "L1"),
+            ("arm_neon", "L2"),
+        ],
+    )
     def test_different_cache_levels(self, mock_context, isa_name: str, cache_level: str):
         """Test memory benchmarks targeting different cache levels."""
         isa = TestISACodegen.instantiate_isa(isa_name)

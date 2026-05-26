@@ -457,7 +457,7 @@ def test_arithmetic_cli_prints_gops(capsys):
 
 def test_arithmetic_plot_saves_file(monkeypatch, tmp_path, capsys):
     """Arithmetic plot saves image file when matplotlib is available."""
-    from benchmark.benchmark import ArithmeticBenchmarkResult, ArithmeticBenchmark, ArithmeticBenchmarkParams
+    from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkParams, ArithmeticBenchmarkResult
     from benchmark.generation.code_gen.operation import ArithmeticOperation
     from units import Operations
 
@@ -477,7 +477,9 @@ def test_arithmetic_plot_saves_file(monkeypatch, tmp_path, capsys):
         num_ops=Operations(1000),
     )
     bench = ArithmeticBenchmark(params=params, spec=None)
-    bench.results = ArithmeticBenchmarkResult(time_taken=Seconds(100.0), num_repetitions=1000, performance=Performance(5.0))
+    bench.results = ArithmeticBenchmarkResult(
+        time_taken=Seconds(100.0), num_repetitions=1000, performance=Performance(5.0)
+    )
 
     s1 = _Suite(benchmarks={"b1": bench})
     isa_suites = {"isa1": s1}
@@ -546,9 +548,18 @@ def test_roofline_legacy_csv_compatibility(tmp_path):
         operation=ArithmeticOperation.fma,
         num_ops=Operations(1024),
     )
-    arith_spec = MicrobenchmarkFunctionSpec(function_name="arith", body="", read_array_size=Bytes(0), write_array_size=Bytes(0), frequency=2.5, thread_affinity=[0])
+    arith_spec = MicrobenchmarkFunctionSpec(
+        function_name="arith",
+        body="",
+        read_array_size=Bytes(0),
+        write_array_size=Bytes(0),
+        frequency=2.5,
+        thread_affinity=[0],
+    )
     arith_bench = ArithmeticBenchmark(params=arith_params, spec=arith_spec)
-    arith_bench.results = ArithmeticBenchmarkResult(time_taken=Seconds(0.1), num_repetitions=1000, performance=Performance(10e9))
+    arith_bench.results = ArithmeticBenchmarkResult(
+        time_taken=Seconds(0.1), num_repetitions=1000, performance=Performance(10e9)
+    )
 
     mem_params = MemoryBenchmarkParams(
         data_type=DataType.f32,
@@ -557,9 +568,18 @@ def test_roofline_legacy_csv_compatibility(tmp_path):
         size_per_thread=Bytes(1024),
         memory_level_name="L1",
     )
-    mem_spec = MicrobenchmarkFunctionSpec(function_name="mem", body="", read_array_size=Bytes(0), write_array_size=Bytes(0), frequency=2.5, thread_affinity=[0])
+    mem_spec = MicrobenchmarkFunctionSpec(
+        function_name="mem",
+        body="",
+        read_array_size=Bytes(0),
+        write_array_size=Bytes(0),
+        frequency=2.5,
+        thread_affinity=[0],
+    )
     mem_bench = MemoryBenchmark(params=mem_params, spec=mem_spec, working_set_bytes=Bytes(1024), cache_level="L1")
-    mem_bench.results = MemoryBenchmarkResult(time_taken=Seconds(0.1), num_repetitions=1000, bandwidth=Bandwidth(40e9), cache_level="L1")
+    mem_bench.results = MemoryBenchmarkResult(
+        time_taken=Seconds(0.1), num_repetitions=1000, bandwidth=Bandwidth(40e9), cache_level="L1"
+    )
 
     suite = RooflineBenchmarkSuite(isa_name="isa1")
     suite.add_benchmark(arith_bench.name, arith_bench)
@@ -666,21 +686,47 @@ def test_roofline_csv_gates_by_format(tmp_path):
     context.benchmarking.threads = 1
     context.benchmarking.ld_st_ratio = LoadStoreRatio(2, 1)
 
-    arith_spec = MicrobenchmarkFunctionSpec(function_name="arith", body="", read_array_size=Bytes(0), write_array_size=Bytes(0), frequency=2.5, thread_affinity=[0])
+    arith_spec = MicrobenchmarkFunctionSpec(
+        function_name="arith",
+        body="",
+        read_array_size=Bytes(0),
+        write_array_size=Bytes(0),
+        frequency=2.5,
+        thread_affinity=[0],
+    )
     arith_bench = ArithmeticBenchmark(
-        params=ArithmeticBenchmarkParams(data_type=DataType.f32, thread_affinity=[0], operation=ArithmeticOperation.fma, num_ops=Operations(1024)),
+        params=ArithmeticBenchmarkParams(
+            data_type=DataType.f32, thread_affinity=[0], operation=ArithmeticOperation.fma, num_ops=Operations(1024)
+        ),
         spec=arith_spec,
     )
-    arith_bench.results = ArithmeticBenchmarkResult(time_taken=Seconds(0.1), num_repetitions=1000, performance=Performance(10e9))
+    arith_bench.results = ArithmeticBenchmarkResult(
+        time_taken=Seconds(0.1), num_repetitions=1000, performance=Performance(10e9)
+    )
 
-    mem_spec = MicrobenchmarkFunctionSpec(function_name="mem", body="", read_array_size=Bytes(0), write_array_size=Bytes(0), frequency=2.5, thread_affinity=[0])
+    mem_spec = MicrobenchmarkFunctionSpec(
+        function_name="mem",
+        body="",
+        read_array_size=Bytes(0),
+        write_array_size=Bytes(0),
+        frequency=2.5,
+        thread_affinity=[0],
+    )
     mem_bench = MemoryBenchmark(
-        params=MemoryBenchmarkParams(data_type=DataType.f32, thread_affinity=[0], load_store_ratio=LoadStoreRatio(2,1), size_per_thread=Bytes(1024), memory_level_name="L1"),
+        params=MemoryBenchmarkParams(
+            data_type=DataType.f32,
+            thread_affinity=[0],
+            load_store_ratio=LoadStoreRatio(2, 1),
+            size_per_thread=Bytes(1024),
+            memory_level_name="L1",
+        ),
         spec=mem_spec,
         working_set_bytes=Bytes(1024),
         cache_level="L1",
     )
-    mem_bench.results = MemoryBenchmarkResult(time_taken=Seconds(0.1), num_repetitions=1000, bandwidth=Bandwidth(40e9), cache_level="L1")
+    mem_bench.results = MemoryBenchmarkResult(
+        time_taken=Seconds(0.1), num_repetitions=1000, bandwidth=Bandwidth(40e9), cache_level="L1"
+    )
 
     suite = RooflineBenchmarkSuite(isa_name="isa1")
     suite.add_benchmark(arith_bench.name, arith_bench)
@@ -721,7 +767,9 @@ def test_memory_cli_and_plot(monkeypatch, tmp_path, capsys):
     from units import Bandwidth, Bytes
 
     # Create proper MemoryBenchmarkResult (12.34 GB/s → Bandwidth(12.34e9) so output shows "GB/s")
-    r1 = MemoryBenchmarkResult(time_taken=Seconds(0.1), num_repetitions=1000, bandwidth=Bandwidth(12.34e9), cache_level="L1")
+    r1 = MemoryBenchmarkResult(
+        time_taken=Seconds(0.1), num_repetitions=1000, bandwidth=Bandwidth(12.34e9), cache_level="L1"
+    )
 
     context = _make_fake_context(["memISA"], freq_hz=3.0e9)
 

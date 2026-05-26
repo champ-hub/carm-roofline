@@ -5,11 +5,10 @@ from typing import Any
 import pytest
 
 from benchmark.benchmarking import LoadStoreRatio
+from benchmark.generation.code_gen import DataType, instruction as inst
+from benchmark.generation.code_gen.register import RegisterCollection
 from benchmark.generation.isa import BaseISA, InlineASM
 from benchmark.generation.parameters import BenchParamError, MemoryBenchmarkParams
-from benchmark.generation.code_gen import DataType
-from benchmark.generation.code_gen import instruction as inst
-from benchmark.generation.code_gen.register import RegisterCollection
 from units import Bytes
 
 
@@ -193,6 +192,6 @@ def test_inline_asm_formatting() -> None:
     assert "__asm__ __volatile__" in formatted
     assert '"add r0, r1\\n\\t"' in formatted
     assert '"sub r2, r3\\n\\t"' in formatted
-    assert ": [data_ptr] \"m\" (data_ptr)" in formatted
+    assert ': [data_ptr] "m" (data_ptr)' in formatted
     assert ': "r0", "r1"' in formatted
     assert asm.as_function_body() == formatted
