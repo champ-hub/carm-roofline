@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import argparse
 from pathlib import Path
 from typing import Any
@@ -6,7 +7,6 @@ from typing import Any
 import pytest
 
 import carm
-
 
 pytestmark = pytest.mark.unit
 

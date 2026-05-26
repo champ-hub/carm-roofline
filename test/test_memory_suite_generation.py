@@ -33,7 +33,9 @@ class _TopologyWithDRAMFinal:
     def available_cache_levels(self) -> list[int]:
         return [1, 2, 3]
 
-    def plan_thread_affinity(self, n_threads: int, cache_level: int, prefer_no_smt: bool = True) -> CacheAwareThreadAffinity:
+    def plan_thread_affinity(
+        self, n_threads: int, cache_level: int, prefer_no_smt: bool = True
+    ) -> CacheAwareThreadAffinity:
         cpu_ids = list(range(n_threads))
 
         if cache_level == 1:
@@ -128,7 +130,9 @@ def test_memory_suite_warns_if_dataset_fits_in_lower_cache(monkeypatch):
         def available_cache_levels(self) -> list[int]:
             return [1, 2, 3]
 
-        def plan_thread_affinity(self, n_threads: int, cache_level: int, prefer_no_smt: bool = True) -> CacheAwareThreadAffinity:
+        def plan_thread_affinity(
+            self, n_threads: int, cache_level: int, prefer_no_smt: bool = True
+        ) -> CacheAwareThreadAffinity:
             cpu_ids = list(range(n_threads))
             if cache_level == 1:
                 cache_bytes_per_level = {1: Bytes.from_string("8GiB")}
@@ -152,12 +156,13 @@ def test_memory_suite_warns_if_dataset_fits_in_lower_cache(monkeypatch):
     warnings: list[str] = []
     monkeypatch.setattr("benchmark.suites.memory.warn", lambda msg: warnings.append(msg))
 
-    suite = MemoryBenchmarkSuite.generate(context, "dummy_isa")
+    _suite = MemoryBenchmarkSuite.generate(context, "dummy_isa")
 
     # There should be at least one warning mentioning that the L2 benchmark
     # fits in L1.  The exact numeric sizes are not important for this test.
-    assert any("L2 memory benchmark" in m and "fits in L1" in m for m in warnings), \
+    assert any("L2 memory benchmark" in m and "fits in L1" in m for m in warnings), (
         f"expected lower-cache warning, got: {warnings}"
+    )
 
 
 def test_memory_suite_first_generated_level_uses_single_then_split():

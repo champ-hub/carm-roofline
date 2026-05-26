@@ -1,4 +1,4 @@
-from __future__ import annotations
+
 """Tests for typed benchmark hierarchy and ISA grouping.
 
 Tests cover:
@@ -7,6 +7,7 @@ Tests cover:
 - ISABenchmarkSuite grouping and filtering methods
 - Result processing logic for each benchmark type
 """
+from __future__ import annotations
 
 import pytest
 
@@ -116,7 +117,10 @@ class TestMemoryBenchmark:
         )
 
         bench = MemoryBenchmark(
-            params=params, spec=make_spec(), working_set_bytes=params.size_per_thread, cache_level=params.memory_level_name
+            params=params,
+            spec=make_spec(),
+            working_set_bytes=params.size_per_thread,
+            cache_level=params.memory_level_name,
         )
 
         assert isinstance(bench, BaseBenchmark)
@@ -135,7 +139,9 @@ class TestMemoryBenchmark:
             thread_affinity=[0],
         )
 
-        bench = MemoryBenchmark(params=params, spec=make_spec(), working_set_bytes=params.size_per_thread, cache_level="L1")
+        bench = MemoryBenchmark(
+            params=params, spec=make_spec(), working_set_bytes=params.size_per_thread, cache_level="L1"
+        )
 
         assert bench.cache_level == "L1"
 
@@ -149,7 +155,10 @@ class TestMemoryBenchmark:
             thread_affinity=[0],
         )
         bench = MemoryBenchmark(
-            params=params, spec=make_spec(), working_set_bytes=params.size_per_thread, cache_level=params.memory_level_name
+            params=params,
+            spec=make_spec(),
+            working_set_bytes=params.size_per_thread,
+            cache_level=params.memory_level_name,
         )
 
         # Total bytes calculation based on load_store_ratio 4:2 (6 ops total)
@@ -173,7 +182,10 @@ class TestMemoryBenchmark:
             thread_affinity=[0],
         )
         bench = MemoryBenchmark(
-            params=params, spec=make_spec(), working_set_bytes=params.size_per_thread, cache_level=params.memory_level_name
+            params=params,
+            spec=make_spec(),
+            working_set_bytes=params.size_per_thread,
+            cache_level=params.memory_level_name,
         )
 
         # Bandwidth calculation will be based on actual implementation
@@ -502,7 +514,10 @@ class TestISABenchmarkSuite:
             "fma_32b",
             ArithmeticBenchmark(
                 params=ArithmeticBenchmarkParams(
-                    operation=ArithmeticOperation.fma, num_ops=Operations(100), data_type=DataType.f32, thread_affinity=[0]
+                    operation=ArithmeticOperation.fma,
+                    num_ops=Operations(100),
+                    data_type=DataType.f32,
+                    thread_affinity=[0],
                 ),
                 spec=make_spec(),
             ),
@@ -511,7 +526,10 @@ class TestISABenchmarkSuite:
             "fma_64b",
             ArithmeticBenchmark(
                 params=ArithmeticBenchmarkParams(
-                    operation=ArithmeticOperation.fma, num_ops=Operations(100), data_type=DataType.f64, thread_affinity=[0]
+                    operation=ArithmeticOperation.fma,
+                    num_ops=Operations(100),
+                    data_type=DataType.f64,
+                    thread_affinity=[0],
                 ),
                 spec=make_spec(),
             ),
@@ -723,7 +741,10 @@ class TestThreadScaling:
             thread_affinity=list(range(num_threads)),
         )
         bench = MemoryBenchmark(
-            params=params, spec=make_spec(), working_set_bytes=params.size_per_thread, cache_level=params.memory_level_name
+            params=params,
+            spec=make_spec(),
+            working_set_bytes=params.size_per_thread,
+            cache_level=params.memory_level_name,
         )
 
         # Process results
@@ -752,7 +773,10 @@ class TestThreadScaling:
             thread_affinity=[0],
         )
         bench = MemoryBenchmark(
-            params=params, spec=make_spec(), working_set_bytes=params.size_per_thread, cache_level=params.memory_level_name
+            params=params,
+            spec=make_spec(),
+            working_set_bytes=params.size_per_thread,
+            cache_level=params.memory_level_name,
         )
 
         # Process with num_repetitions = 1000
@@ -761,7 +785,10 @@ class TestThreadScaling:
 
         # Process with num_repetitions = 2000
         bench2 = MemoryBenchmark(
-            params=params, spec=make_spec(), working_set_bytes=params.size_per_thread, cache_level=params.memory_level_name
+            params=params,
+            spec=make_spec(),
+            working_set_bytes=params.size_per_thread,
+            cache_level=params.memory_level_name,
         )
         bench2.process_results(time_taken=Seconds(time_taken_ms), num_repetitions=2000)
         bandwidth_2000_reps = bench2.results.bandwidth.value / 1e9

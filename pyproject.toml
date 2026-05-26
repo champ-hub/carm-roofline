@@ -112,7 +112,7 @@ exclude = [
     "test_bench",
     "Test",
     "CustomClient",
-    "refactor_tests",  # Test code with temporary workarounds
+    "test",  # Test code with temporary workarounds
     "venv",
     ".venv*"
 ]
@@ -171,7 +171,7 @@ line-ending = "lf"
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-testpaths = ["refactor_tests"]
+testpaths = ["test"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -208,7 +208,7 @@ warn_unused_configs = true
 # Exclude legacy code from type checking
 exclude = [
     "legacy_bench_gen/",
-    "refactor_tests/",
+    "test/",
     "run.py",
     "run_gpu.py",
     ".*AI_Calculator.py",
