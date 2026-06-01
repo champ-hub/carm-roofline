@@ -10,6 +10,7 @@ This module coordinates the entire benchmark pipeline:
 from __future__ import annotations
 
 import tempfile
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -120,8 +121,18 @@ def run_full_benchmark(
 
     debug(f"Flattened benchmarks for compilation: {list(flat_benchmarks.keys())}")
 
-    with tempfile.TemporaryDirectory(prefix="carm-test-bench-") as workspace_dir:
+    keep_workspace = context.run_config.dry_run or context.run_config.keep_artifacts
+    context_manager: AbstractContextManager[str] = (
+        nullcontext(tempfile.mkdtemp(prefix="carm-dry-run-"))  # type: ignore[assignment]
+        if keep_workspace
+        else tempfile.TemporaryDirectory(prefix="carm-dry-run-")
+    )
+
+    with context_manager as workspace_dir:
         workspace = Path(workspace_dir)
+
+        if keep_workspace:
+            detail(f"Artifacts will be kept in: {workspace}")
 
         # Keep generated artifacts in a writable temporary workspace.
         # Static C sources remain in-package and are included explicitly at compile time.
@@ -132,11 +143,7 @@ def run_full_benchmark(
         create_microbenchmark_header(flat_benchmarks.values(), generated_header)
 
         if context.run_config.dry_run:
-            # TemporaryDirectory will clean up automatically, but we want to keep the generated header
-            final_dir = tempfile.mkdtemp(prefix="carm-dry-run-")
-            final_header = Path(final_dir) / "microbenchmarks.h"
-            generated_header.rename(final_header)
-            detail(f"Dry run: wrote generated header to {final_header}; skipping compilation and execution.")
+            detail(f"Dry run: wrote generated header to {generated_header}; skipping compilation and execution.")
             return isa_suites
 
         # Step 4: Compile single binary with all benchmarks
