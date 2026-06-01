@@ -103,6 +103,36 @@ class ISAFrequencies:
             base_frequency = Frequency(base_frequency)
         return ISAFrequencies({isa.name: base_frequency for isa in isas})
 
+    @staticmethod
+    def from_detected(detected: DetectedArchitecture, isa_list: list[type[BaseISA]]) -> ISAFrequencies:
+        """Create ISAFrequencies from auto-detected architecture data.
+
+        Initializes all ISAs to the base frequency, then overrides with any per-ISA
+        specific frequencies that were detected.
+
+        Args:
+            detected: DetectedArchitecture object from probing
+            isa_list: List of ISA classes for this architecture
+
+        Returns:
+            ISAFrequencies with appropriate frequencies from detected data
+
+        Raises:
+            ValueError: If no frequency information is available
+        """
+        base_freq = detected.frequency
+        if not base_freq:
+            raise ValueError("Frequency could not be auto-detected, specify it using --frequency <freq>")
+
+        # Start with all ISAs at base frequency
+        isa_freqs_dict = {isa.name: base_freq for isa in isa_list}
+
+        # Override with any specific ISA frequencies that were detected
+        if detected.isa_frequencies:
+            isa_freqs_dict.update(detected.isa_frequencies)
+
+        return ISAFrequencies(isa_freqs_dict)
+
     def __getitem__(self, isa_name: str) -> Frequency:
         """Get frequency for a specific ISA.
 
@@ -111,6 +141,9 @@ class ISAFrequencies:
 
         Returns:
             Frequency wrapper for that ISA
+
+        Raises:
+            KeyError: If ISA not found
         """
         return self._isa_frequencies[isa_name]
 
@@ -177,7 +210,7 @@ class Architecture(InsertsArguments):
                 "Specify them using a TOML config file with --topology-config <path>"
             )
 
-        # Handle frequency: user arg (Frequency wrapper) overrides all, otherwise use detected per-ISA frequencies
+        # Handle frequency: user arg (Frequency wrapper) overrides all, otherwise use detected
         if args.frequency is not None:
             # args.frequency is already a Frequency wrapper from frequency_type()
             self.frequency = ISAFrequencies.from_base_frequency(args.frequency, self.isa)
@@ -185,14 +218,7 @@ class Architecture(InsertsArguments):
                 d_freq = detected.frequency if detected.isa_frequencies is None else detected.isa_frequencies
                 _override_warn("frequency", args.frequency, d_freq)
         else:
-            isa_freqs = detected.isa_frequencies
-            # if there are isa-specific frequencies, use them; otherwise fall back to base frequency if available
-            if isa_freqs:
-                self.frequency = ISAFrequencies(isa_freqs)
-            elif base_freq := detected.frequency:
-                self.frequency = ISAFrequencies.from_base_frequency(base_freq, self.isa)
-            else:
-                raise ValueError("Frequency could not be auto-detected, specify it using --frequency <freq>")
+            self.frequency = ISAFrequencies.from_detected(detected, self.isa)
 
         self.nominal_frequency: Frequency | None = detected.frequency_nominal
 
