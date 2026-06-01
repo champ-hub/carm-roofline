@@ -19,6 +19,7 @@ class RunConfig(InsertsArguments):
         self.dry_run: bool = args.dry_run
         self.output_dir: Path = args.output_dir
         self.output_formats: set[OutputKind] = set(args.output_fmt)
+        self.keep_artifacts: bool = args.keep_artifacts
         if self.dry_run:
             warn("Dry run enabled: no benchmarks will be executed.")
 
@@ -51,4 +52,11 @@ class RunConfig(InsertsArguments):
             action=enum_action(OutputKind),
             default={OutputKind.TABLE, OutputKind.PLOT, OutputKind.JSON, OutputKind.CSV},
             help="Output format(s): table, plot, json, csv (default: table plot json csv)",
+        )
+        parser.add_argument(
+            "--keep-artifacts",
+            action="store_true",
+            help="Keep generated benchmark artifacts (source files, binaries) in the temporary directory after "
+            "execution",
+            default=False,
         )
