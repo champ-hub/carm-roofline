@@ -123,9 +123,9 @@ def run_full_benchmark(
 
     keep_workspace = context.run_config.dry_run or context.run_config.keep_artifacts
     context_manager: AbstractContextManager[str] = (
-        nullcontext(tempfile.mkdtemp(prefix="carm-dry-run-"))  # type: ignore[assignment]
+        nullcontext(tempfile.mkdtemp(prefix="carm-benchmark"))  # type: ignore[assignment]
         if keep_workspace
-        else tempfile.TemporaryDirectory(prefix="carm-dry-run-")
+        else tempfile.TemporaryDirectory(prefix="carm-benchmark")
     )
 
     with context_manager as workspace_dir:
