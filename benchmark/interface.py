@@ -132,7 +132,11 @@ def run_full_benchmark(
         create_microbenchmark_header(flat_benchmarks.values(), generated_header)
 
         if context.run_config.dry_run:
-            detail(f"Dry run: wrote generated header to {generated_header}; skipping compilation and execution.")
+            # TemporaryDirectory will clean up automatically, but we want to keep the generated header
+            final_dir = tempfile.mkdtemp(prefix="carm-dry-run-")
+            final_header = Path(final_dir) / "microbenchmarks.h"
+            generated_header.rename(final_header)
+            detail(f"Dry run: wrote generated header to {final_header}; skipping compilation and execution.")
             return isa_suites
 
         # Step 4: Compile single binary with all benchmarks
