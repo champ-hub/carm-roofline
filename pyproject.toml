@@ -1,6 +1,6 @@
 [project]
 name = "carm-roofline"
-version = "1.0.0.dev4"
+version = "1.0.0.dev5"
 description = "CARM: Cache-Aware Roofline Model benchmarking and visualization toolkit"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -16,7 +16,7 @@ classifiers = [
     "Topic :: Software Development :: Testing",
     "Topic :: System :: Benchmark",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.9",
     "Operating System :: POSIX :: Linux",
 ]
 
