@@ -172,7 +172,7 @@ class X86AVX2(X86AVX):
         super().__init__(**kwargs)
 
 
-class X86AVX512(X86Scalar):
+class X86AVX512(X86SSE):
     name = "x86_avx512"
     BITS = 512
 
