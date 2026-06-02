@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# PYTHON_ARGCOMPLETE_OK
 from __future__ import annotations
 
 import argparse
@@ -9,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+import argcomplete
 from rich_argparse import RichHelpFormatter
 
 from architecture import set_execution_interface
@@ -168,6 +170,8 @@ def _create_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _create_parser()
+    argcomplete.autocomplete(parser)
+
     if argv is None:
         argv = sys.argv[1:]
 

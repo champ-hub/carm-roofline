@@ -50,6 +50,7 @@ repos:
           'matplotlib',
           'tomli',
           'platformdirs',
+          'argcomplete'
         ]
         exclude: |
           (?x)(

@@ -278,20 +278,18 @@ class Architecture(InsertsArguments):
         parser.add_argument(
             "-i",
             "--isa",
-            nargs="*",
+            nargs="+",
             choices=list(ISA_NAME_TO_CLASS.keys()),
             help="Set of ISAs to test. (Default: automatically detects all available ISAs)",
         )
         parser.add_argument(
             "-l",
             "--vector-length",
-            nargs="?",
             type=positive_po2_int,
             help="Vector register length in bytes. (Default: automatically detected)",
         )
         parser.add_argument(
             "--vector-lmul",
-            nargs="?",
             type=int,
             choices=(1, 2, 4, 8),
             help="Vector register group modifier (LMUL). RISC-V specific.",
@@ -314,7 +312,6 @@ class Architecture(InsertsArguments):
         )
         parser.add_argument(
             "--frequency",
-            nargs="?",
             type=Frequency.from_argparse,
             help="Processor frequency, e.g. '2GHz', '3200mhz' (Default: automatically detected if possible)",
         )

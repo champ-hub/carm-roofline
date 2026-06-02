@@ -37,10 +37,10 @@
 ## Running Tools
 
 - ALWAYS run venv activation and tool commands like this, so they are auto-accepted:
-  - `source venv/bin/activate` to start (commands are persisted: only activate once per session)
+  - `source .venv/bin/activate` to start (commands are persisted: only activate once per session)
   - Use relative paths for all commands. Your cwd is always the project root.
-  - e.g. `ruff check --fix`, NOT `venv/bin/ruff check --fix`
-  - e.g. `mypy .`, NOT `source venv/bin/activate && mypy .`
+  - e.g. `ruff check --fix`, NOT `.venv/bin/ruff check --fix`
+  - e.g. `mypy .`, NOT `source .venv/bin/activate && mypy .`
 
 ---
 

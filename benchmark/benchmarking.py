@@ -132,7 +132,6 @@ class Benchmarking(InsertsArguments):
             "-m",
             "--mem-target",
             default="all",
-            nargs="?",
             choices=["L1", "L2", "L3", "DRAM", "all"],
             help="Target memory level for 'memory' and 'mixed' tests (Default: all)",
         )
@@ -140,7 +139,6 @@ class Benchmarking(InsertsArguments):
             "-o",
             "--num-ops",
             default=32 * 1024,
-            nargs="?",
             type=positive_int,
             help="Number of arithmetic operations to perform in the arithmetic test (Default: 32768)",
         )
@@ -148,7 +146,6 @@ class Benchmarking(InsertsArguments):
             "-d",
             "--data-type",
             default=DataType.f32,
-            nargs="?",
             action=enum_action(DataType),
             help="Data type for benchmark operations (Default: f32)",
         )
@@ -171,7 +168,6 @@ class Benchmarking(InsertsArguments):
         parser.add_argument(
             "--ld-st-ratio",
             default=LoadStoreRatio(2, 1),
-            nargs="?",
             type=ld_st_ratio_type,
             help="Load-to-store ratio for memory access patterns. Format: 'LD:ST' (e.g., '2:1') or a single "
             "integer for 'N:1' ratio. Use '1:0' for load-only or '0:1' for store-only tests. (Default: 2:1)",
@@ -179,13 +175,12 @@ class Benchmarking(InsertsArguments):
         parser.add_argument(
             "--arith-mem-ratio",
             default=2,
-            nargs="?",
             type=positive_int,
             help="Ratio between arithmetic and memory operations for 'mixed' test (Default: 2)",
         )
         parser.add_argument(
             "--mem-test-sizes",
-            nargs="*",
+            nargs="+",
             type=mem_test_size_type,
             help="Size of the test arrays for each memory level in KiB. 'auto' can be used to automatically determine "
             "sizes based on the cache sizes, e.g. '--mem-test-sizes 32 256 2048 65536' / '--mem-test-sizes auto auto "
@@ -194,7 +189,6 @@ class Benchmarking(InsertsArguments):
         parser.add_argument(
             "--test-time",
             default=25.0,
-            nargs="?",
             type=positive_float,
             help="Target runtime for each individual microbenchmark, in seconds. Low runtime may lead to inaccurate "
             "results. (Default: 25.0)",

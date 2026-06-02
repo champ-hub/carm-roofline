@@ -57,7 +57,6 @@ class ExecutionInterface(InsertsArguments):
     def insert_arguments(parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "--sim-cmd",
-            nargs="?",
             type=_sim_cmd_type,
             default=None,
             help="Simulator command template with {binary} placeholder (e.g., 'sde -mix -- {binary}'). "
@@ -65,7 +64,6 @@ class ExecutionInterface(InsertsArguments):
         )
         parser.add_argument(
             "--compiler",
-            nargs="?",
             type=_compiler_type,
             default="gcc",
             help="C compiler to use for building tests (e.g., 'riscv64-linux-gnu-gcc'). Default: gcc",
