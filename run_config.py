@@ -29,6 +29,7 @@ class RunConfig(InsertsArguments):
             "--verbose",
             "-v",
             default=3,
+            const=4,
             nargs="?",
             type=int,
             choices=(0, 1, 2, 3, 4),
@@ -42,7 +43,6 @@ class RunConfig(InsertsArguments):
         parser.add_argument(
             "--output-dir",
             default=default_results_root(),
-            nargs="?",
             type=Path,
             help="Directory to write result files (default: platform user data dir for app 'carm')",
         )

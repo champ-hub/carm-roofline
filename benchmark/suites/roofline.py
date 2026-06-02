@@ -65,7 +65,7 @@ class RooflineBenchmarkSuite(ISABenchmarkSuite):
         for bench in self.get_memory_benchmarks().values():
             if bench.cache_level is None:
                 raise ValueError(
-                    f"Memory benchmark {bench.name} missing cache level annotation for roofline benchmarking"
+                    f"Memory benchmark {bench.name} missing cache level annotation for roofline benchmarki>ng"
                 )
             if bench.results is None:
                 raise ValueError(f"Memory benchmark {bench.name} missing bandwidth result for roofline benchmarking")
