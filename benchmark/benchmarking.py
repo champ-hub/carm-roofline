@@ -11,7 +11,7 @@ from enum import Enum
 from arguments import InsertsArguments, enum_action, positive_float, positive_int
 from benchmark.generation.code_gen.operation import ArithmeticOperation
 from output_utils import warn
-from units import Operations
+from units import Bytes, Operations
 
 from .generation import DataType
 
@@ -66,27 +66,29 @@ def ld_st_ratio_type(arg: str) -> LoadStoreRatio:
     return LoadStoreRatio(ld, st)
 
 
-def mem_test_size_type(arg: str) -> int | str:
+def mem_test_size_type(arg: str) -> Bytes | None:
     """Parse a memory test size specifier.
 
     Accepts either:
-      - A positive integer (KiB)
+      - A quantity with a binary unit (e.g. "16 KiB", "2 MiB", "8 GiB")
       - The string "auto" (case-insensitive) for automatic sizing
 
     Returns:
-        int (KiB value) or str (literal "auto")
+        Bytes or None (for "auto")
 
     Raises:
         argparse.ArgumentTypeError on invalid input.
     """
     s = str(arg).strip().lower()
     if s == "auto":
-        return "auto"
+        return None
     try:
-        return positive_int(arg)
-    except (ValueError, argparse.ArgumentTypeError) as e:
+        return Bytes.from_argparse(arg)
+    except argparse.ArgumentTypeError:
+        raise
+    except Exception as e:
         raise argparse.ArgumentTypeError(
-            f"invalid memory test size: {arg!r}. Must be a positive integer or 'auto'"
+            f"invalid memory test size: {arg!r}. Expected a binary unit string like '16 KiB', '2 MiB', or 'auto'. ({e})"
         ) from e
 
 
@@ -106,7 +108,7 @@ class Benchmarking(InsertsArguments):
         self.num_ops: Operations = Operations(args.num_ops)
         self.ld_st_ratio: LoadStoreRatio = args.ld_st_ratio
         self.arith_mem_ratio: int = args.arith_mem_ratio
-        self.mem_test_sizes: list[int | str] | None = args.mem_test_sizes
+        self.mem_test_sizes: list[Bytes | None] | None = args.mem_test_sizes
         self.verbose: int = args.verbose
         self.test_time: float = args.test_time
         if self.test_time < 10.0:
@@ -182,9 +184,11 @@ class Benchmarking(InsertsArguments):
             "--mem-test-sizes",
             nargs="+",
             type=mem_test_size_type,
-            help="Size of the test arrays for each memory level in KiB. 'auto' can be used to automatically determine "
-            "sizes based on the cache sizes, e.g. '--mem-test-sizes 32 256 2048 65536' / '--mem-test-sizes auto auto "
-            "2048 auto' for L1, L2, L3, DRAM tests respectively. (Default: auto for all levels)",
+            help="Size of the test arrays for each memory level. Accepts binary unit strings like '16KiB', '2MiB', "
+            "'8GiB', or 'auto' to automatically size based on detected caches. "
+            "e.g. '--mem-test-sizes 16KiB 256KiB 2MiB 64GiB' / "
+            "'--mem-test-sizes auto auto 2MiB auto' for L1, L2, L3, DRAM respectively. "
+            "(Default: auto for all levels)",
         )
         parser.add_argument(
             "--test-time",

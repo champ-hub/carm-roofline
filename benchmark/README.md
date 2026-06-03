@@ -80,7 +80,7 @@ Encapsulates all benchmark configuration via the `InsertsArguments` pattern:
 - `num_ops: int` - Number of operations per benchmark
 - `ld_st_ratio: LoadStoreRatio` - Load/store ratio for memory tests
 - `arith_mem_ratio: tuple[int, int] | None` - Arithmetic/memory ratio for mixed tests
-- `mem_test_sizes: list[int]` - Memory test sizes in bytes
+- `mem_test_sizes: list[Bytes | None] | None` - Per-level memory test sizes as Bytes objects, or None for automatic sizing
 - `test_time: float` - Target runtime per benchmark (seconds)
 
 **TestType Enum:**
