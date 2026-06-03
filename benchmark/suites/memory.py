@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -68,6 +69,11 @@ class MemoryBenchmarkSuite(ISABenchmarkSuite):
 
         previous_size_per_thread: Bytes | None = None
 
+        # Iterator over user-provided per-level sizes (if any)
+        user_sizes: Iterator[Bytes | None] | None = None
+        if benchmark.mem_test_sizes is not None:
+            user_sizes = iter(benchmark.mem_test_sizes)
+
         mem_level_indices = architecture.memory_topology.available_cache_levels()
         # Generate memory benchmarks for each memory level
         for mem_level_idx, mem_level_info in zip(mem_level_indices, architecture.memory_topology):
@@ -76,13 +82,20 @@ class MemoryBenchmarkSuite(ISABenchmarkSuite):
             # Plan thread affinity for this memory level
             thread_affinity = architecture.memory_topology.plan_thread_affinity(benchmark.threads, mem_level_idx)
             avail_size_per_thread: Bytes = thread_affinity.total_cache_bytes // thread_affinity.num_threads
-            is_first_target = mem_level_idx == mem_level_indices[0]
+            _is_first_target = mem_level_idx == mem_level_indices[0]
             is_final_target = mem_level_idx == mem_level_indices[-1]
 
             if is_final_target and previous_size_per_thread is not None:
                 target_size_per_thread = previous_size_per_thread * 16
             else:
                 target_size_per_thread = avail_size_per_thread * _CACHE_COVERAGE
+
+            # Override with user-provided size (if any) for this cache level.
+            # A None entry in the list (from "auto") keeps the computed value.
+            if user_sizes is not None:
+                user_size = next(user_sizes, None)
+                if user_size is not None:
+                    target_size_per_thread = user_size
 
             # Warn if the per-thread dataset also fits in a smaller (closer-to-CPU) cache level.
             # E.g. targeting L3 with 16 threads, but per-thread data fits in each thread's L2:
@@ -99,7 +112,8 @@ class MemoryBenchmarkSuite(ISABenchmarkSuite):
                     )
 
             # Generate memory benchmark for this level
-            layout_mode = MemoryLayoutMode.single if is_first_target else MemoryLayoutMode.split
+            # Use split layout only for the DRAM
+            layout_mode = MemoryLayoutMode.split if is_final_target else MemoryLayoutMode.single
             params = MemoryBenchmarkParams(
                 data_type=data_type,
                 thread_affinity=thread_affinity.cpu_ids,
