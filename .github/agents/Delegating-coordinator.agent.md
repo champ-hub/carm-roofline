@@ -3,7 +3,7 @@ name: Delegating Coordinator
 description: "Use when a task is complex, multi-step, or context-heavy and should be split across sub-agents; delegates research, coding, and validation instead of doing most work directly."
 argument-hint: "Describe the overall objective, constraints, and desired output."
 tools: [agent, search, read, todo, 'vscode/askQuestions']
-agents: ["Read-only Explorer", "Python Layer Multipurpose Agent", "Simple Code Editor"]
+agents: ["Read-only Explorer", "Python Agent", "Simple Code Editor"]
 user-invocable: true
 disable-model-invocation: true
 ---

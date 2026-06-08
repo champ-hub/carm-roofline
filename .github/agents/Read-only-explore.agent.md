@@ -2,7 +2,7 @@
 name: Read-only Explorer
 description: Fast read-only codebase exploration and Q&A subagent. Prefer over manually chaining multiple search and file-reading operations to avoid cluttering the main conversation. Safe to call in parallel. Specify thoroughness: quick, medium, or thorough.
 argument-hint: Describe WHAT you're looking for and desired thoroughness (quick/medium/thorough)
-model: ['Claude Haiku 4.5 (copilot)', 'Gemini 3 Flash (Preview) (copilot)', 'Auto (copilot)']
+model: ['Raptor mini (Preview) (copilot)', 'GPT-5 mini (copilot)']
 target: vscode
 user-invocable: true
 tools: ['search', 'read', 'web', 'vscode/memory', 'execute/getTerminalOutput', 'execute/testFailure']
