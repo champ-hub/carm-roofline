@@ -30,6 +30,7 @@
 - Benchmark execution? → Read [test_bench/README.md](../test_bench/README.md)
 - Suite system? → Read [benchmark/suites/README.md](../benchmark/suites/README.md)
 - General benchmark flow? → Read [benchmark/README.md](../benchmark/README.md)
+- Profiling MPI/threaded apps? → Read [profile/README.md](../profiling/README.md)
 - Understanding legacy/deprecated code? → Read [legacy/README.md](legacy/README.md)
 
 ---
@@ -133,6 +134,13 @@ CARM (Cache-Aware Roofline Model) is a micro-benchmarking tool that constructs r
 - `PMU_AI_Calculator.py` - PAPI-based performance counters
 - `DBI_AI_Calculator.py` - DynamoRIO/SDE binary instrumentation
 - `ROC_AI_Calculator.py`, `NCU_AI_Calculator.py`, `SDE_AI_Calculator.py` - Specialized calculators
+
+### Application Profiling
+
+**[profiling/](../profiling/)** - MPI-Aware PAPI Profiling
+- **See [profiling/README.md](../profiling/README.md) for the profiling architecture**
+- Summary: PAPI HL backend, file discovery/parsing, rank/thread data model, aggregation strategies (mpi-job, per-rank), CSV/JSON output writers
+- Entry point: `profile_main()` called from `carm.py`'s profile subcommand handler
 
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: Python Layer Multipurpose Agent
+name: Python Agent
 description: "Use when working on CARM's Python layer: CLI flow, architecture detection, benchmark generation/suites, typing/lint/test validation, packaging, and focused implementation with verification."
 argument-hint: "Describe the Python-layer objective, constraints, and expected validation output."
 tools: [agent, search, read, edit, execute, todo, 'vscode/askQuestions', 'vscode/memory', 'web/githubRepo', ms-python.python/getPythonEnvironmentInfo, ms-python.python/configurePythonEnvironment, ms-python.python/getPythonExecutableCommand]
