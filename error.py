@@ -1,5 +1,5 @@
 from __future__ import annotations
 
 
-class ConfigurationError(Exception):
-    """Raised for errors in configuration files or parameters."""
+class UserError(Exception):
+    """Raised for "expected" errors that occur from the user misconfiguration or incompatible arguments."""

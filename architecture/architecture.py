@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from arguments import InsertsArguments, positive_int
 from benchmark import generation as bench_gen
-from error import ConfigurationError
+from error import UserError
 from output_utils import configure_verbosity, debug, detail, format_if_container, warn
 from units import Frequency
 
@@ -28,14 +28,14 @@ def check_isa_compatibility(selected_isas: list[type[BaseISA]]) -> None:
             families.add(family)
 
     if len(families) > 1:
-        raise ConfigurationError(f"Incompatible ISA families selected: {', '.join(families)}")
+        raise UserError(f"Incompatible ISA families selected: {', '.join(families)}")
 
     # Check for special incompatibilities within the same family
     isa_set = set(selected_isas)
     for incompatible_pair in bench_gen.INCOMPATIBLE_ISAS:
         if incompatible_pair.issubset(isa_set):
             pair_names = ", ".join(isa.name for isa in incompatible_pair)
-            raise ConfigurationError(f"Incompatible ISAs selected: {pair_names}")
+            raise UserError(f"Incompatible ISAs selected: {pair_names}")
 
 
 def positive_po2_int(arg: str) -> int:
@@ -307,6 +307,8 @@ class Architecture(InsertsArguments):
             "--emit-config",
             type=str,
             metavar="PATH",
+            nargs="?",
+            const="topology.toml",
             help="Generate a template TOML configuration file at the specified path and exit. "
             "Edit the template and pass it back with --topology-config.",
         )

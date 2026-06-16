@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from error import ConfigurationError
+from error import UserError
 from output_utils import debug, detail, warn
 from units import Frequency
 
@@ -244,7 +244,7 @@ def detect_cache(ctx: TestContext) -> dict[str, Any]:
             else:
                 raise ValueError("MemoryTopology parsed but contains no CPU data")
         except Exception as e:
-            raise ConfigurationError(
+            raise UserError(
                 f"Failed to parse native system memory topology from /sys: {e}. "
                 "For non-native execution or when sysfs is unavailable, "
                 "please provide cache hierarchy explicitly with --topology-config."
@@ -424,7 +424,7 @@ def native_detect(threads: int = 1) -> DetectedArchitecture:
     """
     machine = platform.machine().lower()
     if machine == "":
-        raise ConfigurationError(
+        raise UserError(
             "Unable to detect machine architecture (platform.machine() returned empty string). Please specify the "
             "architecture manually (--isa <arch>)."
         )

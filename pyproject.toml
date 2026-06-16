@@ -1,6 +1,6 @@
 [project]
 name = "carm-roofline"
-version = "1.0.0.dev6"
+version = "1.0.1.dev0"
 description = "CARM: Cache-Aware Roofline Model benchmarking and visualization toolkit"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -84,10 +84,11 @@ py-modules = [
     "run_config",
     "units",
     "utils",
+    "workspace",
 ]
 
 [tool.setuptools.packages.find]
-include = ["architecture*", "benchmark*", "gui*", "test_bench*"]
+include = ["architecture*", "benchmark*", "gui*", "test_bench*", "profiling*"]
 
 [tool.setuptools.package-data]
 architecture = ["tests/**/*.c", "tests/**/*.h"]
@@ -153,10 +154,11 @@ fixable = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
 "gui/dashboard.py" = ["PLW0603"]
+"profile/*" = ["A005"]
 
 [tool.ruff.lint.isort]
 # Configure import sorting to match common Python conventions
-known-first-party = ["architecture", "benchmark", "exec_interface", "arguments", "gui"]
+known-first-party = ["architecture", "benchmark", "exec_interface", "arguments", "gui", "profile"]
 force-single-line = false  # Allow grouped imports for readability
 combine-as-imports = true  # Combine "as" imports on same line
 

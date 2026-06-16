@@ -9,8 +9,6 @@ This module coordinates the entire benchmark pipeline:
 
 from __future__ import annotations
 
-import tempfile
-from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,6 +19,7 @@ from test_bench.builder import (
     create_microbenchmark_header,
     run_microbenchmarks,
 )
+from workspace import workspace_context
 
 from .benchmark import BaseBenchmark
 from .result import parse_benchmark_output
@@ -122,13 +121,7 @@ def run_full_benchmark(
     debug(f"Flattened benchmarks for compilation: {list(flat_benchmarks.keys())}")
 
     keep_workspace = context.run_config.dry_run or context.run_config.keep_artifacts
-    context_manager: AbstractContextManager[str] = (
-        nullcontext(tempfile.mkdtemp(prefix="carm-benchmark-"))  # type: ignore[assignment]
-        if keep_workspace
-        else tempfile.TemporaryDirectory(prefix="carm-benchmark-")
-    )
-
-    with context_manager as workspace_dir:
+    with workspace_context(keep=keep_workspace, prefix="carm-benchmark-") as workspace_dir:
         workspace = Path(workspace_dir)
 
         if keep_workspace:

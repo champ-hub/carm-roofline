@@ -18,9 +18,10 @@ from arguments import InsertsArguments, TopLevelHelpFormatter
 from benchmark.interface import run_full_benchmark
 from benchmark.output import output_benchmark_results
 from context import Architecture, Benchmarking, CARMContext, ExecutionInterface, RunConfig
-from error import ConfigurationError
+from error import UserError
 from gui.config import GUIConfig
-from output_utils import configure_verbosity, debug, detail, error, info, warn
+from output_utils import configure_verbosity, debug, detail, error, info
+from profiling import ProfileConfig, profile_main
 
 RichHelpFormatter.styles.update(
     {
@@ -47,38 +48,27 @@ def _handle_benchmark(args: argparse.Namespace) -> int:
             info(f"Generated template TOML configuration: {args.emit_config}")
             return 0
         except OSError as e:
-            error(f"Failed to emit template config: {e}")
-            return 1
+            raise OSError(f"Failed to write template config: {e}") from e
 
-    try:
-        exec_iface = ExecutionInterface(args)
-        # Make exec_iface globally available for architecture feature detection
-        set_execution_interface(exec_iface)
-        architecture = Architecture(args)
-        benchmarking = Benchmarking(args)
-        run_config = RunConfig(args)
+    exec_iface = ExecutionInterface(args)
+    # Make exec_iface globally available for architecture feature detection
+    set_execution_interface(exec_iface)
+    architecture = Architecture(args)
+    benchmarking = Benchmarking(args)
+    run_config = RunConfig(args)
 
-        context = CARMContext(
-            architecture=architecture, benchmarking=benchmarking, run_config=run_config, exec_interface=exec_iface
-        )
+    context = CARMContext(
+        architecture=architecture, benchmarking=benchmarking, run_config=run_config, exec_interface=exec_iface
+    )
 
-        benchmark_suites = run_full_benchmark(context)
+    benchmark_suites = run_full_benchmark(context)
 
-        if run_config.dry_run:
-            detail("Dry run finished: benchmark code generated successfully.")
-            return 0
-
-        output_benchmark_results(context, benchmark_suites)
+    if run_config.dry_run:
+        detail("Dry run finished: benchmark code generated successfully.")
         return 0
 
-    except ConfigurationError as e:
-        error(str(e))
-        debug(str(traceback.format_exc()))
-        return 1
-    except Exception as e:
-        error(f"Unexpected error: {e.__class__.__name__}: {e}")
-        debug(str(traceback.format_exc()))
-        return 1
+    output_benchmark_results(context, benchmark_suites)
+    return 0
 
 
 def _handle_gui(args: argparse.Namespace) -> int:
@@ -95,15 +85,15 @@ def _handle_gui(args: argparse.Namespace) -> int:
         error('Failed to import GUI dependencies. Install optional GUI extras with: pip install "carm-roofline[gui]"')
         debug(str(traceback.format_exc()))
         return 1
-    except Exception as e:
-        error(f"Unexpected error: {e.__class__.__name__}: {e}")
-        debug(str(traceback.format_exc()))
-        return 1
 
 
-def _handle_profile(_args: argparse.Namespace) -> int:
-    warn("The 'profile' subcommand is not implemented yet. Use PMU_AI_Calculator.py or DBI_AI_Calculator.py for now.")
-    return 1
+def _handle_profile(args: argparse.Namespace) -> int:
+    configure_verbosity(args.verbose)
+    args_str = ", ".join(f"{k}={v}" for k, v in vars(args).items() if v is not None)
+    debug(f"parsed profile arguments: {args_str}")
+
+    config = ProfileConfig(args)
+    return profile_main(config)
 
 
 @dataclass
@@ -132,10 +122,12 @@ SUBPARSERS = (
     ),
     SubParserInfo(
         name="profile",
-        help_short="Profile applications (TBI)",
-        help_long="Profile applications with CARM metrics (TBI)",
+        help_short="Profile applications with PAPI",
+        help_long="Profile instrumented applications to compute roofline metrics (AI, GFLOP/s, bandwidth). "
+        "Supports MPI, threaded, and hybrid applications. "
+        "Usage: carm profile [options] -- <command>",
         handler=_handle_profile,
-        arg_inserting_modules=(),
+        arg_inserting_modules=(ProfileConfig,),
     ),
 )
 
@@ -185,7 +177,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     handler = cast(Callable[[argparse.Namespace], int], args.handler)
-    return handler(args)
+
+    try:
+        return handler(args)
+    except UserError as e:
+        error(str(e))
+        debug(str(traceback.format_exc()))
+        return 1
+    except Exception as e:
+        error(f"Unexpected error: {e.__class__.__name__}: {e}")
+        debug(str(traceback.format_exc()))
+        return 1
 
 
 if __name__ == "__main__":

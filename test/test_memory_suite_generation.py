@@ -19,6 +19,7 @@ class _DummyBenchmarking:
     data_type: DataType = DataType.f64
     threads: int = 4
     ld_st_ratio: LoadStoreRatio = field(default_factory=lambda: LoadStoreRatio(loads=2, stores=1))
+    mem_test_sizes: list[Bytes | None] | None = None
     mem_target: str = "all"
 
 
