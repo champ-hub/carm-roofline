@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
-from error import ConfigurationError
+from error import UserError
 from units import Bytes
 
 from .memory import SimpleMemoryTopology
@@ -81,13 +81,13 @@ def load_memory_topology_from_toml(config_path: Path | str) -> SimpleMemoryTopol
     """
     config_path = Path(config_path)
     if not config_path.exists():
-        raise ConfigurationError(f"Config file not found: {config_path}")
+        raise UserError(f"Config file not found: {config_path}")
 
     try:
         with open(config_path, "rb") as f:
             config = tomllib.load(f)
     except Exception as e:
-        raise ConfigurationError(f"Failed to parse TOML file '{config_path}': {e}") from e
+        raise UserError(f"Failed to parse TOML file '{config_path}': {e}") from e
 
     total_cpus = _read_optional_int(config, "total_cpus")
     smt_degree = cast(int, _read_optional_int(config, "smt_degree", 1))
@@ -96,7 +96,7 @@ def load_memory_topology_from_toml(config_path: Path | str) -> SimpleMemoryTopol
     # Extract cache levels
     cache_levels_data = config.get("cache_levels", [])
     if not isinstance(cache_levels_data, list) or not cache_levels_data:
-        raise ConfigurationError("Configuration must contain at least one [[cache_levels]] section")
+        raise UserError("Configuration must contain at least one [[cache_levels]] section")
 
     # Parse and validate each cache level (processed in document order; order determines level numbers)
     level_sizes: list[Bytes] = []
@@ -104,17 +104,17 @@ def load_memory_topology_from_toml(config_path: Path | str) -> SimpleMemoryTopol
 
     for level_dict in cache_levels_data:
         if not isinstance(level_dict, dict):
-            raise ConfigurationError(f"Each [[cache_levels]] entry must be a table, got: {type(level_dict).__name__}")
+            raise UserError(f"Each [[cache_levels]] entry must be a table, got: {type(level_dict).__name__}")
         try:
             instances = level_dict["instances"]
             size_str = level_dict["size"]
         except KeyError as e:
-            raise ConfigurationError(f"Cache level section missing required field: {e}") from e
+            raise UserError(f"Cache level section missing required field: {e}") from e
 
         if not isinstance(instances, int):
-            raise ConfigurationError(f"'instances' must be an integer, got: {instances!r}")
+            raise UserError(f"'instances' must be an integer, got: {instances!r}")
         if not isinstance(size_str, str):
-            raise ConfigurationError(f"'size' must be a string, got: {size_str!r}")
+            raise UserError(f"'size' must be a string, got: {size_str!r}")
 
         size = Bytes.from_string(size_str)
         level_sizes.append(size)

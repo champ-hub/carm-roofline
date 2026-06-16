@@ -9,7 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from error import ConfigurationError
+from error import UserError
 from output_utils import debug, format_if_container
 from units import Bytes
 
@@ -168,26 +168,26 @@ class SimpleMemoryTopology:
         """
 
         if len(level_sizes) != len(instances_per_level):
-            raise ConfigurationError(
+            raise UserError(
                 "Level sizes and instances_per_level must have same length: "
                 f"{len(level_sizes)} vs {len(instances_per_level)}"
             )
         if not level_sizes:
-            raise ConfigurationError("At least one cache level must be provided")
+            raise UserError("At least one cache level must be provided")
 
         if any(inst <= 0 for inst in instances_per_level):
-            raise ConfigurationError("All values in instances_per_level must be positive integers")
+            raise UserError("All values in instances_per_level must be positive integers")
 
         if total_cpus is not None and total_cpus <= 0:
-            raise ConfigurationError(f"total_cpus must be positive when provided, got {total_cpus}")
+            raise UserError(f"total_cpus must be positive when provided, got {total_cpus}")
 
         if cpu_offset < 0:
-            raise ConfigurationError(f"cpu_offset must be >= 0, got {cpu_offset}")
+            raise UserError(f"cpu_offset must be >= 0, got {cpu_offset}")
 
         if total_cpus is not None:
             for idx, instances in enumerate(instances_per_level, 1):
                 if instances > total_cpus:
-                    raise ConfigurationError(
+                    raise UserError(
                         f"Cache level {idx}: instances ({instances}) cannot exceed total_cpus ({total_cpus})"
                     )
 

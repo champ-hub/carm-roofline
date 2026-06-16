@@ -65,10 +65,33 @@ def test_benchmark_mode_smoke_with_monkeypatch(monkeypatch: pytest.MonkeyPatch) 
     assert calls["bench_args"].test_time == 1.0
 
 
-def test_profile_placeholder_returns_non_zero(capsys: pytest.CaptureFixture[str]) -> None:
+def test_no_command_profile_returns_non_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    """Calling 'carm profile' without a command should return non-zero."""
     exit_code = carm.main(["profile"])
 
     assert exit_code != 0
+
+
+def test_profile_empty_command_returns_non_zero() -> None:
+    """Calling 'carm profile' with an empty command via -- should return non-zero."""
+    exit_code = carm.main(["profile", "--"])
+
+    assert exit_code != 0
+
+
+def test_profile_help_shows_options(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        carm.main(["profile", "--help"])
+
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "aggregation" in out
+    assert "global" in out
+    assert "rank" in out
+    assert "thread" in out
+    assert "region" in out
+    assert "results-dir" in out
+    assert "command" in out
 
 
 def test_benchmark_emit_config_creates_file(tmp_path: Path) -> None:
