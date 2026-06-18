@@ -15,10 +15,15 @@ from output_utils import detail, info, warn
 from workspace import workspace_context
 
 from .aggregation import AggregatedPoint, aggregate
-from .backends import PAPIHLBackend, ProfilerBackend
-from .config import AggregationMode, ProfileConfig
-from .loaders import load_all_ranks
-from .metrics import (
+from .backends import ProfilerBackend, create_backend
+from .config import AggregationMode, BackendType, ProfileConfig
+from .model import RankMetrics, RegionMetrics, RunMetadata, RunResults, ThreadMetrics
+from .output import write_profile_results
+from .papi_loader import load_all_ranks
+from .papi_metrics import resolve_metrics
+from .perf_loader import parse_perf_csv
+from .perf_metrics import parse_perf_available_events, resolve_perf_metrics
+from .shared import (
     MetricContext,
     MetricDefinition,
     MetricResolutionConfig,
@@ -26,16 +31,16 @@ from .metrics import (
     compute_region_point,
     sum_roofline_points,
 )
-from .model import RankMetrics, RegionMetrics, RunMetadata, RunResults, ThreadMetrics
-from .output import write_profile_results
 
 __all__ = [
     "AggregatedPoint",
     "AggregationMode",
+    "BackendType",
     "MetricDefinition",
     "MetricResolutionConfig",
     "MetricType",
     "PAPIHLBackend",
+    "PerfBackend",
     "ProfileConfig",
     "ProfilerBackend",
     "RankMetrics",
@@ -45,10 +50,14 @@ __all__ = [
     "ThreadMetrics",
     "aggregate",
     "compute_region_point",
+    "create_backend",
     "load_all_ranks",
     "parse_available_events",
+    "parse_perf_available_events",
+    "parse_perf_csv",
     "profile_main",
     "resolve_metrics",
+    "resolve_perf_metrics",
     "sum_roofline_points",
     "write_profile_results",
 ]
@@ -58,10 +67,10 @@ def profile_main(config: ProfileConfig) -> int:
     """Run the profiling pipeline given a resolved configuration.
 
     Pipeline:
-        1. Resolve PAPI metrics for the current system.
-        2. Create a temporary workspace for raw PAPI HL output.
-        3. Run the profiled command (via the PAPI backend) → output files.
-        4. Discover and parse rank/region output files.
+        1. Select backend via factory and resolve metrics for the current system.
+        2. Create a temporary workspace for raw profiling output.
+        3. Run the profiled command (via the selected backend) → output files.
+        4. Parse output files via the backend into the rank/thread/region model.
         5. Aggregate according to the chosen strategy (computing flops/bytes).
         6. Write output files to the final output directory.
 
@@ -84,24 +93,20 @@ def profile_main(config: ProfileConfig) -> int:
         if config.keep_artifacts:
             detail(f"Profiling artifacts will be kept in: {workspace}")
 
-        # Choose backend and run (PAPI HL only for now)
-        backend: ProfilerBackend = PAPIHLBackend(
-            workspace,
-            resolution_config=resolution_cfg,
-            events_override=config.papi_events,
-        )
+        # Factory: create the appropriate backend
+        backend = create_backend(config, workspace, resolution_cfg)
 
         any_non_ideal = backend.check_prerequisites()
         if any_non_ideal and (config.isa is None or config.data_type is None):
             warn(
-                "Some of the available metrics don't provide ops/bytes directly. To improve the accuracy of derived"
+                "Some of the available metrics don't provide ops/bytes directly. To improve the accuracy of derived "
                 "metrics, specify the dominant ISA and data type of your application using --isa and --data-type."
             )
 
         # Read resolved metrics from the backend after check_prerequisites
         resolved = backend.resolved_metrics
         if not resolved:
-            warn("No PAPI metric implementations could be resolved. Flops/bytes will be zero.")
+            warn("No metric implementations could be resolved. Ops/bytes will be zero.")
 
         # Create a metric context for computing flops/bytes based on user preferences
         metric_ctx = MetricContext(resolution_cfg)
@@ -110,21 +115,14 @@ def profile_main(config: ProfileConfig) -> int:
         if exit_code != 0:
             warn(f"Profiled command exited with code {exit_code}. Processing any available results.")
 
-        # Discover and parse output files
-        papi_output_dir = workspace / "papi_hl_output"
-        detail(f"Scanning for profiling results in: {papi_output_dir}")
-        ranks = load_all_ranks(papi_output_dir)
+        # Parse output via the backend (no per-backend branching)
+        ranks = backend.parse_output()
 
-        if not ranks:
-            raise UserError("No profiling result files found. Did the application run with PAPI HL instrumentation?")
-
-        info(f"Loaded {len(ranks)} rank(s) from {papi_output_dir}")
-
-        # Build RunResults
+        # Build metadata
         metadata = RunMetadata(
             name=config.name,
             date=datetime.now().isoformat(timespec="seconds"),
-            method="PAPI HL",
+            method=backend.run_method_name,
             command=" ".join(config.command),
             threads_per_rank=max((len(r.threads) for r in ranks), default=1),
         )

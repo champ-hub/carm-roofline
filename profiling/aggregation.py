@@ -19,14 +19,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .config import AggregationMode
-from .metrics import (
+from .model import RegionMetrics, RunResults
+from .shared import (
     MetricContext,
     MetricDefinition,
     MetricType,
     compute_region_point,
     sum_roofline_points,
 )
-from .model import RegionMetrics, RunResults
 
 
 @dataclass

@@ -16,20 +16,23 @@ from profiling.aggregation import (
     aggregate_per_thread,
 )
 from profiling.config import AggregationMode
-from profiling.loaders import (
+from profiling.papi_loader import (
     RankMetrics,
     discover_rank_files,
     load_all_ranks,
     parse_rank_file,
 )
-from profiling.metrics import (
+from profiling.papi_metrics import (
     METRICS,
+    _parse_papi_xml_output,
+    resolve_metrics,
+)
+from profiling.shared import (
     MetricContext,
+    MetricResolutionConfig,
     MetricDefinition,
     MetricType,
-    _parse_papi_xml_output,
     compute_region_point,
-    resolve_metrics,
     sum_roofline_points,
 )
 from profiling.model import RegionMetrics, RunMetadata, RunResults, ThreadMetrics
@@ -37,7 +40,7 @@ from profiling.model import RegionMetrics, RunMetadata, RunResults, ThreadMetric
 pytestmark = pytest.mark.unit
 
 # Default MetricContext for tests (8 bytes/inst, 1 op/inst)
-DEFAULT_CTX = MetricContext()
+DEFAULT_CTX = MetricContext(MetricResolutionConfig())
 
 # ---------------------------------------------------------------------------
 # PAPI HL sample data (matches the actual format from rank_000003.json)
@@ -506,21 +509,20 @@ def test_write_profile_json_per_rank(tmp_path: Path) -> None:
 
 def test_metric_definition_frozen() -> None:
     md = MetricDefinition(
-        type=MetricType.DP_FLOPS,
+        type=MetricType.FLOPS,
         required_events=frozenset({"PAPI_DP_OPS"}),
         compute=lambda e, ctx: e["PAPI_DP_OPS"],
         priority=100,
         description="test",
     )
-    assert md.type == MetricType.DP_FLOPS
+    assert md.type == MetricType.FLOPS
     assert md.required_events == frozenset({"PAPI_DP_OPS"})
     assert md.priority == 100
     assert md.description == "test"
 
 
 def test_metric_registry_has_expected_metrics() -> None:
-    assert MetricType.DP_FLOPS in METRICS
-    assert MetricType.SP_FLOPS in METRICS
+    assert MetricType.FLOPS in METRICS
     assert MetricType.BYTES in METRICS
 
 
@@ -531,31 +533,31 @@ def test_metric_registry_has_implementations_for_each_type() -> None:
         )
 
 
-def test_resolve_metrics_dp_exact_when_available() -> None:
+def test_resolve_metrics_flops_via_dp_ops() -> None:
     available = frozenset({"PAPI_DP_OPS", "PAPI_TOT_CYC"})
     resolved = resolve_metrics(available)
-    assert resolved[MetricType.DP_FLOPS].priority == 100
+    assert MetricType.FLOPS in resolved
 
 
-def test_resolve_metrics_dp_fallback_when_exact_unavailable() -> None:
+def test_resolve_metrics_flops_via_fp_ops() -> None:
     available = frozenset({"PAPI_FP_OPS", "PAPI_TOT_CYC"})
     resolved = resolve_metrics(available)
-    assert resolved[MetricType.DP_FLOPS].priority == 50
-    assert "PAPI_FP_OPS" in resolved[MetricType.DP_FLOPS].description
+    assert MetricType.FLOPS in resolved
+    assert "PAPI_FP_OPS" in resolved[MetricType.FLOPS].description
 
 
-def test_resolve_metrics_dp_none_when_nothing_available() -> None:
+def test_resolve_metrics_flops_none_when_nothing_available() -> None:
     available = frozenset({"PAPI_TOT_CYC", "PAPI_L1_DCM"})
     resolved = resolve_metrics(available)
-    assert MetricType.DP_FLOPS not in resolved
+    assert MetricType.FLOPS not in resolved
 
 
-def test_resolve_metrics_sp_via_subtraction() -> None:
+def test_resolve_metrics_flops_via_fp_and_dp_ops() -> None:
     available = frozenset({"PAPI_FP_OPS", "PAPI_DP_OPS"})
     resolved = resolve_metrics(available)
-    sp_impl = resolved.get(MetricType.SP_FLOPS)
-    assert sp_impl is not None
-    value = sp_impl.compute({"PAPI_FP_OPS": 1000.0, "PAPI_DP_OPS": 400.0}, DEFAULT_CTX)
+    # PAPI_FP_OPS wins (priority 100 > 90)
+    assert MetricType.FLOPS in resolved
+    value = resolved[MetricType.FLOPS].compute({"PAPI_FP_OPS": 1000.0, "PAPI_DP_OPS": 400.0}, DEFAULT_CTX)
     assert value == 1000.0
 
 
@@ -590,8 +592,7 @@ def test_resolve_metrics_empty_available() -> None:
 def test_resolve_metrics_all_metrics_resolved() -> None:
     all_papi = frozenset({"PAPI_DP_OPS", "PAPI_SP_OPS", "PAPI_LD_INS", "PAPI_SR_INS"})
     resolved = resolve_metrics(all_papi)
-    assert MetricType.DP_FLOPS in resolved
-    assert MetricType.SP_FLOPS in resolved
+    assert MetricType.FLOPS in resolved
     assert MetricType.BYTES in resolved
 
 
