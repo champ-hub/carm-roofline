@@ -83,6 +83,7 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
                     "isa": isa,
                     "operation": benchmark.params.operation.name,
                     "benchmark": benchmark_name,
+                    "threads": benchmark.params.num_threads,
                     "gops": float(res.performance.value) / 1e9,
                     "gops_display": str(res.performance),
                     "ipc": ipc,
@@ -103,6 +104,7 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
     # normal output columns
     table.add_column("ISA", style="cyan")
     table.add_column("Op", style="magenta")
+    table.add_column("Threads", style="magenta")
     table.add_column("GOPS", justify="right")
     table.add_column("IPC", justify="right")
     table.add_column("Frequency", justify="right")
@@ -131,6 +133,7 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
         table.add_row(
             metrics["isa"],
             metrics["operation"],
+            str(metrics["threads"]),
             str(metrics["gops_display"]),
             f"{ipc:.2f}",
             str(metrics["frequency_display"]),

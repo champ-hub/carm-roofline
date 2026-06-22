@@ -72,16 +72,30 @@ Encapsulates all benchmark configuration via the `InsertsArguments` pattern:
 
 **Fields:**
 - `test: TestType` - Type of test to run (ARITHMETIC, MEMORY, ROOFLINE, MIXED)
-- `mem_target: str` - Memory hierarchy target (L1/L2/L3/DRAM)
-- `precision: DataType` - f32 or f64
-- `threads: int` - Number of threads to use
+- `mem_target: list[str]` - Memory hierarchy target(s) (L1/L2/L3/DRAM; "all" expands to all four)
+- `data_type: list[DataType]` - Data type(s) (f32, f64, etc.)
+- `threads: list[int]` - Thread count(s) to benchmark
 - `interleaved: bool` - NUMA interleaved thread mapping
 - `instructions: set[ArithmeticOperation]` - Arithmetic operations to test (default: add, fma)
 - `num_ops: int` - Number of operations per benchmark
-- `ld_st_ratio: LoadStoreRatio` - Load/store ratio for memory tests
+- `ld_st_ratio: list[LoadStoreRatio]` - Load/store ratio(s) for memory tests
 - `arith_mem_ratio: tuple[int, int] | None` - Arithmetic/memory ratio for mixed tests
 - `mem_test_sizes: list[Bytes | None] | None` - Per-level memory test sizes as Bytes objects, or None for automatic sizing
 - `test_time: float` - Target runtime per benchmark (seconds)
+
+**Two-tier generation model:** Multi-value parameters combine via Cartesian
+product when generating benchmarks:
+- **Tier 1 (shared)** — ``data_type`` and ``threads`` apply to all benchmark
+  types (arithmetic AND memory). Each value combination produces distinct
+  benchmarks on both sides.
+- **Tier 2 (sub-type specific)** — ``instructions`` applies only to
+  arithmetic benchmarks; ``ld_st_ratio``, ``mem_target``, and
+  ``mem_test_sizes`` apply only to memory benchmarks.
+- For roofline runs, the roofline suite generates arithmetic + memory
+  benchmarks independently, each using its own tier-2 parameters, then
+  merges them. This means ``--threads 2 4 --ld-st-ratio 1:1 2:1`` produces
+  2×2 = 4 memory benchmark groups but only 2 arithmetic groups (threads
+  apply, ld_st_ratio does not).
 
 **TestType Enum:**
 ```python
@@ -112,16 +126,16 @@ Encapsulates load:store ratio parsing (e.g., "2:1" → 2 loads, 1 store).
 
 Via `insert_arguments()` static method:
 - `--test/-t` - Test type (arithmetic/memory/roofline/mixed)
-- `--mem-target` - Cache level target (L1/L2/L3/DRAM)
-- `--precision/-p` - f32 or f64
-- `--threads` - Number of threads
+- `--mem-target` - Cache level target(s) (L1/L2/L3/DRAM/all; accepts multiple values)
+- `--data-type/-d` - Data type(s) (f32/f64; accepts multiple values)
+- `--threads` - Thread count(s) (accepts multiple values)
 - `--interleaved` - Enable NUMA interleaved mapping
 - `--instruction` - One or more arithmetic instructions to test (space-separated; default: add fma)
-- `--num_ops` - Operations per benchmark
-- `--ld_st_ratio` - Load:store ratio (e.g., "2:1")
-- `--arith_mem_ratio` - Arithmetic:memory ratio for mixed tests
-- `--mem_test_sizes` - Memory test sizes
-- `--test-time` - Target runtime per benchmark (default: 10s)
+- `--num-ops` - Operations per benchmark
+- `--ld-st-ratio` - Load:store ratio(s) (e.g., "2:1"; accepts multiple values)
+- `--arith-mem-ratio` - Arithmetic:memory ratio for mixed tests
+- `--mem-test-sizes` - Memory test sizes
+- `--test-time` - Target runtime per benchmark (default: 25s)
 
 ## Pipeline Orchestration (interface.py)
 

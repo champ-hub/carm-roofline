@@ -233,7 +233,7 @@ class Architecture(InsertsArguments):
         configure_verbosity(getattr(args, "verbose", None))
 
         # Extract threads for frequency detection
-        num_threads = getattr(args, "threads", 1)
+        num_threads = max(args.threads)
 
         if args.isa is None:
             detected = native_detect(threads=num_threads)

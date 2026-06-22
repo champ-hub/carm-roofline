@@ -492,7 +492,7 @@ class BaseISA:
         from test_bench.builder import MicrobenchmarkFunctionSpec
 
         # Generate function name from ISA, operation, and data type
-        func_name = f"{self.name}_arith_{params.operation.name}_{params.data_type.name}"
+        func_name = f"{self.name}_arith_{params.operation.name}_{params.data_type.name}_t{params.num_threads}"
 
         bench_registers = self.bench_registers[params.data_type]
         inst_format = self.bench_instructions.get(params.data_type, params.operation)
@@ -598,6 +598,7 @@ class BaseISA:
         func_name = (
             f"{self.name}_mem_{params.num_ld}ld_{params.num_st}st_"
             f"{params.memory_level_name.lower()}_{size_info.actual_working_set_size}_{params.data_type.name}"
+            f"_t{params.num_threads}"
         )
         # Half the branch limit (one half for the loop, other half for out-of-loop insts)
         PRELUDE_INSTRUCTIONS = 7

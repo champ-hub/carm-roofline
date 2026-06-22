@@ -75,10 +75,10 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
         assert isinstance(suite, MemorySweepBenchmarkSuite)  # for type checker
         mem_benchmarks = suite.get_memory_benchmarks()
         isa_instance = isa_instances[isa]
-        bytes_per_inst = isa_instance.bytes_per_inst(context.benchmarking.data_type)
         frequency = context.architecture.get_frequency_for_isa(isa)
         for _name, bench in sorted(mem_benchmarks.items(), key=lambda kv: kv[0]):
             assert bench.results is not None  # for type checker
+            bytes_per_inst = isa_instance.bytes_per_inst(bench.params.data_type)
             total_insts = (bench.working_set_bytes.value // bytes_per_inst) * bench.results.num_repetitions
             cycles = Cycles.from_time_and_frequency(bench.results.time_taken, frequency)
             cache_level = bench.results.cache_level or "unknown"

@@ -68,6 +68,7 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
     table = Table(title="Memory Bandwidth Summary")
     table.add_column("ISA", style="cyan")
     table.add_column("Level", justify="left")
+    table.add_column("Threads", style="magenta")
     table.add_column("Bandwidth", justify="right")
     table.add_column("IPC", justify="right")
 
@@ -77,18 +78,18 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
     for isa, suite in sorted(isa_suites.items(), key=lambda kv: kv[0]):
         mem_benchmarks = suite.get_memory_benchmarks()
         isa_instance = isa_instances[isa]
-        bytes_per_inst = isa_instance.bytes_per_inst(context.benchmarking.data_type)
         frequency = context.architecture.get_frequency_for_isa(isa)
 
         for _name, bench in sorted(mem_benchmarks.items(), key=lambda kv: kv[0]):
             assert bench.results is not None  # for type checker
             level = bench.results.cache_level or "unknown"
+            bytes_per_inst = isa_instance.bytes_per_inst(bench.params.data_type)
             total_insts = (bench.working_set_bytes.value // bytes_per_inst) * bench.results.num_repetitions
             cycles = Cycles.from_time_and_frequency(bench.results.time_taken, frequency)
 
             ipc = total_insts / cycles.value
 
-            table.add_row(isa, level, str(bench.results.bandwidth), f"{ipc:.2f}")
+            table.add_row(isa, level, str(bench.params.num_threads), str(bench.results.bandwidth), f"{ipc:.2f}")
 
     # Print the table using the shared console helper (rich.Console instance).
     from output_utils import get_console

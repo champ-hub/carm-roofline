@@ -109,36 +109,13 @@ Returns dict mapping cache levels to peak bandwidths:
 
 Generates pure floating-point arithmetic benchmarks.
 
-**Generation:**
+**Generation:** Calls `ArithmeticBenchmarkSuite.generate(context, isa_name)`, which iterates over the
+Cartesian product of `context.benchmarking.data_type × threads × instructions`, produces
+`ArithmeticBenchmarkParams` per combination, delegates code generation to
+`isa_instance.generate_arithmetic(params, context)`, and wraps each result in an `ArithmeticBenchmark`.
 
-```python
-@classmethod
-def generate(cls, context: CARMContext, isa_name: str) -> ArithmeticBenchmarkSuite:
-    isa_class = next(c for c in context.architecture.isa if c.name == isa_name)
-    isa_instance = isa_class.from_architecture(context.architecture)
-    suite = cls(isa_name=isa_instance.name)
-
-    # Generate benchmarks for selected operations
-    for operation in context.benchmarking.instructions:
-        for data_type in [context.benchmarking.precision]:
-            params = ArithmeticBenchmarkParams(
-                operation=operation,
-                num_ops=context.benchmarking.num_ops,
-                data_type=data_type,
-                num_threads=1,
-            )
-            spec = isa_instance.generate_arithmetic_benchmark(params)
-            benchmark = ArithmeticBenchmark(params=params, spec=spec)
-            suite.add_benchmark(benchmark)
-
-    return suite
-```
-
-**Key Features:**
-- Iterates over all requested operations (default: add, fma)
-- Uses configured precision (f32/f64)
-- Calls ISA's `generate_arithmetic_benchmark()` for code generation
-- Creates `ArithmeticBenchmark` objects with params and spec
+**Key Features:** Cartesian product over ``data_type × threads × instructions``;
+``get_gops_by_operation()`` provides per-operation peak GOPS.
 
 **Additional Methods:**
 
@@ -154,59 +131,21 @@ Returns dict mapping operations to their peak GOPS:
 
 Generates memory bandwidth benchmarks targeting specific cache levels.
 
-**Generation:**
+**Generation:** Calls ``MemoryBenchmarkSuite.generate(context, isa_name)``, which iterates over the
 
-```python
-@classmethod
-def generate(cls, context: CARMContext, isa_name: str) -> MemoryBenchmarkSuite:
-    isa_class = next(c for c in context.architecture.isa if c.name == isa_name)
-    isa_instance = isa_class.from_architecture(context.architecture)
-    suite = cls(isa_name=isa_instance.name)
-
-    # Generate all levels from topology in hierarchy order
-    for level_idx in context.architecture.memory_topology.available_cache_levels():
-        params = MemoryBenchmarkParams(
-            data_type=context.benchmarking.data_type,
-            thread_affinity=thread_affinity.cpu_ids,
-            load_store_ratio=context.benchmarking.ld_st_ratio,
-            size_per_thread=size_per_thread,
-            memory_level_name=level_name,
-            layout_mode=(MemoryLayoutMode.single if first_generated else MemoryLayoutMode.split),
-        )
-        spec = isa_instance.generate_memory(params, context)
-        benchmark = MemoryBenchmark(
-            params=params,
-            spec=spec,
-            cache_level=level_name,
-        )
-        suite.add_benchmark(benchmark.name, benchmark)
-
-    return suite
-```
-
-**Key Features:**
-- Targets all memory levels exposed by topology iteration (including final-level `DRAM` when provided)
-- Uses 80% of per-thread available size for non-final targets
-- Uses exactly 2x the previous level's per-thread size for the final target level
-- Configures load/store ratio via `--ld_st_ratio`
-- Uses typed `MemoryLayoutMode` policy: first generated level (after `mem_target` filtering) uses `single`, all later
-    generated levels use `split`
-- Suppresses lower-level-fit warnings for DRAM targets to avoid false positives
-- Assigns topology-derived `cache_level` names to each benchmark
+Cartesian product of ``context.benchmarking.data_type × threads × ld_st_ratio`` and for each combination
+produces one benchmark per memory level (filtered by ``mem_target``). Per-level sizing uses 80% of
+available cache capacity per thread (or 2× previous level for the final target), with
+``MemoryLayoutMode.split`` for the final level and ``single`` for the rest. Delegates code generation to
+``isa_instance.generate_memory(params, context)`` and wraps each result in a ``MemoryBenchmark``.
 
 **Additional Methods:**
 
-**`get_benchmarks_by_cache_level(level: str) -> list[MemoryBenchmark]`**:
-Returns benchmarks for specific cache level:
-```python
-l1_benchmarks = suite.get_benchmarks_by_cache_level("L1")
-```
+**``get_benchmarks_by_cache_level(level: str) -> list[MemoryBenchmark]``**:
+Returns benchmarks for a specific cache level.
 
-**`get_peak_bandwidth_by_level() -> dict[str, float]`**:
-Returns peak bandwidth for each cache level tested:
-```python
-{"L1": 250.5, "L2": 120.3, "L3": 45.2, "DRAM": 25.8}
-```
+**``get_peak_bandwidth_by_level() -> dict[str, float]``**:
+Returns peak bandwidth per cache level (e.g. ``{"L1": 250.5, "L2": 120.3, "DRAM": 25.8}``).
 
 ## Roofline Suite (roofline.py)
 
@@ -214,28 +153,12 @@ Returns peak bandwidth for each cache level tested:
 
 Combines arithmetic and memory suites for roofline analysis.
 
-**Generation:**
+**Generation:** Calls ``RooflineBenchmarkSuite.generate(context, isa_name)``, which creates an empty suite,
+delegates to ``ArithmeticBenchmarkSuite.generate`` and ``MemoryBenchmarkSuite.generate``, and merges both
+into the result via ``suite.merge()``.
 
-```python
-@classmethod
-def generate(cls, context: CARMContext, isa_name: str) -> RooflineBenchmarkSuite:
-    suite = cls(isa_name=isa_name)
-
-    # Generate arithmetic benchmarks
-    arith_suite = ArithmeticBenchmarkSuite.generate(context, isa_name)
-    suite.merge(arith_suite)
-
-    # Generate memory benchmarks for all cache levels
-    mem_suite = MemoryBenchmarkSuite.generate(context, isa_name)
-    suite.merge(mem_suite)
-
-    return suite
-```
-
-**Key Features:**
-- Delegates to ArithmeticBenchmarkSuite and MemoryBenchmarkSuite
-- Merges both into single suite
-- Provides complete view of performance (compute + memory)
+**Key Features:** Delegates to ``ArithmeticBenchmarkSuite.generate`` and
+``MemoryBenchmarkSuite.generate`` and merges via ``suite.merge()``.
 
 **Additional Methods:**
 
@@ -269,102 +192,29 @@ Generates combined arithmetic+memory stress tests (currently stub implementation
 
 ### Usage in interface.py
 
-```python
-# In generate_microbenchmarks():
-suite_class_map = {
-    TestType.ARITHMETIC: ArithmeticBenchmarkSuite,
-    TestType.MEMORY: MemoryBenchmarkSuite,
-    TestType.ROOFLINE: RooflineBenchmarkSuite,
-    TestType.MIXED: MixedBenchmarkSuite,
-}
-
-suite_class = suite_class_map[context.benchmarking.test]
-suite = suite_class.generate(context, isa_name)
-return suite
-```
+In ``generate_microbenchmarks()`` (``interface.py``), the ``TestType`` is mapped to the corresponding
+suite class via ``suite_class_map`` and ``suite_class.generate(context, isa_name)`` is called.
 
 ### Usage in run_full_benchmark()
-
-```python
-# Step 1: Generate suites for all ISAs
-isa_suites = {}
-for isa_class in context.architecture.isa:
-    suite = generate_microbenchmarks(context, isa_class.name)
-    isa_suites[isa_class.name] = suite
-
-# Step 2: Flatten for compilation
-flat_benchmarks = {
-    name: bench
-    for suite in isa_suites.values()
-    for name, bench in suite.benchmarks.items()
-}
-
-# ... compile, run, parse ...
-
-# Step 3: Return suites with populated results
-return isa_suites
-```
+``run_full_benchmark()`` (``interface.py``) generates suites for each ISA via
+``generate_microbenchmarks()``, flattens all benchmarks into a single dict for compilation and
+execution, then returns the per-ISA suite dict with results populated.
 
 ## Common Workflows
-
-### Extracting Peak Performance
-
-```python
-# After run_full_benchmark():
-for isa_name, suite in result_suites.items():
-    print(f"{isa_name}:")
-    print(f"  Peak GOPS: {suite.peak_arithmetic_gops}")
-    print(f"  Peak Bandwidth: {suite.peak_bandwidth_gb_per_s}")
-
-    # Per-operation breakdown
-    for op, gops in suite.get_gops_by_operation().items():
-        print(f"    {op.name}: {gops} GOPS")
-
-    # Per-cache-level breakdown
-    for level, bw in suite.get_peak_bandwidth_by_level().items():
-        print(f"    {level}: {bw} GB/s")
-```
+Use ``suite.peak_arithmetic_gops`` and ``suite.peak_bandwidth_gb_per_s`` for aggregate metrics.
+``suite.get_gops_by_operation()`` and ``suite.get_peak_bandwidth_by_level()`` provide per-operation
+and per-cache-level breakdowns respectively.
 
 ### Merging Results from Multiple Runs
 
-```python
-# Combine results from different runs
-run1_suites = run_full_benchmark(context1)
-run2_suites = run_full_benchmark(context2)
-
-merged = {}
-for isa_name in run1_suites:
-    merged[isa_name] = ISABenchmarkSuite.merge_suites([
-        run1_suites[isa_name],
-        run2_suites[isa_name],
-    ])
-```
+``ISABenchmarkSuite.merge_suites()`` combines results from multiple runs by ISA name:
+``merged[isa] = ISABenchmarkSuite.merge_suites([suite1, suite2])``.
 
 ### Adding Custom Suite Type
 
-1. Create new suite class in `benchmark/suites/`:
-   ```python
-   class CustomBenchmarkSuite(ISABenchmarkSuite):
-       @classmethod
-       def generate(cls, context, isa_name):
-           suite = cls(isa_name=isa_name)
-           # Generate custom benchmarks
-           return suite
-   ```
-
-2. Add to `TestType` enum in `benchmark/benchmarking.py`:
-   ```python
-   class TestType(Enum):
-       CUSTOM = "custom"
-   ```
-
-3. Register in `interface.py`:
-   ```python
-   suite_class_map = {
-       ...,
-       TestType.CUSTOM: CustomBenchmarkSuite,
-   }
-   ```
+1. Subclass ``ISABenchmarkSuite`` and implement ``generate()``.
+2. Add the ``TestType`` enum entry in ``benchmark/benchmarking.py``.
+3. Register in ``interface.py``'s ``suite_class_map``.
 
 ## Error Handling
 

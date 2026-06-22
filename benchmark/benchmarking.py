@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from enum import Enum
+from typing import TypeVar
 
 from arguments import InsertsArguments, enum_action, positive_float, positive_int
 from benchmark.generation.code_gen.operation import ArithmeticOperation
@@ -92,21 +93,43 @@ def mem_test_size_type(arg: str) -> Bytes | None:
         ) from e
 
 
+_T = TypeVar("_T")
+
+
+def _dedupe(items: list[_T]) -> list[_T]:
+    """Remove duplicates while preserving order."""
+    result: list[_T] = []
+    for item in items:
+        if item not in result:
+            result.append(item)
+    return result
+
+
 class Benchmarking(InsertsArguments):
     """Benchmark configuration and argument parsing."""
 
     num_ops: Operations
 
     def __init__(self, args: argparse.Namespace):
+        """Initialize benchmarking configuration from parsed CLI arguments.
+
+        Converts parsed arguments to typed fields. Multi-value parameters
+        (data_type, threads, ld_st_ratio, mem_target) are stored as lists
+        and deduplicated while preserving order. ``mem_target`` is pre-resolved:
+        ``"all"`` expands to ``["L1", "L2", "L3", "DRAM"]``; concrete values
+        are deduplicated.
+        """
         super().__init__()
         self.test: TestType = args.test
-        self.mem_target: str = args.mem_target
-        self.data_type: DataType = args.data_type
-        self.threads: int = args.threads
+        self.mem_target: list[str] = (
+            ["L1", "L2", "L3", "DRAM"] if "all" in args.mem_target else _dedupe(args.mem_target)
+        )
+        self.data_type: list[DataType] = _dedupe(args.data_type)
+        self.threads: list[int] = _dedupe(args.threads)
         self.interleaved: bool = args.interleaved
         self.instructions: set[ArithmeticOperation] = set(args.instruction)
         self.num_ops: Operations = Operations(args.num_ops)
-        self.ld_st_ratio: LoadStoreRatio = args.ld_st_ratio
+        self.ld_st_ratio: list[LoadStoreRatio] = _dedupe(args.ld_st_ratio)
         self.arith_mem_ratio: int = args.arith_mem_ratio
         self.mem_test_sizes: list[Bytes | None] | None = args.mem_test_sizes
         self.verbose: int = args.verbose
@@ -133,9 +156,10 @@ class Benchmarking(InsertsArguments):
         parser.add_argument(
             "-m",
             "--mem-target",
-            default="all",
+            nargs="+",
+            default=["all"],
             choices=["L1", "L2", "L3", "DRAM", "all"],
-            help="Target memory level for 'memory' and 'mixed' tests (Default: all)",
+            help="Target memory level(s) or 'all' (Default: all)",
         )
         parser.add_argument(
             "-o",
@@ -147,12 +171,13 @@ class Benchmarking(InsertsArguments):
         parser.add_argument(
             "-d",
             "--data-type",
-            default=DataType.f32,
+            nargs="+",
+            default=[DataType.f32],
             action=enum_action(DataType),
-            help="Data type for benchmark operations (Default: f32)",
+            help="Data type(s) for benchmark operations (Default: f32)",
         )
         parser.add_argument(
-            "--threads", default=1, nargs="?", type=positive_int, help="Number of threads to benchmark (Default: 1)"
+            "--threads", nargs="+", default=[1], type=positive_int, help="Number of threads to benchmark (Default: 1)"
         )
         parser.add_argument(
             "--interleaved",
@@ -169,9 +194,10 @@ class Benchmarking(InsertsArguments):
         )
         parser.add_argument(
             "--ld-st-ratio",
-            default=LoadStoreRatio(2, 1),
+            nargs="+",
+            default=[LoadStoreRatio(2, 1)],
             type=ld_st_ratio_type,
-            help="Load-to-store ratio for memory access patterns. Format: 'LD:ST' (e.g., '2:1') or a single "
+            help="Load-to-store ratio(s) for memory access patterns. Format: 'LD:ST' (e.g., '2:1') or a single "
             "integer for 'N:1' ratio. Use '1:0' for load-only or '0:1' for store-only tests. (Default: 2:1)",
         )
         parser.add_argument(
