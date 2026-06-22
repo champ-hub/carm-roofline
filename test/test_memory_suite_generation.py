@@ -166,7 +166,7 @@ def test_memory_suite_warns_if_dataset_fits_in_lower_cache(monkeypatch):
     )
 
 
-def test_memory_suite_first_generated_level_uses_single_then_split():
+def test_memory_suite_uses_single_then_split_for_last_level():
     context = _make_context()
 
     suite = MemoryBenchmarkSuite.generate(context, "dummy_isa")
@@ -174,5 +174,5 @@ def test_memory_suite_first_generated_level_uses_single_then_split():
 
     assert len(generated) == 3
     assert generated[0].params.layout_mode == MemoryLayoutMode.single
-    assert generated[1].params.layout_mode == MemoryLayoutMode.split
+    assert generated[1].params.layout_mode == MemoryLayoutMode.single
     assert generated[2].params.layout_mode == MemoryLayoutMode.split
