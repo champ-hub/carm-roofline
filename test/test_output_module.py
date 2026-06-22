@@ -539,10 +539,10 @@ def test_roofline_legacy_csv_compatibility(tmp_path):
     context = _make_fake_context(["isa1"], freq_hz=3.0e9)
     context.benchmarking.test = TestType.ROOFLINE
     # Ensure we use known values
-    context.benchmarking.data_type = DataType.f32
+    context.benchmarking.data_type = [DataType.f32]
     context.benchmarking.instructions = {ArithmeticOperation.fma}
-    context.benchmarking.threads = 2
-    context.benchmarking.ld_st_ratio = LoadStoreRatio(2, 1)
+    context.benchmarking.threads = [2]
+    context.benchmarking.ld_st_ratio = [LoadStoreRatio(2, 1)]
 
     arith_params = ArithmeticBenchmarkParams(
         data_type=DataType.f32,
@@ -683,10 +683,10 @@ def test_roofline_csv_gates_by_format(tmp_path):
 
     context = _make_fake_context(["isa1"], freq_hz=3.0e9)
     context.benchmarking.test = TestType.ROOFLINE
-    context.benchmarking.data_type = DataType.f32
+    context.benchmarking.data_type = [DataType.f32]
     context.benchmarking.instructions = {ArithmeticOperation.fma}
-    context.benchmarking.threads = 1
-    context.benchmarking.ld_st_ratio = LoadStoreRatio(2, 1)
+    context.benchmarking.threads = [1]
+    context.benchmarking.ld_st_ratio = [LoadStoreRatio(2, 1)]
 
     arith_spec = MicrobenchmarkFunctionSpec(
         function_name="arith",

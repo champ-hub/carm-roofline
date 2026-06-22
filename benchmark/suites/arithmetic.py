@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import product
 from typing import TYPE_CHECKING
 
 from ..benchmark import ArithmeticBenchmark
@@ -56,20 +57,19 @@ class ArithmeticBenchmarkSuite(ISABenchmarkSuite):
         suite = cls(isa_name=isa.name)
 
         # Cache level doesn't matter for arithmetic benchmarks, but we still need to plan thread affinity
-        # This also helps us deal with SMT, ensuring threads are properly distributed across cores
-        thread_affinity = architecture.memory_topology.plan_thread_affinity(benchmark.threads, 1)
+        # This also helps us deal with SMT, ensuring threads are properly distributed across cores.
+        for thread_count in benchmark.threads:
+            thread_affinity = architecture.memory_topology.plan_thread_affinity(thread_count, 1)
+            for data_type, operation in product(benchmark.data_type, benchmark.instructions):
+                params = ArithmeticBenchmarkParams(
+                    data_type=data_type,
+                    thread_affinity=thread_affinity.cpu_ids,
+                    operation=operation,
+                    num_ops=benchmark.num_ops,
+                )
+                spec = isa.generate_arithmetic(params, context)
 
-        for operation in benchmark.instructions:
-            params = ArithmeticBenchmarkParams(
-                data_type=benchmark.data_type,
-                thread_affinity=thread_affinity.cpu_ids,
-                operation=operation,
-                num_ops=benchmark.num_ops,
-            )
-            spec = isa.generate_arithmetic(params, context)
-
-            # Add to ISA suite using the benchmark's authoritative name
-            arith_benchmark = ArithmeticBenchmark(params=params, spec=spec)
-            suite.add_benchmark(arith_benchmark.name, arith_benchmark)
-
+                # Add to ISA suite using the benchmark's authoritative name
+                arith_benchmark = ArithmeticBenchmark(params=params, spec=spec)
+                suite.add_benchmark(arith_benchmark.name, arith_benchmark)
         return suite

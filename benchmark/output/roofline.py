@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import csv
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from benchmark.generation.code_gen.operation import ArithmeticOperation
 from output_utils import info, warn
@@ -141,9 +142,24 @@ def _get_isa_instance(context: CARMContext, isa_name: str) -> BaseISA | None:
     return isa_class.from_architecture(context.architecture)
 
 
-def _collect_memory_metrics(
-    context: CARMContext, suite: ISABenchmarkSuite, isa_name: str
+def _group_combos(
+    mem_benches: dict[str, Any],
+) -> dict[tuple[Any, int, int, int], list[Any]]:
+    """Group memory benches by (data_type, num_threads, num_ld, num_st)."""
+    groups: defaultdict[tuple[Any, int, int, int], list[Any]] = defaultdict(list)
+    for bench in mem_benches.values():
+        if bench.results is not None:
+            key = (bench.params.data_type, bench.params.num_threads, bench.params.num_ld, bench.params.num_st)
+            groups[key].append(bench)
+    return groups
+
+
+def _aggregate_level_metrics(
+    context: CARMContext,
+    isa_name: str,
+    group: list[Any],
 ) -> tuple[dict[str, float], dict[str, float]]:
+    """Compute per-level bandwidth and IPC for a group of memory benches."""
     bandwidth_by_level: dict[str, float] = {"L1": 0.0, "L2": 0.0, "L3": 0.0, "DRAM": 0.0}
     ipc_by_level: dict[str, float] = {"L1": 0.0, "L2": 0.0, "L3": 0.0, "DRAM": 0.0}
 
@@ -152,13 +168,13 @@ def _collect_memory_metrics(
         return bandwidth_by_level, ipc_by_level
 
     frequency = context.architecture.get_frequency_for_isa(isa_name)
-    bytes_per_inst = isa_instance.bytes_per_inst(context.benchmarking.data_type)
 
-    for bench in suite.get_memory_benchmarks().values():
+    for bench in group:
         if bench.results is None or bench.cache_level not in bandwidth_by_level:
             continue
         level = bench.cache_level
         assert level is not None
+        bytes_per_inst = isa_instance.bytes_per_inst(bench.params.data_type)
         bandwidth_by_level[level] = float(bench.results.bandwidth.value) / 1e9
         total_insts = (bench.working_set_bytes.value // bytes_per_inst) * bench.results.num_repetitions
         cycles = Cycles.from_time_and_frequency(bench.results.time_taken, frequency)
@@ -167,35 +183,52 @@ def _collect_memory_metrics(
     return bandwidth_by_level, ipc_by_level
 
 
-def _collect_fp_metrics(
+def _pick_fp_for_combo(
     context: CARMContext,
     suite: ISABenchmarkSuite,
     isa_name: str,
-    operation: ArithmeticOperation | None = None,
-) -> tuple[float, float]:
+    dt: Any,
+    nt: int,
+) -> tuple[str, float, float, float, float]:
+    """Find arithmetic benches matching dt and nt, compute FP metrics."""
     frequency = context.architecture.get_frequency_for_isa(isa_name)
+    isa_instance = _get_isa_instance(context, isa_name)
+    fp_inst_name = ""
     fp_gflops = 0.0
     fp_ipc = 0.0
+    fma_gflops = 0.0
+    fma_ipc = 0.0
 
-    isa_instance = _get_isa_instance(context, isa_name)
     if isa_instance is None:
-        return fp_gflops, fp_ipc
+        return fp_inst_name, fp_gflops, fp_ipc, fma_gflops, fma_ipc
 
     for bench in suite.get_arithmetic_benchmarks().values():
         if bench.results is None:
             continue
-        if operation is not None and bench.params.operation != operation:
+        if bench.params.data_type != dt or bench.params.num_threads != nt:
             continue
-        fp_gflops = float(bench.results.performance.value) / 1e9
         ops_per_inst = isa_instance.ops_per_inst(bench.params.data_type, bench.params.operation)
         total_insts = (
             (bench.params.num_ops.value // ops_per_inst) * bench.results.num_repetitions if ops_per_inst else 0
         )
         cycles = Cycles.from_time_and_frequency(bench.results.time_taken, frequency)
-        fp_ipc = 0.0 if cycles.value == 0 else total_insts / cycles.value
-        break
+        ipc = 0.0 if cycles.value == 0 else total_insts / cycles.value
+        gflops = float(bench.results.performance.value) / 1e9
 
-    return fp_gflops, fp_ipc
+        if bench.params.operation == ArithmeticOperation.fma:
+            fma_gflops = gflops
+            fma_ipc = ipc
+        else:
+            fp_inst_name = bench.params.operation.name
+            fp_gflops = gflops
+            fp_ipc = ipc
+
+    if not fp_inst_name:
+        fp_inst_name = ArithmeticOperation.fma.name
+        fp_gflops = fma_gflops
+        fp_ipc = fma_ipc
+
+    return fp_inst_name, fp_gflops, fp_ipc, fma_gflops, fma_ipc
 
 
 def _write_csv(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite], output_dir: Path | None = None) -> None:
@@ -205,62 +238,14 @@ def _write_csv(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite], o
 
     csv_path = out_dir / f"{context.run_config.name}_roofline.csv"
     file_exists = csv_path.exists()
-
     for isa, suite in sorted(isa_suites.items(), key=lambda kv: kv[0]):
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        isa_label = _to_isa_label(isa, context)
-
-        precision_label = format_precision_label(context.benchmarking.data_type)
-        threads = context.benchmarking.threads
-        loads = context.benchmarking.ld_st_ratio.loads
-        stores = context.benchmarking.ld_st_ratio.stores
+        mem_benches = suite.get_memory_benchmarks()
         interleaved = "Yes" if context.benchmarking.interleaved else "No"
-
         dram_bytes = _find_dram_working_set_bytes(suite)
         l1_kib, l2_kib, l3_kib = _cache_sizes_kib(context)
 
-        bandwidth_by_level, icycle_by_level = _collect_memory_metrics(context, suite, isa)
-
-        # Select primary instruction: prefer non-fma if available, else fall back to fma
-        primary_instruction = next(
-            (op for op in context.benchmarking.instructions if op != ArithmeticOperation.fma),
-            ArithmeticOperation.fma,
-        )
-
-        fp_inst = primary_instruction.name
-        fp_gflops, fp_icycle = _collect_fp_metrics(context, suite, isa, operation=primary_instruction)
-
-        fma_gflops = 0.0
-        fma_icycle = 0.0
-        if ArithmeticOperation.fma in context.benchmarking.instructions:
-            fma_gflops, fma_icycle = _collect_fp_metrics(context, suite, isa, operation=ArithmeticOperation.fma)
-
         def round_helper(x: float) -> str:
             return f"{x:.3g}" if x < 1 else f"{x:.3f}"
-
-        row = [
-            timestamp,
-            isa_label,
-            precision_label,
-            threads,
-            loads,
-            stores,
-            interleaved,
-            dram_bytes,
-            fp_inst,
-            round_helper(bandwidth_by_level["L1"]),
-            round_helper(icycle_by_level["L1"]),
-            round_helper(bandwidth_by_level["L2"]),
-            round_helper(icycle_by_level["L2"]),
-            round_helper(bandwidth_by_level["L3"]),
-            round_helper(icycle_by_level["L3"]),
-            round_helper(bandwidth_by_level["DRAM"]),
-            round_helper(icycle_by_level["DRAM"]),
-            round_helper(fp_gflops),
-            round_helper(fp_icycle),
-            round_helper(fma_gflops),
-            round_helper(fma_icycle),
-        ]
 
         secondary_headers = [
             "Name:",
@@ -316,7 +301,38 @@ def _write_csv(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite], o
             if not file_exists:
                 writer.writerow(secondary_headers)
                 writer.writerow(primary_headers)
-            writer.writerow(row)
+
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            isa_label = _to_isa_label(isa, context)
+
+            for (dt, nt, ld, st), group in _group_combos(mem_benches).items():
+                bandwidth_by_level, icycle_by_level = _aggregate_level_metrics(context, isa, group)
+                fp_inst_name, fp_gflops, fp_ipc, fma_gflops, fma_ipc = _pick_fp_for_combo(context, suite, isa, dt, nt)
+
+                row = [
+                    timestamp,
+                    isa_label,
+                    format_precision_label(dt),
+                    nt,
+                    ld,
+                    st,
+                    interleaved,
+                    dram_bytes,
+                    fp_inst_name,
+                    round_helper(bandwidth_by_level["L1"]),
+                    round_helper(icycle_by_level["L1"]),
+                    round_helper(bandwidth_by_level["L2"]),
+                    round_helper(icycle_by_level["L2"]),
+                    round_helper(bandwidth_by_level["L3"]),
+                    round_helper(icycle_by_level["L3"]),
+                    round_helper(bandwidth_by_level["DRAM"]),
+                    round_helper(icycle_by_level["DRAM"]),
+                    round_helper(fp_gflops),
+                    round_helper(fp_ipc),
+                    round_helper(fma_gflops),
+                    round_helper(fma_ipc),
+                ]
+                writer.writerow(row)
 
         file_exists = True
 

@@ -16,11 +16,11 @@ from units import Bytes, Frequency
 
 @dataclass
 class _DummyBenchmarking:
-    data_type: DataType = DataType.f64
-    threads: int = 4
-    ld_st_ratio: LoadStoreRatio = field(default_factory=lambda: LoadStoreRatio(loads=2, stores=1))
+    data_type: list[DataType] = field(default_factory=lambda: [DataType.f64])
+    threads: list[int] = field(default_factory=lambda: [4])
+    ld_st_ratio: list[LoadStoreRatio] = field(default_factory=lambda: [LoadStoreRatio(loads=2, stores=1)])
     mem_test_sizes: list[Bytes | None] | None = None
-    mem_target: str = "all"
+    mem_target: list[str] = field(default_factory=lambda: ["L1", "L2", "L3", "DRAM"])
 
 
 class _TopologyWithDRAMFinal:
