@@ -311,16 +311,18 @@ def test_strategy_classes_expose_expected_methods(test_type):
     assert callable(strategy.print_table)
     assert hasattr(strategy, "write_plot")
     assert callable(strategy.write_plot)
+    assert hasattr(strategy, "write_jsonl")
+    assert callable(strategy.write_jsonl)
 
 
 def test_roofline_strategy_exposes_file_output_methods():
-    """Roofline strategy exposes strategy-local JSON and CSV hooks."""
+    """Roofline strategy exposes strategy-local CSV hook."""
     _module, strategy_class = _load_strategy(BenchmarkTestType.ROOFLINE)
     strategy = strategy_class()
-    assert hasattr(strategy, "write_json")
-    assert callable(strategy.write_json)
     assert hasattr(strategy, "write_csv")
     assert callable(strategy.write_csv)
+    assert hasattr(strategy, "write_jsonl")
+    assert callable(strategy.write_jsonl)
 
 
 @pytest.mark.parametrize("test_type", _SUPPORTED_OUTPUT_TEST_TYPES)
@@ -738,19 +740,6 @@ def test_roofline_csv_gates_by_format(tmp_path):
     output_benchmark_results(context, isa_suites)
     assert not (context.run_config.output_dir / "roofline" / f"{context.run_config.name}_roofline.csv").exists()
 
-    context.run_config.output_formats = {OutputKind.JSON}
-    output_benchmark_results(context, isa_suites)
-    assert not (context.run_config.output_dir / "roofline" / f"{context.run_config.name}_roofline.csv").exists()
-    json_path = context.run_config.output_dir / "roofline" / f"{context.run_config.name}_roofline.json"
-    assert json_path.exists()
-
-    import json as json_lib
-
-    with open(json_path, encoding="utf-8") as json_file:
-        payload = json_lib.load(json_file)
-    assert "metadata" not in payload
-    assert "results" in payload and "isa1" in payload["results"]
-
     context.run_config.output_formats = {OutputKind.CSV}
     output_benchmark_results(context, isa_suites)
     assert (context.run_config.output_dir / "roofline" / f"{context.run_config.name}_roofline.csv").exists()
@@ -922,3 +911,350 @@ def test_mixed_combines_handlers(monkeypatch, tmp_path, capsys):
     mixed_mod._write_plot(isa_suites, tmp_path)
     saved = [str(p) for p in mpl.pyplot._saved]
     assert any("mixed_summary.png" in str(p) for p in saved)
+
+
+class TestJsonlOutput:
+    """Tests for unified JSONL benchmark output."""
+
+    def test_jsonl_writes_one_line_per_benchmark(self, tmp_path):
+        """Each benchmark with results produces one JSONL line."""
+        from benchmark.benchmark import (
+            ArithmeticBenchmark,
+            ArithmeticBenchmarkResult,
+            MemoryBenchmark,
+            MemoryBenchmarkResult,
+        )
+        from benchmark.benchmarking import LoadStoreRatio
+        from benchmark.generation.code_gen import DataType
+        from benchmark.generation.code_gen.operation import ArithmeticOperation
+        from benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
+        from benchmark.output.jsonl import write_jsonl_benchmarks
+        from benchmark.suites import ArithmeticBenchmarkSuite, MemoryBenchmarkSuite
+        from test_bench.builder import MicrobenchmarkFunctionSpec
+        from units import Bandwidth, Bytes, Operations, Performance, Seconds
+
+        context = _make_fake_context(["isa1"], freq_hz=2.0e9)
+
+        arith_params = ArithmeticBenchmarkParams(
+            data_type=DataType.f32,
+            thread_affinity=[0],
+            operation=ArithmeticOperation.fma,
+            num_ops=Operations(1000),
+        )
+        arith_spec = MicrobenchmarkFunctionSpec(
+            function_name="arith_bench",
+            body="",
+            read_array_size=Bytes(0),
+            write_array_size=Bytes(0),
+            frequency=2.0,
+            thread_affinity=[0],
+        )
+        arith_bench = ArithmeticBenchmark(params=arith_params, spec=arith_spec)
+        arith_bench.results = ArithmeticBenchmarkResult(
+            time_taken=Seconds(0.001), num_repetitions=1000, performance=Performance(1e9)
+        )
+
+        mem_params = MemoryBenchmarkParams(
+            data_type=DataType.f32,
+            thread_affinity=[0],
+            load_store_ratio=LoadStoreRatio(2, 1),
+            size_per_thread=Bytes(1024),
+            memory_level_name="L1",
+        )
+        mem_spec = MicrobenchmarkFunctionSpec(
+            function_name="mem_bench",
+            body="",
+            read_array_size=Bytes(0),
+            write_array_size=Bytes(0),
+            frequency=2.0,
+            thread_affinity=[0],
+        )
+        mem_bench = MemoryBenchmark(params=mem_params, spec=mem_spec, working_set_bytes=Bytes(1024), cache_level="L1")
+        mem_bench.results = MemoryBenchmarkResult(
+            time_taken=Seconds(0.001), num_repetitions=1000, bandwidth=Bandwidth(40e9), cache_level="L1"
+        )
+
+        arith_suite = ArithmeticBenchmarkSuite(isa_name="isa1")
+        arith_suite.add_benchmark(arith_bench.name, arith_bench)
+        mem_suite = MemoryBenchmarkSuite(isa_name="isa1")
+        mem_suite.add_benchmark(mem_bench.name, mem_bench)
+        isa_suites = {"isa1": arith_suite}
+        isa_suites["isa1"].benchmarks.update(mem_suite.benchmarks)
+
+        write_jsonl_benchmarks(context, isa_suites, output_dir=tmp_path)
+
+        jsonl_path = tmp_path / "test" / "benchmarks.jsonl"
+        assert jsonl_path.exists()
+        lines = jsonl_path.read_text().strip().splitlines()
+        assert len(lines) == 2, f"Expected 2 lines, got {len(lines)}"
+
+    def test_jsonl_entry_schema_arithmetic(self, tmp_path):
+        """Arithmetic JSONL entry has all expected fields with correct types."""
+        import json
+
+        from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
+        from benchmark.generation.code_gen import DataType
+        from benchmark.generation.code_gen.operation import ArithmeticOperation
+        from benchmark.generation.parameters import ArithmeticBenchmarkParams
+        from benchmark.output.jsonl import write_jsonl_benchmarks
+        from benchmark.suites import ArithmeticBenchmarkSuite
+        from test_bench.builder import MicrobenchmarkFunctionSpec
+        from units import Bytes, Operations, Performance, Seconds
+
+        context = _make_fake_context(["isa1"], freq_hz=2.0e9)
+
+        params = ArithmeticBenchmarkParams(
+            data_type=DataType.f32,
+            thread_affinity=[0],
+            operation=ArithmeticOperation.fma,
+            num_ops=Operations(1000),
+        )
+        spec = MicrobenchmarkFunctionSpec(
+            function_name="test_add",
+            body="",
+            read_array_size=Bytes(0),
+            write_array_size=Bytes(0),
+            frequency=2.0,
+            thread_affinity=[0],
+        )
+        bench = ArithmeticBenchmark(params=params, spec=spec)
+        bench.results = ArithmeticBenchmarkResult(
+            time_taken=Seconds(0.001), num_repetitions=1000, performance=Performance(1e9)
+        )
+
+        suite = ArithmeticBenchmarkSuite(isa_name="isa1")
+        suite.add_benchmark(bench.name, bench)
+
+        write_jsonl_benchmarks(context, {"isa1": suite}, output_dir=tmp_path)
+
+        jsonl_path = tmp_path / "test" / "benchmarks.jsonl"
+        entry = json.loads(jsonl_path.read_text().strip())
+
+        # Common fields
+        assert entry["type"] == "arithmetic"
+        assert entry["name"] == "test_add"
+        assert entry["isa"] == "isa1"
+        assert entry["data_type"] == "f32"
+        assert entry["num_threads"] == 1
+        assert entry["thread_affinity"] == [0]
+        assert "timestamp" in entry
+        assert entry["machine"] == "test"
+
+        # Arithmetic-specific fields
+        assert entry["operation"] == "fma"
+        assert entry["num_ops"] == 1000
+        assert entry["performance_gops"] == 1.0  # 1e9 / 1e9
+        assert entry["ipc"] == 0.25  # 500000 insts / 2000000 cycles
+        assert entry["frequency_hz"] == 2.0e9
+        assert entry["ops_per_instruction"] == 2  # fma emits 2 ops per inst
+        assert entry["ops_per_cycle"] == 0.5  # 2 * 0.25
+        assert entry["time_seconds"] == 0.001
+        assert entry["repetitions"] == 1000
+        assert entry["cycles"] == 2_000_000.0  # 0.001 * 2e9
+
+    def test_jsonl_entry_schema_memory(self, tmp_path):
+        """Memory JSONL entry has all expected fields with correct types."""
+        import json
+
+        from benchmark.benchmark import MemoryBenchmark, MemoryBenchmarkResult
+        from benchmark.benchmarking import LoadStoreRatio
+        from benchmark.generation.code_gen import DataType
+        from benchmark.generation.parameters import MemoryBenchmarkParams
+        from benchmark.output.jsonl import write_jsonl_benchmarks
+        from benchmark.suites import MemoryBenchmarkSuite
+        from test_bench.builder import MicrobenchmarkFunctionSpec
+        from units import Bandwidth, Bytes, Seconds
+
+        context = _make_fake_context(["isa1"], freq_hz=2.0e9)
+
+        params = MemoryBenchmarkParams(
+            data_type=DataType.f32,
+            thread_affinity=[0],
+            load_store_ratio=LoadStoreRatio(2, 1),
+            size_per_thread=Bytes(1024),
+            memory_level_name="L1",
+        )
+        spec = MicrobenchmarkFunctionSpec(
+            function_name="test_mem",
+            body="",
+            read_array_size=Bytes(0),
+            write_array_size=Bytes(0),
+            frequency=2.0,
+            thread_affinity=[0],
+        )
+        bench = MemoryBenchmark(params=params, spec=spec, working_set_bytes=Bytes(1024), cache_level="L1")
+        bench.results = MemoryBenchmarkResult(
+            time_taken=Seconds(0.001), num_repetitions=1000, bandwidth=Bandwidth(40e9), cache_level="L1"
+        )
+
+        suite = MemoryBenchmarkSuite(isa_name="isa1")
+        suite.add_benchmark(bench.name, bench)
+
+        write_jsonl_benchmarks(context, {"isa1": suite}, output_dir=tmp_path)
+
+        jsonl_path = tmp_path / "test" / "benchmarks.jsonl"
+        entry = json.loads(jsonl_path.read_text().strip())
+
+        # Common fields
+        assert entry["type"] == "memory"
+        assert entry["name"] == "test_mem"
+        assert entry["isa"] == "isa1"
+        assert entry["data_type"] == "f32"
+        assert entry["num_threads"] == 1
+        assert entry["thread_affinity"] == [0]
+        assert "timestamp" in entry
+        assert entry["machine"] == "test"
+
+        # Memory-specific fields
+        assert entry["load_store_ratio"] == "2:1"
+        assert entry["num_loads"] == 2
+        assert entry["num_stores"] == 1
+        assert entry["cache_level"] == "L1"
+        assert entry["memory_level_name"] == "L1"
+        assert entry["size_per_thread_bytes"] == 1024
+        assert entry["working_set_bytes"] == 1024
+        assert entry["layout_mode"] == "split"
+        assert entry["bandwidth_gbps"] == 40.0
+        assert entry["ipc"] == 0.128  # 256000 insts / 2000000 cycles
+        assert entry["time_seconds"] == 0.001
+        assert entry["repetitions"] == 1000
+        assert entry["cycles"] == 2_000_000.0
+
+    def test_jsonl_skips_null_results(self, tmp_path):
+        """Benchmarks with null results do not produce JSONL lines."""
+        from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
+        from benchmark.generation.code_gen import DataType
+        from benchmark.generation.code_gen.operation import ArithmeticOperation
+        from benchmark.generation.parameters import ArithmeticBenchmarkParams
+        from benchmark.output.jsonl import write_jsonl_benchmarks
+        from benchmark.suites import ArithmeticBenchmarkSuite
+        from test_bench.builder import MicrobenchmarkFunctionSpec
+        from units import Bytes, Operations, Performance, Seconds
+
+        context = _make_fake_context(["isa1"], freq_hz=2.0e9)
+
+        params = ArithmeticBenchmarkParams(
+            data_type=DataType.f32,
+            thread_affinity=[0],
+            operation=ArithmeticOperation.fma,
+            num_ops=Operations(1000),
+        )
+        spec = MicrobenchmarkFunctionSpec(
+            function_name="has_result",
+            body="",
+            read_array_size=Bytes(0),
+            write_array_size=Bytes(0),
+            frequency=2.0,
+            thread_affinity=[0],
+        )
+        b1 = ArithmeticBenchmark(params=params, spec=spec)
+        b1.results = ArithmeticBenchmarkResult(
+            time_taken=Seconds(0.001), num_repetitions=1000, performance=Performance(1e9)
+        )
+
+        spec2 = MicrobenchmarkFunctionSpec(
+            function_name="no_result",
+            body="",
+            read_array_size=Bytes(0),
+            write_array_size=Bytes(0),
+            frequency=2.0,
+            thread_affinity=[0],
+        )
+        b2 = ArithmeticBenchmark(params=params, spec=spec2)
+        # b2.results left as None
+
+        suite = ArithmeticBenchmarkSuite(isa_name="isa1")
+        suite.add_benchmark(b1.name, b1)
+        suite.add_benchmark(b2.name, b2)
+
+        write_jsonl_benchmarks(context, {"isa1": suite}, output_dir=tmp_path)
+
+        jsonl_path = tmp_path / "test" / "benchmarks.jsonl"
+        lines = jsonl_path.read_text().strip().splitlines()
+        assert len(lines) == 1, f"Expected 1 line (skipped null result), got {len(lines)}"
+        import json
+
+        entry = json.loads(lines[0])
+        assert entry["name"] == "has_result"
+
+    def test_jsonl_appends_to_existing_file(self, tmp_path):
+        """Two writes to the same path produce cumulative lines."""
+        import json
+
+        from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
+        from benchmark.generation.code_gen import DataType
+        from benchmark.generation.code_gen.operation import ArithmeticOperation
+        from benchmark.generation.parameters import ArithmeticBenchmarkParams
+        from benchmark.output.jsonl import write_jsonl_benchmarks
+        from benchmark.suites import ArithmeticBenchmarkSuite
+        from test_bench.builder import MicrobenchmarkFunctionSpec
+        from units import Bytes, Operations, Performance, Seconds
+
+        context = _make_fake_context(["isa1"], freq_hz=2.0e9)
+
+        params = ArithmeticBenchmarkParams(
+            data_type=DataType.f32,
+            thread_affinity=[0],
+            operation=ArithmeticOperation.fma,
+            num_ops=Operations(1000),
+        )
+        spec = MicrobenchmarkFunctionSpec(
+            function_name="bench1",
+            body="",
+            read_array_size=Bytes(0),
+            write_array_size=Bytes(0),
+            frequency=2.0,
+            thread_affinity=[0],
+        )
+        b1 = ArithmeticBenchmark(params=params, spec=spec)
+        b1.results = ArithmeticBenchmarkResult(
+            time_taken=Seconds(0.001), num_repetitions=1000, performance=Performance(1e9)
+        )
+
+        suite = ArithmeticBenchmarkSuite(isa_name="isa1")
+        suite.add_benchmark(b1.name, b1)
+
+        write_jsonl_benchmarks(context, {"isa1": suite}, output_dir=tmp_path)
+
+        spec2 = MicrobenchmarkFunctionSpec(
+            function_name="bench2",
+            body="",
+            read_array_size=Bytes(0),
+            write_array_size=Bytes(0),
+            frequency=2.0,
+            thread_affinity=[0],
+        )
+        b2 = ArithmeticBenchmark(params=params, spec=spec2)
+        b2.results = ArithmeticBenchmarkResult(
+            time_taken=Seconds(0.001), num_repetitions=1000, performance=Performance(1e9)
+        )
+
+        suite2 = ArithmeticBenchmarkSuite(isa_name="isa1")
+        suite2.add_benchmark(b2.name, b2)
+
+        write_jsonl_benchmarks(context, {"isa1": suite2}, output_dir=tmp_path)
+
+        jsonl_path = tmp_path / "test" / "benchmarks.jsonl"
+        lines = jsonl_path.read_text().strip().splitlines()
+        assert len(lines) == 2, f"Expected 2 lines (appended), got {len(lines)}"
+        entries = [json.loads(line) for line in lines]
+        assert entries[0]["name"] == "bench1"
+        assert entries[1]["name"] == "bench2"
+
+    def test_jsonl_default_in_output_kinds(self):
+        """JSONL is available in OutputKind and is used by default."""
+        from benchmark.output import OutputKind
+
+        assert hasattr(OutputKind, "JSONL")
+        assert OutputKind.JSONL.value == "jsonl"
+
+        import argparse
+
+        from run_config import RunConfig
+
+        parser = argparse.ArgumentParser()
+        RunConfig.insert_arguments(parser)
+        args = parser.parse_args([])
+        config = RunConfig(args)
+
+        assert OutputKind.JSONL in config.output_formats, "JSONL should be in default output formats"

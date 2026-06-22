@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -324,65 +323,6 @@ def _write_csv(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite], o
     info(f"Roofline legacy CSV saved to: {csv_path}")
 
 
-def _serialize_roofline_suite(suite: ISABenchmarkSuite) -> dict[str, object]:
-    arithmetic_rows: list[dict[str, object]] = []
-    memory_rows: list[dict[str, object]] = []
-
-    for name, arithmetic_bench in sorted(suite.get_arithmetic_benchmarks().items(), key=lambda item: item[0]):
-        if arithmetic_bench.results is None:
-            continue
-
-        arithmetic_rows.append(
-            {
-                "benchmark": name,
-                "operation": arithmetic_bench.params.operation.name,
-                "num_ops": int(arithmetic_bench.params.num_ops.value),
-                "time_seconds": float(arithmetic_bench.results.time_taken.value),
-                "repetitions": int(arithmetic_bench.results.num_repetitions),
-                "performance_gflops": float(arithmetic_bench.results.performance.value) / 1e9,
-            }
-        )
-
-    for name, memory_bench in sorted(suite.get_memory_benchmarks().items(), key=lambda item: item[0]):
-        if memory_bench.results is None:
-            continue
-
-        memory_rows.append(
-            {
-                "benchmark": name,
-                "cache_level": memory_bench.results.cache_level,
-                "working_set_bytes": int(memory_bench.working_set_bytes.value),
-                "time_seconds": float(memory_bench.results.time_taken.value),
-                "repetitions": int(memory_bench.results.num_repetitions),
-                "bandwidth_gbps": float(memory_bench.results.bandwidth.value) / 1e9,
-            }
-        )
-
-    return {
-        "arithmetic": arithmetic_rows,
-        "memory": memory_rows,
-    }
-
-
-def _write_json(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite], output_dir: Path | None = None) -> None:
-    base_out_dir = Path(output_dir) if output_dir is not None else context.run_config.output_dir
-    out_dir = base_out_dir / "roofline"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    json_path = out_dir / f"{context.run_config.name}_roofline.json"
-    payload = {
-        "results": {
-            isa_name: _serialize_roofline_suite(suite)
-            for isa_name, suite in sorted(isa_suites.items(), key=lambda kv: kv[0])
-        }
-    }
-
-    with open(json_path, "w", encoding="utf-8") as json_file:
-        json.dump(payload, json_file, indent=2, sort_keys=True)
-
-    info(f"Roofline JSON saved to: {json_path}")
-
-
 class RooflineOutputHandler(OutputHandler):
     """Output handler for roofline benchmarks."""
 
@@ -396,5 +336,7 @@ class RooflineOutputHandler(OutputHandler):
     def write_csv(self, context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) -> None:
         _write_csv(context, isa_suites)
 
-    def write_json(self, context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) -> None:
-        _write_json(context, isa_suites)
+    def write_jsonl(self, context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) -> None:
+        from benchmark.output.jsonl import write_jsonl_benchmarks
+
+        write_jsonl_benchmarks(context, isa_suites)

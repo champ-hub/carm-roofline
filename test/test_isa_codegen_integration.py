@@ -264,7 +264,7 @@ class TestISACodegen:
             mem_size = Bytes(1024)
         else:
             # For scalar ISAs, use the standard small size
-            mem_size = Bytes(10 * 2 * DataType.f32.bytes())
+            mem_size = Bytes(32 * 2 * DataType.f32.bytes())
 
         mem_params = MemoryBenchmarkParams(
             data_type=DataType.f32,
@@ -549,7 +549,7 @@ class TestISACompleteness:
             if isa_name in TestISACodegen.VECTOR_ISA_NAMES:
                 mem_size = Bytes(1024)
             else:
-                mem_size = Bytes(10 * 2 * DataType.f32.bytes())
+                mem_size = Bytes(32 * 2 * DataType.f32.bytes())
 
             mem_params = MemoryBenchmarkParams(
                 data_type=DataType.f32,

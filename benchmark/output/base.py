@@ -13,7 +13,7 @@ class OutputKind(Enum):
 
     TABLE = "table"
     PLOT = "plot"
-    JSON = "json"
+    JSONL = "jsonl"
     CSV = "csv"
 
 
@@ -32,10 +32,10 @@ class OutputHandler(Protocol):
             self.print_table(context, isa_suites)
         if OutputKind.PLOT in output_kinds:
             self.write_plot(context, isa_suites)
+        if OutputKind.JSONL in output_kinds:
+            self.write_jsonl(context, isa_suites)
         if OutputKind.CSV in output_kinds:
             self.write_csv(context, isa_suites)
-        if OutputKind.JSON in output_kinds:
-            self.write_json(context, isa_suites)
 
     def print_table(
         self,
@@ -58,9 +58,9 @@ class OutputHandler(Protocol):
     ) -> None:
         """Write CSV output for benchmark results."""
 
-    def write_json(
+    def write_jsonl(
         self,
         context: CARMContext,
         isa_suites: dict[str, ISABenchmarkSuite],
     ) -> None:
-        """Write JSON output for benchmark results."""
+        """Write JSONL output for benchmark results."""

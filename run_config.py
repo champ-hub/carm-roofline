@@ -50,8 +50,8 @@ class RunConfig(InsertsArguments):
             "--output-fmt",
             nargs="+",
             action=enum_action(OutputKind),
-            default={OutputKind.TABLE, OutputKind.PLOT, OutputKind.JSON, OutputKind.CSV},
-            help="Output format(s): table, plot, json, csv (default: table plot json csv)",
+            default={OutputKind.TABLE, OutputKind.PLOT, OutputKind.JSONL, OutputKind.CSV},
+            help="Output format(s): table, plot, jsonl, csv (default: table plot jsonl csv)",
         )
         parser.add_argument(
             "--keep-artifacts",

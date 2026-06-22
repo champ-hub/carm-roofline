@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from rich.table import Table
 
-from output_utils import error, get_console, info, warn
+from output_utils import error, get_console, warn
 from units import Cycles
 
 from .base import NON_ROOFLINE_CSV_ERROR_MSG, OutputHandler
@@ -141,59 +140,6 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
     get_console().print(table)
 
 
-def _write_json(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) -> None:
-    from benchmark.benchmark import ArithmeticBenchmarkResult
-    from benchmark.generation.isa import BaseISA
-
-    isa_instances: dict[str, BaseISA] = {
-        isa_cls.name: isa_cls.from_architecture(context.architecture) for isa_cls in context.architecture.isa
-    }
-
-    results: dict[str, dict[str, object]] = {}
-
-    for isa, suite in sorted(isa_suites.items(), key=lambda kv: kv[0]):
-        frequency = context.architecture.get_frequency_for_isa(isa)
-        isa_instance = isa_instances.get(isa)
-        if isa_instance is None:
-            warn(f"No ISA instance available for {isa}; skipping metrics")
-            continue
-
-        benches = suite.get_arithmetic_benchmarks()
-        isa_results: dict[str, object] = {}
-        for benchmark_name, benchmark in benches.items():
-            res = benchmark.results
-            assert isinstance(res, ArithmeticBenchmarkResult), "Expected ArithmeticBenchmarkResult for arithmetic JSON"
-
-            ops_per_inst = isa_instance.ops_per_inst(benchmark.params.data_type, benchmark.params.operation)
-            total_insts = (benchmark.params.num_ops.value // ops_per_inst) * res.num_repetitions if ops_per_inst else 0
-            cycles = Cycles.from_time_and_frequency(res.time_taken, frequency)
-            ipc = 0.0 if cycles.value == 0 else total_insts / cycles.value
-
-            isa_results[benchmark.params.operation.name] = {
-                "benchmark": benchmark_name,
-                "operation": benchmark.params.operation.name,
-                "gops": float(res.performance.value) / 1e9,
-                "ipc": ipc,
-                "frequency_hz": float(frequency.value),
-                "ops_per_instruction": ops_per_inst,
-                "ops_per_cycle": ops_per_inst * ipc,
-                "time_seconds": float(res.time_taken.value),
-                "repetitions": int(res.num_repetitions),
-                "cycles": float(cycles.value),
-            }
-
-        results[isa] = isa_results
-
-    out_dir = context.run_config.output_dir / "arithmetic"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    json_path = out_dir / f"{context.run_config.name}_arithmetic.json"
-    with open(json_path, "w", encoding="utf-8") as json_file:
-        json.dump({"results": results}, json_file, indent=2, sort_keys=True)
-
-    info(f"Arithmetic JSON saved to: {json_path}")
-
-
 def _plot_to_axis(isa_suites: dict[str, ISABenchmarkSuite], ax: Any) -> None:
     """Plot arithmetic GOPS bars to a given matplotlib axis.
 
@@ -270,5 +216,7 @@ class ArithmeticOutputHandler(OutputHandler):
     def write_csv(self, context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) -> None:
         warn(NON_ROOFLINE_CSV_ERROR_MSG)
 
-    def write_json(self, context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) -> None:
-        _write_json(context, isa_suites)
+    def write_jsonl(self, context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) -> None:
+        from benchmark.output.jsonl import write_jsonl_benchmarks
+
+        write_jsonl_benchmarks(context, isa_suites)
