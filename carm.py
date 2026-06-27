@@ -13,7 +13,12 @@ from typing import cast
 import argcomplete
 from rich_argparse import RichHelpFormatter
 
-from architecture import set_execution_interface
+from architecture import (
+    detect_machine_signature,
+    generate_run_name,
+    set_execution_interface,
+    signature_from_architecture,
+)
 from arguments import InsertsArguments, TopLevelHelpFormatter
 from benchmark.interface import run_full_benchmark
 from benchmark.output import output_benchmark_results
@@ -54,6 +59,8 @@ def _handle_benchmark(args: argparse.Namespace) -> int:
     # Make exec_iface globally available for architecture feature detection
     set_execution_interface(exec_iface)
     architecture = Architecture(args)
+    if args.name is None:
+        args.name = generate_run_name(signature_from_architecture(architecture))
     benchmarking = Benchmarking(args)
     run_config = RunConfig(args)
 
@@ -91,6 +98,9 @@ def _handle_profile(args: argparse.Namespace) -> int:
     configure_verbosity(args.verbose)
     args_str = ", ".join(f"{k}={v}" for k, v in vars(args).items() if v is not None)
     debug(f"parsed profile arguments: {args_str}")
+
+    if args.name is None:
+        args.name = generate_run_name(detect_machine_signature())
 
     config = ProfileConfig(args)
     return profile_main(config)

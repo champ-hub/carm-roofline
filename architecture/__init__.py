@@ -5,6 +5,7 @@ import contextvars
 from exec_interface import ExecutionInterface
 
 from .architecture import Architecture
+from .identity import MachineSignature, detect_machine_signature, generate_run_name, signature_from_architecture
 from .memory import SimpleMemoryTopology
 
 # Context variable to hold the execution interface, for compatibility with simulation and native execution
@@ -21,4 +22,13 @@ def get_execution_interface() -> ExecutionInterface:
     raise RuntimeError("Execution interface needs to be set before Architecture is instanced for detection tests")
 
 
-__all__ = ["Architecture", "SimpleMemoryTopology", "get_execution_interface", "set_execution_interface"]
+__all__ = [
+    "Architecture",
+    "MachineSignature",
+    "SimpleMemoryTopology",
+    "detect_machine_signature",
+    "generate_run_name",
+    "get_execution_interface",
+    "set_execution_interface",
+    "signature_from_architecture",
+]
