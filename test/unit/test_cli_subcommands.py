@@ -57,6 +57,8 @@ def test_benchmark_mode_smoke_with_monkeypatch(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(carm, "set_execution_interface", fake_set_execution_interface)
     monkeypatch.setattr(carm, "run_full_benchmark", fake_run_full_benchmark)
     monkeypatch.setattr(carm, "output_benchmark_results", fail_output)
+    monkeypatch.setattr(carm, "signature_from_architecture", lambda arch: None)
+    monkeypatch.setattr(carm, "generate_run_name", lambda sig: "auto-test-name")
 
     exit_code = carm.main(["benchmark", "--dry-run", "--test-time", "1"])
 

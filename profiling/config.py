@@ -53,7 +53,7 @@ class ProfileConfig(InsertsArguments):
         self.aggregation: AggregationMode = args.aggregation
         self.output_dir: Path = args.output_dir
         self.verbose: int = args.verbose
-        self.name: str = args.name
+        self.name: str = args.name or "unnamed"
         self.results_dir: Path = args.results_dir
         self.keep_artifacts: bool = args.keep_artifacts
         self.papi_events: str | None = args.papi_events
@@ -93,9 +93,9 @@ class ProfileConfig(InsertsArguments):
         )
         parser.add_argument(
             "--name",
-            default="unnamed",
+            default=None,
             type=str,
-            help="Name prefix for output files (default: unnamed)",
+            help="Name for the results directory (default: auto-generated from CPU model)",
         )
         parser.add_argument(
             "--output-dir",

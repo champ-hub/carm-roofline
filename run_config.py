@@ -15,7 +15,7 @@ class RunConfig(InsertsArguments):
     def __init__(self, args: argparse.Namespace):
         super().__init__()
         self.verbose: int = args.verbose
-        self.name: str = args.name
+        self.name: str = args.name or "unnamed"
         self.dry_run: bool = args.dry_run
         self.output_dir: Path = args.output_dir
         self.output_formats: set[OutputKind] = set(args.output_fmt)
@@ -36,7 +36,12 @@ class RunConfig(InsertsArguments):
             help="Level of detail of terminal output (0 -> None 1 -> Only ISA/configuration errors and test "
             "specifications, 2 -> Test results, 3 -> Configuration values selected/detected, 4 -> Debug info)",
         )
-        parser.add_argument("--name", default="unnamed", nargs="?", type=str, help="Name of the results file")
+        parser.add_argument(
+            "--name",
+            type=str,
+            default=None,
+            help="Name for the results directory (default: auto-generated from CPU model)",
+        )
         parser.add_argument(
             "--dry-run", action="store_true", help="Only generate the benchmark code, do not compile or run tests"
         )

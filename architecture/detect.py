@@ -40,12 +40,14 @@ class DetectedArchitecture:
         isa_frequencies: Per-ISA frequency mapping as dict of Frequency wrappers
         arch: Architecture string (e.g., "x86_64", "aarch64")
         vendor: CPU vendor string (e.g., "GenuineIntel", "AuthenticAMD")
+        model_name: CPU model name (e.g., "AMD Ryzen 7 7735HS with Radeon Graphics")
     """
 
     # ISA detection
     isa: list[str] | None = None
     vendor: str | None = None
     arch: str | None = None
+    model_name: str | None = None
 
     # Memory topology (sysfs-based, native Linux only; None for cross-execution)
     memory_topology: MemoryTopology | None = None
@@ -74,6 +76,7 @@ class DetectedArchitecture:
             "isa_frequencies",
             "arch",
             "vendor",
+            "model_name",
         ]:
             value = getattr(self, field_name, None)
             if value is not None:
@@ -413,7 +416,19 @@ def run_generic_tests(ctx: TestContext, threads: int = 1) -> DetectedArchitectur
     if frequency_fields:
         builder.merge_fields("detect_frequency", frequency_fields)
 
-    return builder.build()
+    detected = builder.build()
+
+    # Populate CPU model name from /proc/cpuinfo (native execution only).
+    from . import get_execution_interface
+
+    if get_execution_interface().sim_cmd is None:
+        from .identity import read_cpuinfo
+
+        cpu_info = read_cpuinfo()
+        if cpu_info.model_name:
+            detected.model_name = cpu_info.model_name
+
+    return detected
 
 
 def native_detect(threads: int = 1) -> DetectedArchitecture:

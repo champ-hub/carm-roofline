@@ -27,10 +27,10 @@ def write_profile_results(
 ) -> None:
     """Write profiling results in both CSV and JSON formats.
 
-    CSV is written to ``<output_dir>/applications/{name}_applications.csv``
+    CSV is written to ``<output_dir>/<name>/applications.csv``
     (GUI-compatible legacy format).  JSON is written to
-    ``<output_dir>/profile/{name}_profile.json`` (full rank/thread hierarchy
-    plus aggregated view).
+    ``<output_dir>/<name>/profile.json`` (full rank/thread hierarchy plus
+    aggregated view).
     """
     write_applications_csv(points, name, output_dir, run)
     write_profile_json(run, name, output_dir, aggregation, points)
@@ -50,9 +50,9 @@ def write_applications_csv(
         Date, Method, Name, ISA, Precision, Threads,
         AI, GFLOPS, Bandwidth, Time
     """
-    out_dir = output_dir / "applications"
+    out_dir = output_dir / name
     out_dir.mkdir(parents=True, exist_ok=True)
-    filepath = out_dir / f"{name}_applications.csv"
+    filepath = out_dir / "applications.csv"
 
     date_str = run.metadata.date or datetime.now().isoformat(timespec="seconds")
     method = run.metadata.method or "PAPI_HL"
@@ -102,9 +102,9 @@ def write_profile_json(
     The JSON includes the original rank/thread/region hierarchy *and* an
     aggregated view using the selected aggregation strategy.
     """
-    out_dir = output_dir / "profile"
+    out_dir = output_dir / name
     out_dir.mkdir(parents=True, exist_ok=True)
-    filepath = out_dir / f"{name}_profile.json"
+    filepath = out_dir / "profile.json"
 
     output = {
         "format_version": "1.0",

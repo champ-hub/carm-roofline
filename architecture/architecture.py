@@ -167,6 +167,8 @@ class Architecture(InsertsArguments):
         vector_lmul: Vector LMUL (RISC-V specific)
         set_frequency: Whether to set processor frequency
         arch: Architecture string (e.g., "x86_64", "armv8")
+        vendor: CPU vendor string (e.g., "GenuineIntel", "AuthenticAMD")
+        model_name: CPU model name (e.g., "AMD Ryzen 7 7735HS with Radeon Graphics")
     """
 
     memory_topology: MemoryTopologyLike
@@ -176,6 +178,8 @@ class Architecture(InsertsArguments):
     vector_lmul: int | None
     set_frequency: bool | None
     arch: str | None
+    vendor: str | None
+    model_name: str | None
 
     isa: list[type[BaseISA]]
 
@@ -225,6 +229,8 @@ class Architecture(InsertsArguments):
         # set_frequency is CLI-only (never auto-detected)
         self.set_frequency: bool | None = args.set_frequency
         self.arch = detected.arch
+        self.vendor = detected.vendor
+        self.model_name = detected.model_name
 
     def __init__(self, args: argparse.Namespace):
         super().__init__()

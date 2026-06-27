@@ -452,7 +452,7 @@ def test_write_applications_csv(tmp_path: Path) -> None:
     pts = [aggregate_global(run, SAMPLE_RESOLVED, DEFAULT_CTX)]
     write_applications_csv(pts, "test_run", tmp_path, run)
 
-    csv_path = tmp_path / "applications" / "test_run_applications.csv"
+    csv_path = tmp_path / "test_run" / "applications.csv"
     assert csv_path.exists()
     text = csv_path.read_text()
     assert "Date,Method,Name,ISA,Precision,Threads,AI,GFLOPS,Bandwidth,Time" in text
@@ -466,7 +466,7 @@ def test_write_applications_csv_per_rank(tmp_path: Path) -> None:
     pts = aggregate_per_rank(run, SAMPLE_RESOLVED, DEFAULT_CTX)
     write_applications_csv(pts, "test_run", tmp_path, run)
 
-    csv_path = tmp_path / "applications" / "test_run_applications.csv"
+    csv_path = tmp_path / "test_run" / "applications.csv"
     assert csv_path.exists()
     rows = csv_path.read_text().strip().split("\n")
     assert len(rows) == 3  # header + 2 rank points
@@ -479,7 +479,7 @@ def test_write_profile_json(tmp_path: Path) -> None:
     pts = [aggregate_global(run, SAMPLE_RESOLVED, DEFAULT_CTX)]
     write_profile_json(run, "test_run", tmp_path, AggregationMode.GLOBAL, pts)
 
-    json_path = tmp_path / "profile" / "test_run_profile.json"
+    json_path = tmp_path / "test_run" / "profile.json"
     assert json_path.exists()
     data = json.loads(json_path.read_text())
     assert data["format_version"] == "1.0"
@@ -496,7 +496,7 @@ def test_write_profile_json_per_rank(tmp_path: Path) -> None:
     pts = aggregate_per_rank(run, SAMPLE_RESOLVED, DEFAULT_CTX)
     write_profile_json(run, "test_run", tmp_path, AggregationMode.RANK, pts)
 
-    json_path = tmp_path / "profile" / "test_run_profile.json"
+    json_path = tmp_path / "test_run" / "profile.json"
     data = json.loads(json_path.read_text())
     assert data["aggregation"] == "rank"
     assert len(data["aggregated"]["points"]) == 2
