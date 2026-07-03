@@ -6,7 +6,8 @@ import argparse
 from enum import Enum
 from pathlib import Path
 
-from arguments import InsertsArguments, enum_action
+from architecture import detect_machine_signature, generate_run_name
+from arguments import InsertsArguments, add_verbose_argument, enum_action
 from benchmark.generation import ISA_NAME_TO_CLASS, DataType
 from results_paths import default_results_root
 
@@ -27,6 +28,21 @@ class AggregationMode(Enum):
     REGION = "region"
 
 
+def _default_app_name(command: list[str]) -> str:
+    """Best-effort application name extracted from the profiled command.
+
+    Among non-flag tokens (skipping ones starting with ``-``), prefer the last path-like token (containing ``/``) —
+    launchers such as ``mpirun`` and ``srun`` pass the binary as a path (``./myapp``).  If no token has a ``/``, fall
+    back to the first non-flag token (the direct-invocation case ``myapp --input foo`` → ``myapp``).  The basename is
+    taken so ``./build/myapp`` → ``myapp``.  Returns ``"app"`` when the command is empty or has no non-flag token.
+    """
+    candidates = [tok for tok in command if tok and not tok.startswith("-")]
+    if not candidates:
+        return "app"
+    pathlike = [tok for tok in candidates if "/" in tok]
+    return Path(pathlike[-1] if pathlike else candidates[0]).name
+
+
 class ProfileConfig(InsertsArguments):
     """Configuration for the profile subcommand.
 
@@ -36,7 +52,8 @@ class ProfileConfig(InsertsArguments):
         aggregation: Aggregation strategy for multi-rank results.
         output_dir: Directory for output files.
         verbose: Verbosity level (0-4).
-        name: Name prefix for output files.
+        machine_name: Name for the results directory (each machine gets its own subdirectory).
+        app_name: Application name recorded in the output metadata.
         results_dir: Directory to scan for existing profiling result files.
         keep_artifacts: Whether to keep raw profiling output files.
         papi_events: Optional comma-separated PAPI event override.
@@ -51,9 +68,12 @@ class ProfileConfig(InsertsArguments):
         self.command: list[str] = list(args.command)
         self.backend: BackendType = args.backend
         self.aggregation: AggregationMode = args.aggregation
-        self.output_dir: Path = args.output_dir
         self.verbose: int = args.verbose
-        self.name: str = args.name or "unnamed"
+        self.output_dir: Path = args.output_dir
+        self.machine_name: str = (
+            args.machine_name if args.machine_name is not None else generate_run_name(detect_machine_signature())
+        )
+        self.app_name: str = args.app_name if args.app_name is not None else _default_app_name(args.command)
         self.results_dir: Path = args.results_dir
         self.keep_artifacts: bool = args.keep_artifacts
         self.papi_events: str | None = args.papi_events
@@ -75,16 +95,7 @@ class ProfileConfig(InsertsArguments):
             action=enum_action(BackendType),
             help=f"Profiler backend to use (default: {BackendType.PAPI.value})",
         )
-        parser.add_argument(
-            "--verbose",
-            "-v",
-            default=3,
-            const=4,
-            nargs="?",
-            type=int,
-            choices=(0, 1, 2, 3, 4),
-            help="Level of detail of terminal output (0 -> None, 4 -> Debug info)",
-        )
+        add_verbose_argument(parser)
         parser.add_argument(
             "--aggregation",
             default=AggregationMode.GLOBAL,
@@ -92,10 +103,16 @@ class ProfileConfig(InsertsArguments):
             help=f"Aggregation strategy for multi-rank results (default: {AggregationMode.GLOBAL.value})",
         )
         parser.add_argument(
-            "--name",
+            "--machine-name",
             default=None,
             type=str,
             help="Name for the results directory (default: auto-generated from CPU model)",
+        )
+        parser.add_argument(
+            "--app-name",
+            default=None,
+            type=str,
+            help="Application name recorded in the output metadata (default: extracted from the profiled command)",
         )
         parser.add_argument(
             "--output-dir",

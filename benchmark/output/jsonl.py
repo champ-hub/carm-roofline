@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from output_utils import info, warn
+from roofline_assembly import RecordType
 from units import Cycles
 
 if TYPE_CHECKING:
@@ -44,7 +45,7 @@ def _serialize_arithmetic(
     ipc = 0.0 if cycles.value == 0 else total_insts / cycles.value
 
     return {
-        "type": "arithmetic",
+        "type": RecordType.ARITHMETIC,
         "name": bench.name,
         "isa": isa_name,
         "data_type": bench.params.data_type.name,
@@ -85,7 +86,7 @@ def _serialize_memory(
     ipc = 0.0 if cycles.value == 0 else total_insts / cycles.value
 
     return {
-        "type": "memory",
+        "type": RecordType.MEMORY,
         "name": bench.name,
         "isa": isa_name,
         "data_type": bench.params.data_type.name,

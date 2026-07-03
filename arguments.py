@@ -145,3 +145,23 @@ def inheritors(cls: type) -> set[type]:
 
 def check_args_validity(args: argparse.Namespace) -> None:
     pass
+
+
+def add_verbose_argument(parser: argparse.ArgumentParser) -> None:
+    """Add the standard ``--verbose`` / ``-v`` argument to *parser*.
+
+    Default level is 3 (configuration details).  ``-v`` alone sets level 4 (debug).  Accepted levels: 0 (quiet),
+    1 (errors), 2 (results), 3 (configuration), 4 (debug).
+    """
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        default=3,
+        const=4,
+        nargs="?",
+        type=int,
+        choices=(0, 1, 2, 3, 4),
+        help="Level of detail of terminal output "
+        "(0 (quiet), 1 -> Errors only, 2 -> Results, "
+        "3 -> Configuration details, 4 -> Debug info)",
+    )

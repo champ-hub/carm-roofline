@@ -16,6 +16,7 @@ from profiling.aggregation import (
     aggregate_per_thread,
 )
 from profiling.config import AggregationMode
+from profiling.model import RegionMetrics, RunMetadata, RunResults, ThreadMetrics
 from profiling.papi_loader import (
     RankMetrics,
     discover_rank_files,
@@ -29,13 +30,12 @@ from profiling.papi_metrics import (
 )
 from profiling.shared import (
     MetricContext,
-    MetricResolutionConfig,
     MetricDefinition,
+    MetricResolutionConfig,
     MetricType,
     compute_region_point,
     sum_roofline_points,
 )
-from profiling.model import RegionMetrics, RunMetadata, RunResults, ThreadMetrics
 
 pytestmark = pytest.mark.unit
 
@@ -81,9 +81,7 @@ SAMPLE_RANK_FILE: dict = {
 }
 
 # Resolved metrics matching the PAPI events in the sample
-SAMPLE_RESOLVED: dict[MetricType, MetricDefinition] = resolve_metrics(
-    frozenset({"PAPI_FP_OPS", "PAPI_L1_DCA"})
-)
+SAMPLE_RESOLVED: dict[MetricType, MetricDefinition] = resolve_metrics(frozenset({"PAPI_FP_OPS", "PAPI_L1_DCA"}))
 
 
 # ---------------------------------------------------------------------------
@@ -150,8 +148,11 @@ def test_run_results_hierarchy() -> None:
 
 def test_run_results_to_dict() -> None:
     reg = RegionMetrics(
-        name="daxpy", parent_region_id="-1", cycles=1000,
-        time_nsec=1000000, counters={"PAPI_FP_OPS": 100},
+        name="daxpy",
+        parent_region_id="-1",
+        cycles=1000,
+        time_nsec=1000000,
+        counters={"PAPI_FP_OPS": 100},
     )
     tm = ThreadMetrics(thread_id=0, regions=[reg])
     rank = RankMetrics(rank_id=0, threads=[tm])
@@ -263,7 +264,15 @@ def test_aggregate_per_thread() -> None:
 
 
 def test_aggregate_per_region() -> None:
-    # Add a second region type to one thread
+    # Add a second region type to one thread only (avoid _make_sample_run's
+    # shared ThreadMetrics reference across ranks)
+    reg_a = RegionMetrics(
+        name="daxpy",
+        parent_region_id="-1",
+        cycles=1364391136,
+        time_nsec=427162799,
+        counters={"PAPI_FP_OPS": 20971520, "PAPI_L1_DCA": 38637435},
+    )
     reg_b = RegionMetrics(
         name="saxpy",
         parent_region_id="-1",
@@ -271,13 +280,23 @@ def test_aggregate_per_region() -> None:
         time_nsec=500000,
         counters={"PAPI_FP_OPS": 1000},
     )
-    run = _make_sample_run()
-    run.ranks[0].threads[0].regions.append(reg_b)
+    th0 = ThreadMetrics(thread_id=0, regions=[reg_a, reg_b])
+    th1 = ThreadMetrics(thread_id=0, regions=[reg_a])
+    ranks = [
+        RankMetrics(rank_id=0, threads=[th0]),
+        RankMetrics(rank_id=1, threads=[th1]),
+    ]
+    run = RunResults(metadata=RunMetadata(name="test"), ranks=ranks)
 
     pts = aggregate_per_region(run, SAMPLE_RESOLVED, DEFAULT_CTX)
     names = {pt.label for pt in pts}
     assert "test_daxpy" in names
     assert "test_saxpy" in names
+    pts_by_name = {pt.label: pt for pt in pts}
+    assert pts_by_name["test_daxpy"].num_ranks == 2  # both ranks
+    assert pts_by_name["test_daxpy"].num_threads == 2  # both threads
+    assert pts_by_name["test_saxpy"].num_ranks == 1  # only rank 0
+    assert pts_by_name["test_saxpy"].num_threads == 1  # only thread 0
 
 
 def test_aggregate_dispatch_global() -> None:
@@ -343,7 +362,6 @@ def test_aggregated_point_zero_runtime() -> None:
 # ---------------------------------------------------------------------------
 # Config tests
 # ---------------------------------------------------------------------------
-
 
 
 def test_aggregation_mode_enum() -> None:
@@ -440,17 +458,30 @@ def test_load_all_ranks_empty_dir(tmp_path: Path) -> None:
     assert load_all_ranks(tmp_path) == []
 
 
+def test_default_app_name() -> None:
+    from profiling.config import _default_app_name
+
+    assert _default_app_name(["./build/myapp", "arg1"]) == "myapp"
+    assert _default_app_name(["mpirun", "-np", "4", "./myapp"]) == "myapp"
+    assert _default_app_name(["srun", "-n", "4", "/path/to/app"]) == "app"
+    assert _default_app_name(["myapp"]) == "myapp"
+    assert _default_app_name(["myapp", "--input", "foo"]) == "myapp"
+    assert _default_app_name([]) == "app"
+    assert _default_app_name(["-flag", "--opt"]) == "app"
+
 # ---------------------------------------------------------------------------
 # Output tests
 # ---------------------------------------------------------------------------
 
 
 def test_write_applications_csv(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
     from profiling.output import write_applications_csv
 
+    cfg = MagicMock(machine_name="test_run", output_dir=tmp_path)
     run = _make_sample_run()
     pts = [aggregate_global(run, SAMPLE_RESOLVED, DEFAULT_CTX)]
-    write_applications_csv(pts, "test_run", tmp_path, run)
+    write_applications_csv(pts, cfg, run)
 
     csv_path = tmp_path / "test_run" / "applications.csv"
     assert csv_path.exists()
@@ -460,11 +491,13 @@ def test_write_applications_csv(tmp_path: Path) -> None:
 
 
 def test_write_applications_csv_per_rank(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
     from profiling.output import write_applications_csv
 
+    cfg = MagicMock(machine_name="test_run", output_dir=tmp_path)
     run = _make_sample_run()
     pts = aggregate_per_rank(run, SAMPLE_RESOLVED, DEFAULT_CTX)
-    write_applications_csv(pts, "test_run", tmp_path, run)
+    write_applications_csv(pts, cfg, run)
 
     csv_path = tmp_path / "test_run" / "applications.csv"
     assert csv_path.exists()
@@ -472,34 +505,118 @@ def test_write_applications_csv_per_rank(tmp_path: Path) -> None:
     assert len(rows) == 3  # header + 2 rank points
 
 
-def test_write_profile_json(tmp_path: Path) -> None:
-    from profiling.output import write_profile_json
+def test_write_profile_jsonl(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
+    from profiling.output import write_profile_jsonl
 
+    cfg = MagicMock(machine_name="test_run", output_dir=tmp_path, aggregation=AggregationMode.GLOBAL)
     run = _make_sample_run()
     pts = [aggregate_global(run, SAMPLE_RESOLVED, DEFAULT_CTX)]
-    write_profile_json(run, "test_run", tmp_path, AggregationMode.GLOBAL, pts)
+    write_profile_jsonl(run, cfg, pts)
 
-    json_path = tmp_path / "test_run" / "profile.json"
-    assert json_path.exists()
-    data = json.loads(json_path.read_text())
-    assert data["format_version"] == "1.0"
-    assert data["aggregation"] == "global"
-    assert "original" in data
-    assert "aggregated" in data
-    assert data["original"]["metadata"]["name"] == "test"
+    jsonl_path = tmp_path / "test_run" / "applications.jsonl"
+    assert jsonl_path.exists()
+    lines = jsonl_path.read_text().strip().split("\n")
+    assert len(lines) == 1  # single line per run
+
+    record = json.loads(lines[0])
+    assert record["format_version"] == "2.0"
+    assert record["aggregation"] == "global"
+    assert record["metadata"]["name"] == "test"
+    assert "num_ranks" in record["metadata"]
+    assert "total_threads" in record["metadata"]
+
+    points = record["points"]
+    assert isinstance(points, list)
+    assert len(points) == 1
+    point = points[0]
+    assert "type" not in point
+    assert point["label"] == "test"
+    assert point["total_flops"] >= 0
+    assert point["total_bytes"] >= 0
+    assert point["runtime_s"] >= 0
+    assert point["arithmetic_intensity"] >= 0
+    assert point["flops_per_second"] >= 0
+    assert point["bandwidth"] >= 0
+    assert point["num_ranks"] == 2
+    assert point["num_threads"] == 2
+    assert point["num_regions"] == 2
 
 
-def test_write_profile_json_per_rank(tmp_path: Path) -> None:
-    from profiling.output import write_profile_json
+def test_write_profile_jsonl_per_rank(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
+    from profiling.output import write_profile_jsonl
 
+    cfg = MagicMock(machine_name="test_run", output_dir=tmp_path, aggregation=AggregationMode.RANK)
     run = _make_sample_run()
     pts = aggregate_per_rank(run, SAMPLE_RESOLVED, DEFAULT_CTX)
-    write_profile_json(run, "test_run", tmp_path, AggregationMode.RANK, pts)
+    write_profile_jsonl(run, cfg, pts)
 
-    json_path = tmp_path / "test_run" / "profile.json"
-    data = json.loads(json_path.read_text())
-    assert data["aggregation"] == "rank"
-    assert len(data["aggregated"]["points"]) == 2
+    jsonl_path = tmp_path / "test_run" / "applications.jsonl"
+    lines = jsonl_path.read_text().strip().split("\n")
+    assert len(lines) == 1  # single line per run
+
+    record = json.loads(lines[0])
+    assert record["aggregation"] == "rank"
+
+    points = record["points"]
+    assert isinstance(points, list)
+    assert len(points) == 2
+    for point in points:
+        assert "type" not in point
+        assert point["label"] in ("test_rank0", "test_rank1")
+
+
+def test_write_profile_jsonl_per_region(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
+    from profiling.output import write_profile_jsonl
+
+    reg_a = RegionMetrics(
+        name="daxpy",
+        parent_region_id="-1",
+        cycles=1364391136,
+        time_nsec=427162799,
+        counters={"PAPI_FP_OPS": 20971520, "PAPI_L1_DCA": 38637435},
+    )
+    reg_b = RegionMetrics(
+        name="saxpy",
+        parent_region_id="-1",
+        cycles=1000,
+        time_nsec=500000,
+        counters={"PAPI_FP_OPS": 1000},
+    )
+    th0 = ThreadMetrics(thread_id=0, regions=[reg_a, reg_b])
+    th1 = ThreadMetrics(thread_id=0, regions=[reg_a])
+    ranks = [
+        RankMetrics(rank_id=0, threads=[th0]),
+        RankMetrics(rank_id=1, threads=[th1]),
+    ]
+    run = RunResults(metadata=RunMetadata(name="test"), ranks=ranks)
+
+    cfg = MagicMock(machine_name="test_run", output_dir=tmp_path, aggregation=AggregationMode.REGION)
+    pts = aggregate_per_region(run, SAMPLE_RESOLVED, DEFAULT_CTX)
+    write_profile_jsonl(run, cfg, pts)
+
+    jsonl_path = tmp_path / "test_run" / "applications.jsonl"
+    lines = jsonl_path.read_text().strip().split("\n")
+    assert len(lines) == 1  # single line per run
+
+    record = json.loads(lines[0])
+    assert record["aggregation"] == "region"
+
+    points = record["points"]
+    assert isinstance(points, list)
+    assert len(points) == 2
+
+    points_by_label = {}
+    for point in points:
+        assert "type" not in point
+        points_by_label[point["label"]] = point
+
+    assert points_by_label["test_daxpy"]["num_ranks"] == 2
+    assert points_by_label["test_daxpy"]["num_threads"] == 2
+    assert points_by_label["test_saxpy"]["num_ranks"] == 1
+    assert points_by_label["test_saxpy"]["num_threads"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -528,9 +645,7 @@ def test_metric_registry_has_expected_metrics() -> None:
 
 def test_metric_registry_has_implementations_for_each_type() -> None:
     for mtype, impls in METRICS.items():
-        assert len(impls) >= 3, (
-            f"Metric '{mtype}' should have at least 3 implementations, got {len(impls)}"
-        )
+        assert len(impls) >= 3, f"Metric '{mtype}' should have at least 3 implementations, got {len(impls)}"
 
 
 def test_resolve_metrics_flops_via_dp_ops() -> None:

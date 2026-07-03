@@ -81,6 +81,7 @@ py-modules = [
     "exec_interface",
     "output_utils",
     "results_paths",
+    "roofline_assembly",
     "run_config",
     "units",
     "utils",
@@ -215,8 +216,6 @@ exclude = [
     "run.py",
     "run_gpu.py",
     ".*AI_Calculator.py",
-    "gui/dashboard.py",
-    "gui/gui_utils.py",
     "utils.py",
     "output_utils.py",
     "plot_timing_distribution.py",
@@ -225,17 +224,12 @@ exclude = [
 ]
 
 [[tool.mypy.overrides]]
-module = [
-    "gui.dashboard",
-    "gui.gui_utils",
-    "utils",
-]
-ignore_errors = true
+module = ["dash_bootstrap_components.*"]
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
-    "plotly.*",
-    "dash.*",
     "diskcache.*",
+    "plotly.*",
 ]
 ignore_missing_imports = true

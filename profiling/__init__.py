@@ -117,7 +117,7 @@ def profile_main(config: ProfileConfig) -> int:
 
         # Build metadata
         metadata = RunMetadata(
-            name=config.name,
+            name=config.app_name,
             date=datetime.now().isoformat(timespec="seconds"),
             method=backend.run_method_name,
             command=" ".join(config.command),
@@ -131,7 +131,7 @@ def profile_main(config: ProfileConfig) -> int:
         points = aggregate(run, config.aggregation, resolved, metric_ctx)
 
         # Write outputs to the final output directory
-        write_profile_results(run, config.name, config.output_dir, config.aggregation, points)
+        write_profile_results(run, config, points)
 
         # Brief summary
         for pt in points:

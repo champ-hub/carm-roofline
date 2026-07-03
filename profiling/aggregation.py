@@ -164,11 +164,16 @@ def aggregate_per_region(
     ranks and threads are summed into a single point.
     """
     by_name: dict[str, list[dict[str, float]]] = {}
+    rank_ids: dict[str, set[int]] = {}
+    thread_ids: dict[str, set[tuple[int, int]]] = {}
+
     for rank in run.ranks:
         for thread in rank.threads:
             for region in thread.regions:
                 region_point = compute_region_point(region.counters, region.time_nsec, resolved, metric_ctx)
                 by_name.setdefault(region.name, []).append(region_point)
+                rank_ids.setdefault(region.name, set()).add(rank.rank_id)
+                thread_ids.setdefault(region.name, set()).add((rank.rank_id, thread.thread_id))
 
     points: list[AggregatedPoint] = []
     for name, region_points in sorted(by_name.items()):
@@ -180,8 +185,8 @@ def aggregate_per_region(
                 total_flops=total["flops"],
                 total_bytes=total["bytes"],
                 runtime_s=total["time_s"],
-                num_ranks=run.num_ranks,
-                num_threads=0,
+                num_ranks=len(rank_ids.get(name, set())),
+                num_threads=len(thread_ids.get(name, set())),
                 num_regions=len(region_points),
             )
         )
