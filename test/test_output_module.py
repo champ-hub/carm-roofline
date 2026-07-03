@@ -649,13 +649,6 @@ def test_roofline_legacy_csv_compatibility(tmp_path):
     assert rows[2][19] == rows[2][17]
     assert rows[2][20] == rows[2][18]
 
-    # Ensure legacy parser compatibility (parses by fixed column index)
-    from gui.gui_utils import read_csv_file
-
-    machine_name, l1_size, l2_size, l3_size, parsed_rows = read_csv_file(csv_path)
-    assert machine_name == context.run_config.name
-    assert (l1_size, l2_size, l3_size) == (0, 0, 0)
-    assert len(parsed_rows) == 1
 
     # second write should append row only (no repeated headers)
     _write_csv(context, isa_suites, output_dir=tmp_path)

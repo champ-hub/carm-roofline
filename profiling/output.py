@@ -1,7 +1,7 @@
 """Output writers for profiling results.
 
-Produces both CSV (GUI-compatible applications format) and JSON (full
-hierarchy preserving ranks/threads) output.
+Produces CSV (GUI-compatible applications format) and JSONL (one appended
+line per run, embedding metadata and the aggregated points) output.
 """
 
 from __future__ import annotations
@@ -9,48 +9,40 @@ from __future__ import annotations
 import csv
 import json
 from datetime import datetime
-from pathlib import Path
 
 from output_utils import detail, info
 
 from .aggregation import AggregatedPoint
-from .config import AggregationMode
+from .config import ProfileConfig
 from .model import RunResults
 
 
 def write_profile_results(
     run: RunResults,
-    name: str,
-    output_dir: Path,
-    aggregation: AggregationMode,
+    config: ProfileConfig,
     points: list[AggregatedPoint],
 ) -> None:
-    """Write profiling results in both CSV and JSON formats.
+    """Write profiling results in both CSV and JSONL formats.
 
-    CSV is written to ``<output_dir>/<name>/applications.csv``
-    (GUI-compatible legacy format).  JSON is written to
-    ``<output_dir>/<name>/profile.json`` (full rank/thread hierarchy plus
-    aggregated view).
+    CSV is written to ``<output_dir>/<machine_name>/applications.csv``
+    (GUI-compatible legacy format).  JSONL is written to
+    ``<output_dir>/<machine_name>/applications.jsonl`` (one appended line per run,
+    embedding run metadata and the aggregated points).
     """
-    write_applications_csv(points, name, output_dir, run)
-    write_profile_json(run, name, output_dir, aggregation, points)
+    write_applications_csv(points, config, run)
+    write_profile_jsonl(run, config, points)
 
 
 def write_applications_csv(
     points: list[AggregatedPoint],
-    name: str,
-    output_dir: Path,
+    config: ProfileConfig,
     run: RunResults,
 ) -> None:
     """Write aggregated profiling results as GUI-compatible applications CSV.
 
-    Each ``AggregatedPoint`` becomes one CSV row.
-
-    CSV columns (matching ``gui_utils.read_application_csv_file``):
-        Date, Method, Name, ISA, Precision, Threads,
-        AI, GFLOPS, Bandwidth, Time
+    The CSV is appended to ``<output_dir>/<machine_name>/applications.csv``.
     """
-    out_dir = output_dir / name
+    out_dir = config.output_dir / config.machine_name
     out_dir.mkdir(parents=True, exist_ok=True)
     filepath = out_dir / "applications.csv"
 
@@ -64,68 +56,80 @@ def write_applications_csv(
     file_exists = filepath.exists()
     with filepath.open("a" if file_exists else "w", newline="") as f:
         writer = csv.writer(f)
+
         if not file_exists:
             writer.writerow(header)
 
         for pt in points:
-            ai = pt.arithmetic_intensity
-            gflops = pt.flops_per_second / 1e9
-            bw = pt.bandwidth
             writer.writerow(
-                [
+                (
                     date_str,
                     method,
                     pt.label,
                     isa,
                     precision,
-                    str(pt.num_threads),
-                    f"{ai:.6f}",
-                    f"{gflops:.6f}",
-                    f"{bw:.6f}",
-                    f"{pt.runtime_s:.6f}",
-                ]
+                    pt.num_threads,
+                    f"{pt.arithmetic_intensity:.3f}",
+                    f"{pt.flops_per_second / 1e9:.3f}",
+                    f"{pt.bandwidth / 1e9:.3f}",
+                    f"{pt.runtime_s:.3f}",
+                )
             )
 
     info(f"Applications CSV written: {filepath}")
     detail(f"Aggregation={points[0].label if points else ''}, {len(points)} point(s)")
 
 
-def write_profile_json(
+def write_profile_jsonl(
     run: RunResults,
-    name: str,
-    output_dir: Path,
-    aggregation: AggregationMode,
+    config: ProfileConfig,
     points: list[AggregatedPoint],
 ) -> None:
-    """Write full profiling results as JSON.
+    """Write profiling results as JSONL.
 
-    The JSON includes the original rank/thread/region hierarchy *and* an
-    aggregated view using the selected aggregation strategy.
+    Produces one appended JSON line per run, embedding run metadata and
+    the aggregated roofline points.  Written to
+    ``<output_dir>/<machine_name>/applications.jsonl``.
     """
-    out_dir = output_dir / name
+    out_dir = config.output_dir / config.machine_name
     out_dir.mkdir(parents=True, exist_ok=True)
-    filepath = out_dir / "profile.json"
+    filepath = out_dir / "applications.jsonl"
 
-    output = {
-        "format_version": "1.0",
-        "aggregation": aggregation.value,
-        "original": run.to_dict(),
-        "aggregated": {
+    record = {
+        "format_version": "2.0",
+        "aggregation": config.aggregation.value,
+        "metadata": {
             "name": run.metadata.name,
-            "points": [
-                {
-                    "label": pt.label,
-                    "total_flops": pt.total_flops,
-                    "total_bytes": pt.total_bytes,
-                    "runtime_s": pt.runtime_s,
-                    "num_ranks": pt.num_ranks,
-                    "num_threads": pt.num_threads,
-                    "num_regions": pt.num_regions,
-                }
-                for pt in points
-            ],
+            "date": run.metadata.date,
+            "method": run.metadata.method,
+            "isa": run.metadata.isa,
+            "precision": run.metadata.precision,
+            "threads_per_rank": run.metadata.threads_per_rank,
+            "command": run.metadata.command,
+            "notes": run.metadata.notes,
+            "num_ranks": run.num_ranks,
+            "total_threads": run.total_threads,
         },
+        "points": [
+            {
+                "label": pt.label,
+                "total_flops": pt.total_flops,
+                "total_bytes": pt.total_bytes,
+                "runtime_s": pt.runtime_s,
+                "num_ranks": pt.num_ranks,
+                "num_threads": pt.num_threads,
+                "num_regions": pt.num_regions,
+                "arithmetic_intensity": pt.arithmetic_intensity,
+                "flops_per_second": pt.flops_per_second,
+                "bandwidth": pt.bandwidth,
+            }
+            for pt in points
+        ],
     }
 
-    filepath.write_text(json.dumps(output, indent=2))
-    info(f"Profile JSON written: {filepath}")
+    with open(filepath, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, sort_keys=True))
+        f.write("\n")
+
+    info(f"Profile JSONL written: {filepath}")
+    detail(f"Aggregation={config.aggregation.value}, {len(points)} point(s)")

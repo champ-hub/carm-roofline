@@ -14,7 +14,6 @@ import argcomplete
 from rich_argparse import RichHelpFormatter
 
 from architecture import (
-    detect_machine_signature,
     generate_run_name,
     set_execution_interface,
     signature_from_architecture,
@@ -79,15 +78,13 @@ def _handle_benchmark(args: argparse.Namespace) -> int:
 
 
 def _handle_gui(args: argparse.Namespace) -> int:
+    configure_verbosity(args.verbose)
     gui_config = GUIConfig(args)
-    results_dir = gui_config.results_dir.resolve()
 
     try:
-        from gui import dashboard
+        from gui import run_app
 
-        dashboard.set_results_root(results_dir)
-        dashboard.app.run(host=gui_config.gui_host, port=gui_config.gui_port, debug=gui_config.gui_debug)
-        return 0
+        return run_app(gui_config)
     except ImportError:
         error('Failed to import GUI dependencies. Install optional GUI extras with: pip install "carm-roofline[gui]"')
         debug(str(traceback.format_exc()))
@@ -98,9 +95,6 @@ def _handle_profile(args: argparse.Namespace) -> int:
     configure_verbosity(args.verbose)
     args_str = ", ".join(f"{k}={v}" for k, v in vars(args).items() if v is not None)
     debug(f"parsed profile arguments: {args_str}")
-
-    if args.name is None:
-        args.name = generate_run_name(detect_machine_signature())
 
     config = ProfileConfig(args)
     return profile_main(config)

@@ -90,8 +90,8 @@ Each backend has its own metric definitions registry (built at module load time)
 
 ### Output (`output.py`)
 
-- **CSV**: Writes to `<output-dir>/applications/{name}_applications.csv` in the legacy applications format consumed by the GUI.
-- **JSON**: Writes to `<output-dir>/profile/{name}_profile.json` with full rank/thread hierarchy plus aggregated view.
+**CSV**: Writes to ``<output-dir>/applications/{name}_applications.csv`` in the legacy applications format consumed by the GUI.
+**JSONL**: Writes to ``<output_dir>/<name>/applications.jsonl`` — one appended JSON line per run, embedding run metadata and the list of aggregated roofline points (threads / ranks / regions / a single global point, per aggregation mode).
 
 ### Entry Point
 

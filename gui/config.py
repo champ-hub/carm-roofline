@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from arguments import InsertsArguments
+from arguments import InsertsArguments, add_verbose_argument
 from results_paths import default_results_root
 
 
@@ -12,6 +12,7 @@ class GUIConfig(InsertsArguments):
 
     def __init__(self, args: argparse.Namespace):
         super().__init__()
+        self.verbose: int = args.verbose
         self.results_dir: Path = args.results_dir
         self.gui_host: str = args.gui_host
         self.gui_port: int = args.gui_port
@@ -19,6 +20,7 @@ class GUIConfig(InsertsArguments):
 
     @staticmethod
     def insert_arguments(parser: argparse.ArgumentParser) -> None:
+        add_verbose_argument(parser)
         parser.add_argument(
             "--results-dir",
             type=Path,

@@ -54,20 +54,17 @@ class MachineSignature:
     arch: str
     vendor: str
     memory_levels: tuple[MemoryLevelSignature, ...]
-    vector_length: int | None
 
     @property
     def config_hash(self) -> str:
         """Deterministic 8-char hex SHA256 of non-model-name fields.
 
-        Hash inputs: arch, vendor, memory_levels (name, size, instances,
-        sharing), vector_length. The model name is excluded because it forms the
-        human-readable prefix of the run name instead.
+        Hash inputs: arch, vendor, memory_levels (name, size, instances, sharing).
         """
         levels_str = "|".join(
             f"{lvl.name}:{lvl.size_bytes}:{lvl.instances}:{lvl.num_sharing_threads}" for lvl in self.memory_levels
         )
-        canonical = f"arch={self.arch};vendor={self.vendor};levels={levels_str};vlen={self.vector_length}"
+        canonical = f"arch={self.arch};vendor={self.vendor};levels={levels_str}"
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:8]
 
 
@@ -134,7 +131,6 @@ def detect_machine_signature() -> MachineSignature:
         - vendor: read from /proc/cpuinfo, or empty string.
         - memory_levels: built from sysfs via :class:`MemoryTopology` if
           available, else an empty tuple.
-        - vector_length: ``None`` (requires a C probe, unavailable standalone).
     """
     cpu_info = read_cpuinfo()
     model_name = cpu_info.model_name or platform.machine()
@@ -151,7 +147,6 @@ def detect_machine_signature() -> MachineSignature:
         arch=platform.machine(),
         vendor=vendor,
         memory_levels=memory_levels,
-        vector_length=None,
     )
 
 
@@ -159,8 +154,9 @@ def signature_from_architecture(arch: Architecture) -> MachineSignature:
     """Build a signature from a resolved :class:`Architecture`.
 
     Used by the ``benchmark`` flow, where the architecture has already been
-    detected (including the vector length from a C probe). Falls back to
-    ``arch.arch`` then ``"unknown"`` for the model name when unavailable.
+    detected (including C-probed fields such as vector length).
+    Falls back to ``arch.arch`` then ``"unknown"`` for the model name when
+    unavailable.
     """
     model_name = arch.model_name or arch.arch or "unknown"
     vendor = arch.vendor or ""
@@ -169,7 +165,6 @@ def signature_from_architecture(arch: Architecture) -> MachineSignature:
         arch=arch.arch or platform.machine(),
         vendor=vendor,
         memory_levels=_levels_from_topology(arch.memory_topology),
-        vector_length=arch.vector_length,
     )
 
 

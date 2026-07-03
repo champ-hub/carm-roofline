@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from arguments import InsertsArguments, enum_action
+from arguments import InsertsArguments, add_verbose_argument, enum_action
 from benchmark.output.base import OutputKind
 from output_utils import warn
 from results_paths import default_results_root
@@ -25,17 +25,7 @@ class RunConfig(InsertsArguments):
 
     @staticmethod
     def insert_arguments(parser: argparse.ArgumentParser) -> None:
-        parser.add_argument(
-            "--verbose",
-            "-v",
-            default=3,
-            const=4,
-            nargs="?",
-            type=int,
-            choices=(0, 1, 2, 3, 4),
-            help="Level of detail of terminal output (0 -> None 1 -> Only ISA/configuration errors and test "
-            "specifications, 2 -> Test results, 3 -> Configuration values selected/detected, 4 -> Debug info)",
-        )
+        add_verbose_argument(parser)
         parser.add_argument(
             "--name",
             type=str,

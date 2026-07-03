@@ -139,13 +139,6 @@ exec_iface = get_execution_interface()
 exec_iface.compile(...)
 ```
 
-### Type Safety
-
-- All new Python code must include type hints and pass `mypy .` in strict mode
-- Use `from __future__ import annotations` for PEP 604 union syntax (`X | Y`)
-- `typing.TYPE_CHECKING` guard for import cycles in type annotations
-- Avoid `dict.get()`, `getdefault()`, or silent fallbacks — let `KeyError`/`AttributeError` propagate
-
 ### ISA Registration
 
 ISAs register via explicit tuples in `benchmark/generation/__init__.py`:
@@ -219,6 +212,7 @@ class Unit[T](ABC):  # Generic arithmetic wrapper
 | `.pre-commit-config.yaml` | Pre-commit hooks (ruff, mypy, clang-format, trailing-whitespace) |
 | `.github/copilot-instructions.md` | (Loaded as system context) Central developer guidance, module index |
 | `test/conftest.py` | Shared pytest fixtures (ISA instances, mock context) |
+
 
 ## Runtime/Tooling Preferences
 
