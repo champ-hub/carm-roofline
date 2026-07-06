@@ -52,7 +52,6 @@ class RoofConfig:
     load_store_ratio: str | None = "2:1"
     collapsed: bool = False
     app_ids: list[str] = field(default_factory=list)
-    apps_enabled: bool = True
 
     def __init__(
         self,
@@ -65,7 +64,6 @@ class RoofConfig:
         compute_insts: list[str] | None = None,
         load_store_ratio: str | None = "2:1",
         app_ids: list[str] | None = None,
-        apps_enabled: bool = True,
         collapsed: bool = False,
     ) -> None:
         self.id = roof_id or uuid.uuid4().hex
@@ -78,7 +76,6 @@ class RoofConfig:
         self.compute_insts = compute_insts or ["fma", "add"]
         self.load_store_ratio = load_store_ratio
         self.app_ids = app_ids or []
-        self.apps_enabled = apps_enabled
 
 
 def make_default_roof(opts: FilterOptions | None = None) -> RoofConfig:
@@ -106,6 +103,7 @@ class RoofStore:
     def __init__(self, roof_template: RoofConfig | None = None) -> None:
         self.roofs: list[RoofConfig] = [roof_template or RoofConfig()]
         self.active_panel: ActivePanel = ActivePanel.CARM_VIEW
+        self.normalize_by_threads: bool = False
 
     # Roof CRUD
     def add_roof(self, roof_template: RoofConfig | None = None) -> RoofConfig:
@@ -146,11 +144,11 @@ class RoofStore:
                     "load_store_ratio": r.load_store_ratio,
                     "collapsed": r.collapsed,
                     "app_ids": r.app_ids,
-                    "apps_enabled": r.apps_enabled,
                 }
                 for r in self.roofs
             ],
             "active_panel": self.active_panel,
+            "normalize_by_threads": self.normalize_by_threads,
         }
 
     @classmethod
@@ -168,11 +166,11 @@ class RoofStore:
                 load_store_ratio=r.get("load_store_ratio", "2:1"),
                 collapsed=r.get("collapsed", False),
                 app_ids=r.get("app_ids", []),
-                apps_enabled=r.get("apps_enabled", True),
             )
             for r in data.get("roofs", [])
         ]
         store.active_panel = ActivePanel(data.get("active_panel", "carm_view"))
+        store.normalize_by_threads = data.get("normalize_by_threads", False)
         return store
 
 
@@ -203,6 +201,7 @@ def build_roofline_figure(
     roofs: list[RoofConfig],
     records: list[BenchmarkRecord],
     applications_by_id: dict[str, ApplicationRecord] | None = None,
+    normalize_by_threads: bool = False,
 ) -> go.Figure:
     """Build a Plotly roofline figure from real benchmark records.
 
@@ -221,6 +220,7 @@ def build_roofline_figure(
     peak_perf_values: list[float] = []
 
     for roof in roofs:
+        roof_divisor = roof.threads if (normalize_by_threads and roof.threads and roof.threads > 0) else 1
         flt = RooflineFilter(
             machine=roof.machine if roof.machine else None,
             isa=roof.isa if roof.isa else None,
@@ -237,12 +237,12 @@ def build_roofline_figure(
             f"{len(model.source_timestamps)} run(s)"
         )
         if model.peak_performance_by_op:
-            peak_perf_values.append(max(p.value for p in model.peak_performance_by_op.values()))
+            peak_perf_values.append(max(p.value for p in model.peak_performance_by_op.values()) / roof_divisor)
         rp = model.ridge_points()
         for level, ai_obj in rp.items():
             bw = model.bandwidth_by_level.get(level)
             if bw is not None:
-                ridge_pairs.append((ai_obj.value, bw.value))
+                ridge_pairs.append((ai_obj.value, bw.value / roof_divisor))
 
     # Axis ranges, log10 coordinates (Plotly "log" axis convention).
     if ridge_pairs:
@@ -262,9 +262,10 @@ def build_roofline_figure(
 
     for idx, (roof, model) in enumerate(zip(roofs, models)):
         color = _COLORS[idx % len(_COLORS)]
+        roof_divisor = roof.threads if (normalize_by_threads and roof.threads and roof.threads > 0) else 1
 
         # ── Application points (drawn even when no ceiling data) ─────────
-        if applications_by_id and roof.apps_enabled:
+        if applications_by_id:
             for app_id in roof.app_ids:
                 rec = applications_by_id.get(app_id)
                 if rec is None or not rec.points:
@@ -272,15 +273,24 @@ def build_roofline_figure(
                 fig.add_trace(
                     go.Scatter(
                         x=[p.arithmetic_intensity for p in rec.points],
-                        y=[p.flops_per_second / 1e9 for p in rec.points],
+                        y=[
+                            p.flops_per_second
+                            / (p.num_threads if normalize_by_threads and p.num_threads and p.num_threads > 0 else 1)
+                            / 1e9
+                            for p in rec.points
+                        ],
                         mode="markers",
                         name=rec.label,
                         legendgroup=roof.id,
                         showlegend=True,
                         marker={"color": color, "symbol": "circle", "size": 7},
                         text=[p.label for p in rec.points],
+                        customdata=[[p.num_threads] for p in rec.points],
                         hovertemplate=(
-                            f"{rec.label}<br>%{{text}}<br>AI=%{{x:.3f}} OPS/Byte<br>Perf=%{{y:.1f}} GOPS/s"
+                            f"{rec.label}<br>%{{text}}<br>"
+                            f"AI=%{{x:.3f}} OPS/Byte<br>"
+                            f"Perf=%{{y:.1f}} GOPS/s<br>"
+                            f"Threads=%{{customdata[0]}}"
                             "<extra></extra>"
                         ),
                     )
@@ -306,24 +316,25 @@ def build_roofline_figure(
             )
             continue
 
-        peak_perf = max(p.value for p in model.peak_performance_by_op.values()) if has_perf else 0.0
+        peak_perf_raw = max(p.value for p in model.peak_performance_by_op.values()) if has_perf else 0.0
+        peak_perf = peak_perf_raw / roof_divisor
 
         _first = True
 
-        # ── Memory bandwidth ceilings (single segment: left edge → ridge point) ──
         for level in ("L1", "L2", "L3", "DRAM"):
             bw = model.bandwidth_by_level.get(level)
             if bw is None:
                 continue
+            bw_norm = bw / roof_divisor
             ai_left = 1e-6
-            y_left = bw.value * ai_left / 1e9
+            y_left = bw_norm.value * ai_left / 1e9
             if peak_perf > 0:
-                ridge_ai = peak_perf / bw.value
+                ridge_ai = peak_perf_raw / bw.value
                 ai_right = ridge_ai
                 y_right = peak_perf / 1e9
             else:
                 ai_right = 1e6
-                y_right = bw.value * ai_right / 1e9
+                y_right = bw_norm.value * ai_right / 1e9
 
             style = _BW_LINE_STYLES.get(level, {"dash": "solid", "width": 1})
             fig.add_trace(
@@ -331,7 +342,7 @@ def build_roofline_figure(
                     x=[ai_left, ai_right],
                     y=[y_left, y_right],
                     mode="lines",
-                    name=roof.label if _first else f"{roof.label} {level} ({bw!s})",
+                    name=roof.label if _first else f"{roof.label} {level} ({bw_norm!s})",
                     legendgroup=roof.id,
                     line={"color": color, **style},
                     hoverinfo="skip",
@@ -342,20 +353,21 @@ def build_roofline_figure(
 
         # ── Compute-performance ceilings (single segment: left-most ridge → right edge) ──
         for op_name, perf in model.peak_performance_by_op.items():
-            gops = perf.value / 1e9
+            perf_norm = perf / roof_divisor
+            gops = perf_norm.value / 1e9
             if model.bandwidth_by_level:
                 op_ridge_ai = min(perf.value / bw.value for bw in model.bandwidth_by_level.values())
                 compute_x_start = op_ridge_ai
             else:
                 compute_x_start = 1e-6
-            is_top = perf.value == peak_perf
+            is_top = perf.value == peak_perf_raw
             line_style = {"dash": "solid", "width": 1.5} if is_top else {"dash": "dot", "width": 2}
             fig.add_trace(
                 go.Scatter(
                     x=[compute_x_start, 1e6],
                     y=[gops, gops],
                     mode="lines",
-                    name=f"{roof.label} {op_name} ({perf!s})",
+                    name=f"{roof.label} {op_name} ({perf_norm!s})",
                     legendgroup=roof.id,
                     line={"color": color, **line_style},
                     hoverinfo="skip",
@@ -367,7 +379,7 @@ def build_roofline_figure(
         # ── Invisible ridge-point hover markers (one per op x cache level) ──
         if model.bandwidth_by_level and model.peak_performance_by_op:
             for op_name, perf in model.peak_performance_by_op.items():
-                gops = perf.value / 1e9
+                gops = (perf / roof_divisor).value / 1e9
                 for level, bw in model.bandwidth_by_level.items():
                     ridge_ai = perf.value / bw.value
                     fig.add_trace(
@@ -381,7 +393,7 @@ def build_roofline_figure(
                                 f"{roof.label} {op_name} x {level}<br>"
                                 f"AI = {ridge_ai:.2f} OPS/Byte<br>"
                                 f"Performance = {gops:.1f} GOPS/s<br>"
-                                f"BW = {bw!s}"
+                                f"BW = {bw / roof_divisor!s}"
                             ),
                             showlegend=False,
                         )

@@ -18,7 +18,6 @@ from gui.ids import (
     NavbarID,
     PlotAreaID,
     RoofCardID,
-    SelectionRowID,
     SettingsPanelID,
     SidebarID,
     StoreID,
@@ -260,11 +259,6 @@ def build_roof_card(
                                     className="apps-section-header",
                                     children=[
                                         html.Span("Applications", className="apps-section-title"),
-                                        dbc.Switch(
-                                            id=_make_id(RoofCardID.SWITCH_APPS, index=index),
-                                            value=roof.apps_enabled,
-                                            className="apps-toggle",
-                                        ),
                                     ],
                                 ),
                                 _multi_dropdown(
@@ -286,47 +280,21 @@ def build_roof_card(
 
 
 def build_settings_panel(store: RoofStore, options: FilterOptions | None = None) -> html.Div:
-    """Settings panel with roof/app visibility toggles."""
+    """Settings panel with the normalize-by-threads toggle."""
     return html.Div(
         className="settings-panel",
         style={"display": "block"} if store.active_panel == ActivePanel.SETTINGS else {"display": "none"},
         children=[
             html.H5("Settings", className="panel-header"),
             html.Div(
-                className="selection-actions",
+                className="settings-toggle-row",
                 children=[
-                    html.Button(
-                        "Select All",
-                        id=SettingsPanelID.BTN_SELECT_ALL,
-                        className="btn-select-all",
-                        n_clicks=0,
+                    html.Span("Normalize performance by threads", className="settings-toggle-label"),
+                    dbc.Switch(
+                        id=SettingsPanelID.SWITCH_NORMALIZE,
+                        value=store.normalize_by_threads,
+                        className="normalize-toggle",
                     ),
-                    html.Button(
-                        "Deselect All",
-                        id=SettingsPanelID.BTN_DESELECT_ALL,
-                        className="btn-deselect-all",
-                        n_clicks=0,
-                    ),
-                ],
-            ),
-            *[_selection_roof_row(r, i) for i, r in enumerate(store.roofs)],
-        ],
-    )
-
-
-def _selection_roof_row(roof: RoofConfig, roof_idx: int) -> html.Div:
-    """Roof row (checkbox + label) with app toggle."""
-    return html.Div(
-        className="selection-roof-row",
-        children=[
-            html.Div(
-                className="selection-roof-header",
-                children=[
-                    dbc.Checkbox(
-                        id=_make_id(SelectionRowID.CHECKBOX_ROOF_VIS, index=roof_idx),
-                        value=roof.apps_enabled,
-                    ),
-                    html.Span(roof.label, className="selection-roof-label"),
                 ],
             ),
         ],

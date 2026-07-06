@@ -214,10 +214,24 @@
     color: #555;
 }
 
-.apps-toggle {
-    transform: scale(0.8);
+
+
+.settings-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
 }
 
+.settings-toggle-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+}
+
+.normalize-toggle {
+    transform: scale(0.8);
+}
 
 /* ── Action buttons ────────────────────────────────────────────────────────── */
 .btn-add-roof {
@@ -236,46 +250,6 @@
 
 .btn-add-roof:hover {
     background: #0069d9;
-}
-
-/* ── Data selection panel ──────────────────────────────────────────────────── */
-.selection-actions {
-    display: flex;
-    gap: 6px;
-    padding: 0 12px 8px;
-}
-
-.btn-select-all,
-.btn-deselect-all {
-    flex: 1;
-    padding: 4px 8px;
-    background: #f0f0f0;
-    border: 1px solid #ccc;
-    border-radius: 3px;
-    font-size: 11px;
-    cursor: pointer;
-}
-
-.btn-select-all:hover,
-.btn-deselect-all:hover {
-    background: #e0e0e0;
-}
-
-.selection-roof-row {
-    padding: 4px 12px;
-}
-
-.selection-roof-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 0;
-}
-
-.selection-roof-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: #333;
 }
 
 
