@@ -112,7 +112,7 @@ def _levels_from_topology(topology: MemoryTopologyLike | None) -> tuple[MemoryLe
             levels.append(
                 MemoryLevelSignature(
                     name=lvl.name,
-                    size_bytes=int(lvl.size.value),
+                    size_bytes=int(lvl.size),
                     instances=lvl.instances,
                     num_sharing_threads=lvl.num_sharing_threads,
                 )

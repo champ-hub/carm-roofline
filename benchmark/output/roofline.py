@@ -114,7 +114,7 @@ def _cache_sizes_kib(context: CARMContext) -> tuple[int, int, int]:
             size = getattr(level, "size", None)
             if size is None:
                 continue
-            kib = int(size.value // 1024)
+            kib = int(size) // 1024
             if name == "L1":
                 l1_kib = kib
             elif name == "L2":
@@ -131,7 +131,7 @@ def _cache_sizes_kib(context: CARMContext) -> tuple[int, int, int]:
 def _find_dram_working_set_bytes(suite: ISABenchmarkSuite) -> int:
     for bench in suite.get_memory_benchmarks().values():
         if bench.cache_level == "DRAM" and getattr(bench, "working_set_bytes", None) is not None:
-            return int(bench.working_set_bytes.value)
+            return int(bench.working_set_bytes)
     return 0
 
 
@@ -175,8 +175,8 @@ def _aggregate_level_metrics(
         level = bench.cache_level
         assert level is not None
         bytes_per_inst = isa_instance.bytes_per_inst(bench.params.data_type)
-        bandwidth_by_level[level] = float(bench.results.bandwidth.value) / 1e9
-        total_insts = (bench.working_set_bytes.value // bytes_per_inst) * bench.results.num_repetitions
+        bandwidth_by_level[level] = float(bench.results.bandwidth) / 1e9
+        total_insts = (int(bench.working_set_bytes) // bytes_per_inst) * bench.results.num_repetitions
         cycles = Cycles.from_time_and_frequency(bench.results.time_taken, frequency)
         ipc_by_level[level] = 0.0 if cycles.value == 0 else total_insts / cycles.value
 
@@ -208,12 +208,10 @@ def _pick_fp_for_combo(
         if bench.params.data_type != dt or bench.params.num_threads != nt:
             continue
         ops_per_inst = isa_instance.ops_per_inst(bench.params.data_type, bench.params.operation)
-        total_insts = (
-            (bench.params.num_ops.value // ops_per_inst) * bench.results.num_repetitions if ops_per_inst else 0
-        )
+        total_insts = (int(bench.params.num_ops) // ops_per_inst) * bench.results.num_repetitions if ops_per_inst else 0
         cycles = Cycles.from_time_and_frequency(bench.results.time_taken, frequency)
         ipc = 0.0 if cycles.value == 0 else total_insts / cycles.value
-        gflops = float(bench.results.performance.value) / 1e9
+        gflops = float(bench.results.performance) / 1e9
 
         if bench.params.operation == ArithmeticOperation.fma:
             fma_gflops = gflops

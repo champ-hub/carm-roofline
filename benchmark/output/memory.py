@@ -40,7 +40,7 @@ def _collect_bandwidth_by_label(isa_suites: dict[str, ISABenchmarkSuite]) -> dic
                 continue
 
             level = res.cache_level or "unknown"
-            bandwidth_value = float(res.bandwidth.value) / 1e9
+            bandwidth_value = float(res.bandwidth) / 1e9
             if not math.isfinite(bandwidth_value):
                 warn(f"Skipping invalid bandwidth value for {isa}/{name}: {bandwidth_value}")
                 continue
@@ -84,7 +84,7 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
             assert bench.results is not None  # for type checker
             level = bench.results.cache_level or "unknown"
             bytes_per_inst = isa_instance.bytes_per_inst(bench.params.data_type)
-            total_insts = (bench.working_set_bytes.value // bytes_per_inst) * bench.results.num_repetitions
+            total_insts = (int(bench.working_set_bytes) // bytes_per_inst) * bench.results.num_repetitions
             cycles = Cycles.from_time_and_frequency(bench.results.time_taken, frequency)
 
             ipc = total_insts / cycles.value

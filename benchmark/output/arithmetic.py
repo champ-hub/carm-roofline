@@ -33,7 +33,7 @@ def _collect_gops_by_isa(isa_suites: dict[str, ISABenchmarkSuite]) -> dict[str, 
             if not isinstance(bench.results, ArithmeticBenchmarkResult):
                 continue
 
-            gops_value = float(bench.results.performance.value) / 1e9
+            gops_value = float(bench.results.performance) / 1e9
             if not math.isfinite(gops_value):
                 warn(f"Skipping invalid GOPS value for ISA {isa}: {gops_value}")
                 continue
@@ -73,7 +73,7 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
             )
 
             ops_per_inst = isa_instance.ops_per_inst(benchmark.params.data_type, benchmark.params.operation)
-            total_insts = (benchmark.params.num_ops.value // ops_per_inst) * res.num_repetitions if ops_per_inst else 0
+            total_insts = (int(benchmark.params.num_ops) // ops_per_inst) * res.num_repetitions if ops_per_inst else 0
             cycles = Cycles.from_time_and_frequency(res.time_taken, frequency)
             ipc = 0.0 if cycles.value == 0 else total_insts / cycles.value
             ops_per_cycle = ops_per_inst * ipc
@@ -84,17 +84,17 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
                     "operation": benchmark.params.operation.name,
                     "benchmark": benchmark_name,
                     "threads": benchmark.params.num_threads,
-                    "gops": float(res.performance.value) / 1e9,
+                    "gops": float(res.performance) / 1e9,
                     "gops_display": str(res.performance),
                     "ipc": ipc,
-                    "frequency_hz": float(frequency.value),
+                    "frequency_hz": float(frequency),
                     "frequency_display": str(frequency),
                     "ops_per_instruction": ops_per_inst,
                     "ops_per_cycle": ops_per_cycle,
-                    "time_seconds": float(res.time_taken.value),
+                    "time_seconds": float(res.time_taken),
                     "time_display": str(res.time_taken),
                     "repetitions": int(res.num_repetitions),
-                    "cycles": float(cycles.value),
+                    "cycles": float(cycles),
                     "cycles_display": str(cycles),
                 }
             )

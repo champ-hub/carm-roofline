@@ -40,7 +40,7 @@ def _serialize_arithmetic(
     assert isinstance(res, ArithmeticBenchmarkResult)
 
     ops_per_inst = isa_instance.ops_per_inst(bench.params.data_type, bench.params.operation)
-    total_insts = (bench.params.num_ops.value // ops_per_inst) * res.num_repetitions if ops_per_inst else 0
+    total_insts = (int(bench.params.num_ops) // ops_per_inst) * res.num_repetitions if ops_per_inst else 0
     cycles = Cycles.from_time_and_frequency(res.time_taken, frequency)
     ipc = 0.0 if cycles.value == 0 else total_insts / cycles.value
 
@@ -54,15 +54,15 @@ def _serialize_arithmetic(
         "timestamp": timestamp,
         "machine": machine,
         "operation": bench.params.operation.name,
-        "num_ops": int(bench.params.num_ops.value),
-        "performance_gops": res.performance.value / 1e9,
+        "num_ops": int(bench.params.num_ops),
+        "performance_gops": float(res.performance) / 1e9,
         "ipc": ipc,
-        "frequency_hz": frequency.value,
+        "frequency_hz": float(frequency),
         "ops_per_instruction": ops_per_inst,
         "ops_per_cycle": ops_per_inst * ipc,
-        "time_seconds": res.time_taken.value,
+        "time_seconds": float(res.time_taken),
         "repetitions": res.num_repetitions,
-        "cycles": cycles.value,
+        "cycles": int(cycles),
     }
 
 
@@ -81,7 +81,7 @@ def _serialize_memory(
     assert isinstance(res, MemoryBenchmarkResult)
 
     bpi = isa_instance.bytes_per_inst(bench.params.data_type)
-    total_insts = (bench.working_set_bytes.value // bpi) * res.num_repetitions
+    total_insts = (int(bench.working_set_bytes) // bpi) * res.num_repetitions
     cycles = Cycles.from_time_and_frequency(res.time_taken, frequency)
     ipc = 0.0 if cycles.value == 0 else total_insts / cycles.value
 
@@ -99,14 +99,14 @@ def _serialize_memory(
         "num_stores": bench.params.num_st,
         "cache_level": bench.cache_level,
         "memory_level_name": bench.params.memory_level_name,
-        "size_per_thread_bytes": bench.params.size_per_thread.value,
-        "working_set_bytes": bench.working_set_bytes.value,
+        "size_per_thread_bytes": int(bench.params.size_per_thread),
+        "working_set_bytes": int(bench.working_set_bytes),
         "layout_mode": bench.params.layout_mode.value,
-        "bandwidth_gbps": res.bandwidth.value / 1e9,
+        "bandwidth_gbps": float(res.bandwidth) / 1e9,
         "ipc": ipc,
-        "time_seconds": res.time_taken.value,
+        "time_seconds": float(res.time_taken),
         "repetitions": res.num_repetitions,
-        "cycles": cycles.value,
+        "cycles": int(cycles),
     }
 
 
