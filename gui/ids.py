@@ -60,20 +60,12 @@ class RoofCardID(ID):
     DROPDOWN_LS_RATIO = "dropdown-ls-ratio"
     DROPDOWN_APPS = "dropdown-apps"
     BTN_COLLAPSE_ROOF = "btn-collapse-roof"
-    SWITCH_APPS = "switch-apps"
 
 
 class SettingsPanelID(ID):
-    """IDs for the settings panel (select/deselect all buttons)."""
+    """IDs for the settings panel."""
 
-    BTN_SELECT_ALL = "btn-select-all"
-    BTN_DESELECT_ALL = "btn-deselect-all"
-
-
-class SelectionRowID(ID):
-    """IDs for roof visibility selection rows in the settings panel."""
-
-    CHECKBOX_ROOF_VIS = "checkbox-roof-vis"
+    SWITCH_NORMALIZE = "switch-normalize"
 
 
 class PlotAreaID(ID):

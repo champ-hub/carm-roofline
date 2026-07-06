@@ -16,7 +16,6 @@ from gui.ids import (
     NavbarID,
     PlotAreaID,
     RoofCardID,
-    SelectionRowID,
     SettingsPanelID,
     SidebarID,
     StoreID,
@@ -203,7 +202,6 @@ def _register_callbacks(
         Input({"type": RoofCardID.DROPDOWN_DATA_TYPE, "index": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_LS_RATIO, "index": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_APPS, "index": ALL}, "value"),
-        Input({"type": RoofCardID.SWITCH_APPS, "index": ALL}, "value"),
     )
     def _update_plot_and_sidebar(
         store_data: dict[str, Any] | None,
@@ -215,7 +213,6 @@ def _register_callbacks(
         data_type_vals: list[str | None],
         ls_ratio_vals: list[str | None],
         app_ids_vals: list[list[str] | None],
-        apps_enabled_vals: list[bool | None],
     ) -> tuple[dict[str, Any], list[html.Div]]:
         store = RoofStore.from_dict(store_data or {})
         store.active_panel = ActivePanel(active_panel) if active_panel else ActivePanel.CARM_VIEW
@@ -248,8 +245,6 @@ def _register_callbacks(
                 roof.data_type = data_type_vals[i]
             if i < len(ls_ratio_vals):
                 roof.load_store_ratio = ls_ratio_vals[i]
-            if i < len(apps_enabled_vals):
-                roof.apps_enabled = bool(apps_enabled_vals[i])
             if i < len(app_ids_vals):
                 roof.app_ids = list(app_ids_vals[i] or [])
         debug(f"_update_plot_and_sidebar: {len(store.roofs)} roof(s), panel={store.active_panel}")
@@ -308,68 +303,29 @@ def _register_callbacks(
                     if roof.load_store_ratio is not None
                     else _first_or_none(fo["load_store_ratio"]),
                     app_ids=roof.app_ids,
-                    apps_enabled=roof.apps_enabled,
                 )
             )
 
-        figure = build_roofline_figure(resolved_roofs, recs, app_by_id)
+        figure = build_roofline_figure(resolved_roofs, recs, app_by_id, normalize_by_threads=store.normalize_by_threads)
         figure_dict = cast("dict[str, Any]", figure.to_dict())
         carm_view_panel = build_carm_view_panel(store, per_roof_opts, resolved_roofs, app_dropdown_options)
         settings_panel = build_settings_panel(store, None)
         _tr(f"_update_plot_and_sidebar exit traces={len(figure_dict.get('data', []))}")
         return figure_dict, [carm_view_panel, settings_panel]
 
-    # ── 9. Data selection: Select All / Deselect All ───────────────────────────
+    # ── 9. Normalize by threads toggle ─────────────────────────────────────────
     @app.callback(
         Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input(SettingsPanelID.BTN_SELECT_ALL, "n_clicks"),
-        Input(SettingsPanelID.BTN_DESELECT_ALL, "n_clicks"),
+        Input(SettingsPanelID.SWITCH_NORMALIZE, "value"),
         State(StoreID.ROOF_STORE, "data"),
         prevent_initial_call=True,
     )
-    def _select_deselect_all(
-        select_clicks: int | None,
-        deselect_clicks: int | None,
+    def _toggle_normalize(
+        normalize: bool | None,
         store_data: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        ctx = callback_context
-        if not ctx.triggered:
-            return store_data or {}
-        val = ctx.triggered[0].get("value", 0)
-        if not val:
-            return store_data or {}
         store = RoofStore.from_dict(store_data or {})
-        _tr(f"_select_deselect_all enter trigger={ctx.triggered[0].get('prop_id', '?')} roofs={len(store.roofs)}")
-        enable_all = SettingsPanelID.BTN_SELECT_ALL in (ctx.triggered[0].get("prop_id", ""))
-        for roof in store.roofs:
-            roof.apps_enabled = enable_all
-        _tr(f"_select_deselect_all exit roofs={len(store.roofs)}")
-        return store.to_dict()
-
-    # ── 10. Data selection: individual roof checkbox ──────────────────────────
-    @app.callback(
-        Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input({"type": SelectionRowID.CHECKBOX_ROOF_VIS, "index": ALL}, "value"),
-        State(StoreID.ROOF_STORE, "data"),
-        prevent_initial_call=True,
-    )
-    def _toggle_roof_visibility(
-        values: list[bool | None],
-        store_data: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        ctx = callback_context
-        if not ctx.triggered:
-            return store_data or {}
-        store = RoofStore.from_dict(store_data or {})
-        _tr(f"_toggle_roof_visibility enter trigger={ctx.triggered[0].get('prop_id', '?')} roofs={len(store.roofs)}")
-        index = _get_trigger_index()
-        is_checked = ctx.triggered[0].get("value", True)
-        if 0 <= index < len(store.roofs):
-            current = store.roofs[index].apps_enabled
-            if bool(is_checked) == current:
-                return store_data or {}
-            store.roofs[index].apps_enabled = bool(is_checked)
-        _tr(f"_toggle_roof_visibility exit roofs={len(store.roofs)}")
+        store.normalize_by_threads = bool(normalize)
         return store.to_dict()
 
     # ── 12. Sync button styles with active panel ──────────────────────────────
