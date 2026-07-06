@@ -48,6 +48,14 @@ class Unit(ABC, Generic[T]):
         """Return the raw value in base units."""
         return self._value
 
+    def __float__(self) -> float:
+        """Coerce to float (works for both int and float magnitudes)."""
+        return float(self._value)
+
+    def __int__(self) -> int:
+        """Coerce to int (IntUnit returns exact value; FloatUnit truncates toward zero)."""
+        return int(self._value)
+
     def _select_prefix(self) -> tuple[T, str]:
         """Select the most appropriate prefix for the current value.
 

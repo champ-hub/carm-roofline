@@ -94,14 +94,14 @@ class MemorySweepBenchmarkSuite(ISABenchmarkSuite):
             # Step 2 - Determine sweep range.
             # ------------------------------------------------------------------
             _, _, l1_avail, _ = level_table[0]
-            min_size_bytes: float = 0.1 * float(l1_avail.value)
+            min_size_bytes: float = 0.1 * float(l1_avail)
 
             if len(level_table) >= 2:
                 _, _, last_cache_avail, _ = level_table[-2]
             else:
                 _, _, last_cache_avail, _ = level_table[-1]
 
-            max_size_bytes: float = 32.0 * float(last_cache_avail.value)
+            max_size_bytes: float = 32.0 * float(last_cache_avail)
 
             if max_size_bytes <= min_size_bytes:
                 raise ValueError(
@@ -200,5 +200,5 @@ class MemorySweepBenchmarkSuite(ISABenchmarkSuite):
             level = bench.cache_level if bench.cache_level is not None else "UNKNOWN"
             rows.append((bench.working_set_bytes, level, bw))
 
-        rows.sort(key=lambda t: t[0].value)
+        rows.sort(key=lambda t: t[0])
         return rows

@@ -79,7 +79,7 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
         for _name, bench in sorted(mem_benchmarks.items(), key=lambda kv: kv[0]):
             assert bench.results is not None  # for type checker
             bytes_per_inst = isa_instance.bytes_per_inst(bench.params.data_type)
-            total_insts = (bench.working_set_bytes.value // bytes_per_inst) * bench.results.num_repetitions
+            total_insts = (int(bench.working_set_bytes) // bytes_per_inst) * bench.results.num_repetitions
             cycles = Cycles.from_time_and_frequency(bench.results.time_taken, frequency)
             cache_level = bench.results.cache_level or "unknown"
             table.add_row(
@@ -114,22 +114,22 @@ def _collect_sweep_series(
             for ws_bytes, cache_level, bandwidth in suite.get_sweep_data():
                 if bandwidth is None:
                     continue
-                bw_val = float(bandwidth.value) / 1e9
+                bw_val = float(bandwidth) / 1e9
                 if not math.isfinite(bw_val):
                     continue
-                points.append((ws_bytes.value, cache_level, bw_val))
+                points.append((int(ws_bytes), cache_level, bw_val))
         else:
             mem_benchmarks = suite.get_memory_benchmarks()
             for _name, bench in sorted(mem_benchmarks.items(), key=lambda kv: kv[0]):
                 res = bench.results
                 if not isinstance(res, MemoryBenchmarkResult):
                     continue
-                bw_val = float(res.bandwidth.value) / 1e9
+                bw_val = float(res.bandwidth) / 1e9
                 if not math.isfinite(bw_val):
                     continue
                 ws = bench.working_set_bytes
                 cache_level = res.cache_level or "unknown"
-                points.append((ws.value, cache_level, bw_val))
+                points.append((int(ws), cache_level, bw_val))
 
         if points:
             points.sort(key=lambda t: t[0])
