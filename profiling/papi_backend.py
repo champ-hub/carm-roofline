@@ -8,6 +8,7 @@ per-rank output files to a known location, then parses them into the
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -28,14 +29,66 @@ from .shared import (
 )
 
 
+def _find_papi_library_path() -> Path | None:
+    """Locate ``libpapi.so`` via multiple discovery strategies.
+
+    Tries in order:
+      1. ``ldconfig -p`` (dynamic linker cache, standard installs)
+      2. ``pkg-config`` (respects ``PKG_CONFIG_PATH``, custom prefixes)
+
+    Returns:
+        Path to ``libpapi.so``, or *None* if not found by any strategy.
+    """
+    # Strategy 1: ldconfig -p
+    try:
+        result = subprocess.run(
+            ["ldconfig", "-p"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                if "libpapi.so" in line:
+                    # ldconfig -p output format: "	libpapi.so (libc6,x86-64) => /usr/lib/libpapi.so"
+                    parts = line.split("=>")
+                    if len(parts) == 2:
+                        path = Path(parts[1].strip())
+                        if path.is_file():
+                            return path
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+
+    # Strategy 2: pkg-config -> list dir, pick first libpapi.so*
+    try:
+        result = subprocess.run(
+            ["pkg-config", "--variable=libdir", "papi"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0:
+            libdir = result.stdout.strip()
+            if libdir:
+                candidates = sorted(Path(libdir).glob("libpapi.so*"))
+                if candidates:
+                    return candidates[0]
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+
+    return None
+
+
 class PAPIHLBackend(ProfilerBackend):
     """PAPI High-Level API profiler backend.
 
-    Runs the user's command with ``PAPI_HL_OUTPUT_DIR`` set so that
-    PAPI HL writes per-rank output files to a known location.
+    Runs the user's command with ``PAPI_HL_OUTPUT_DIR`` set so that PAPI HL writes per-rank output files to a known
+    location.
 
-    Uses ``papi_decode -a`` at startup to discover available PAPI events,
-    then resolves the best metric implementations for the current system.
+    Uses ``papi_decode -a`` at startup to discover available PAPI events, then resolves the best metric implementations
+    for the current system.
     """
 
     def __init__(
@@ -63,26 +116,42 @@ class PAPIHLBackend(ProfilerBackend):
     def check_prerequisites(self) -> bool:
         """Verify that PAPI HL is available by checking the environment.
 
-        We check for the presence of ``libpapi`` or the ``papi_hl_read`` utility
-        as a proxy for PAPI HL availability.  After that, runs ``papi_decode -a``
-        to discover available events and resolve metric implementations.
+        We check for the presence of ``libpapi`` (via :func:`_find_papi_library_path`) or the ``papi_hl_output_writer``
+        utility as a proxy for PAPI HL availability. After that, runs ``papi_xml_event_info`` to discover available
+        events and resolve metric implementations.
         """
 
-        # Check if the papi shared library has the PAPI_hl_region_begin symbol (indicates PAPI HL support)
-        try:
-            command = "nm -D $(ldconfig -p | grep libpapi.so | head -1 | awk '{print $NF}')"
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            if "PAPI_hl_region_begin" not in result.stdout:
-                raise UserError("PAPI HL does not appear to be installed, cannot find libpapi.so or papi_hl_read.")
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
+        # Locate libpapi.so and verify it provides PAPI HL symbols
+        papi_lib = _find_papi_library_path()
+        if papi_lib is not None:
+            try:
+                result = subprocess.run(
+                    ["nm", "-D", str(papi_lib)],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                if "PAPI_hl_region_begin" not in result.stdout:
+                    warn(
+                        f"Found {papi_lib} but it lacks the PAPI_hl_region_begin symbol. "
+                        "PAPI HL profiling will not work."
+                    )
+                    papi_lib = None
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+                warn(f"Could not check symbols in {papi_lib}: {exc}")
+                papi_lib = None
+
+        # Fallback: check for papi_hl_output_writer utility
+        if papi_lib is None:
+            hl_writer = shutil.which("papi_hl_output_writer")
+            if hl_writer is not None:
+                detail(f"Found PAPI HL via {hl_writer}")
+            else:
+                raise UserError(
+                    "PAPI HL does not appear to be installed. Could not find libpapi.so (via ldconfig or pkg-config) "
+                    "nor the papi_hl_output_writer utility."
+                )
 
         # Discover available events and resolve metrics
         self._available_events = parse_available_events()
