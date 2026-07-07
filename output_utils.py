@@ -12,7 +12,6 @@ module globals. Levels follow the existing convention (0-4):
 
 from __future__ import annotations
 
-import contextvars
 import inspect
 import os
 import sys
@@ -63,39 +62,33 @@ class Verbosity(IntEnum):
     CONFIG = 3
     DEBUG = 4
 
-
-# ContextVar keeps the verbosity scoped to the current context (thread/task).
-_verbosity: contextvars.ContextVar[int] = contextvars.ContextVar("verbosity", default=Verbosity.CONFIG.value)
+_verbosity: int = Verbosity.CONFIG.value
 
 
-def set_verbosity(level: int | Verbosity) -> contextvars.Token[int]:
-    """Set the current verbosity level and return the reset token."""
-
+def set_verbosity(level: int | Verbosity) -> None:
+    """Set the current verbosity level."""
     level_int = int(level)
     if level_int < 0:
         raise ValueError("verbosity must be non-negative")
-    return _verbosity.set(level_int)
+    global _verbosity
+    _verbosity = level_int
 
 
-def reset_verbosity(token: contextvars.Token[int]) -> None:
-    """Reset verbosity using a previously returned token."""
+def reset_verbosity(level: int | Verbosity) -> None:
+    """Reset verbosity to a previously saved level."""
+    global _verbosity
+    _verbosity = int(level)
 
-    _verbosity.reset(token)
 
-
-def configure_verbosity(level: int | Verbosity | None) -> contextvars.Token[int] | None:
+def configure_verbosity(level: int | Verbosity | None) -> None:
     """Set verbosity if ``level`` is provided, otherwise leave unchanged."""
-
-    if level is None:
-        return None
-    return set_verbosity(level)
+    if level is not None:
+        set_verbosity(level)
 
 
 def get_verbosity() -> int:
     """Return the current verbosity as an int."""
-
-    return _verbosity.get()
-
+    return _verbosity
 
 def should_emit(level: int | Verbosity) -> bool:
     """Check whether a message at ``level`` should be printed."""
