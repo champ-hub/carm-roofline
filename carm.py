@@ -126,7 +126,7 @@ SUBPARSERS = (
     ),
     SubParserInfo(
         name="profile",
-        help_short="Profile applications with PAPI",
+        help_short="Profile applications for CARM analysis",
         help_long="Profile instrumented applications to compute roofline metrics (AI, GFLOP/s, bandwidth). "
         "Supports MPI, threaded, and hybrid applications. "
         "Usage: carm profile [options] -- <command>",
