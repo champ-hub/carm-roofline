@@ -8,7 +8,8 @@ The four modes match the hierarchy:
 - **GLOBAL**:   one point for the entire MPI job (all regions everywhere).
 - **PER_RANK**:   one point per MPI rank.
 - **PER_THREAD**:  one point per (rank, thread).
-- **PER_REGION**:  one point per unique region name across all ranks/threads.
+- **PER_REGION_MERGED**:  one point per unique region name across all ranks/threads.
+- **PER_REGION_PER_THREAD**:  one point per (rank, thread, region); no cross-thread aggregation.
 
 At aggregation time, raw PAPI counters are converted to roofline metrics
 (flops, bytes, time_s) using the resolved ``MetricDefinition``.
@@ -153,15 +154,14 @@ def aggregate_per_thread(
     return points
 
 
-def aggregate_per_region(
+def aggregate_per_region_merged(
     run: RunResults,
     resolved: dict[MetricType, MetricDefinition],
     metric_ctx: MetricContext,
 ) -> list[AggregatedPoint]:
     """Aggregate by region name across all ranks/threads.
 
-    All occurrences of the same region name (e.g. ``"daxpy"``) across all
-    ranks and threads are summed into a single point.
+    All occurrences of the same region name across all ranks and threads are summed into a single point.
     """
     by_name: dict[str, list[dict[str, float]]] = {}
     rank_ids: dict[str, set[int]] = {}
@@ -193,6 +193,40 @@ def aggregate_per_region(
     return points
 
 
+def aggregate_per_region_per_thread(
+    run: RunResults,
+    resolved: dict[MetricType, MetricDefinition],
+    metric_ctx: MetricContext,
+) -> list[AggregatedPoint]:
+    """One roofline point per (rank, thread, region); no cross-thread aggregation.
+
+    Each region measurement of each thread becomes its own point, so duplicates of the same region name across
+    threads/ranks stay distinct rather than being summed.
+    """
+    points: list[AggregatedPoint] = []
+    for rank in run.ranks:
+        for thread in rank.threads:
+            for region in thread.regions:
+                region_point = compute_region_point(region.counters, region.time_nsec, resolved, metric_ctx)
+                label = (
+                    f"{run.metadata.name}_rank{rank.rank_id}_thread{thread.thread_id}_{region.name}"
+                    if run.metadata.name
+                    else f"rank{rank.rank_id}_thread{thread.thread_id}_{region.name}"
+                )
+                points.append(
+                    AggregatedPoint(
+                        label=label,
+                        total_flops=region_point["flops"],
+                        total_bytes=region_point["bytes"],
+                        runtime_s=region_point["time_s"],
+                        num_ranks=1,
+                        num_threads=1,
+                        num_regions=1,
+                    )
+                )
+    return points
+
+
 def aggregate(
     run: RunResults,
     mode: AggregationMode,
@@ -215,6 +249,8 @@ def aggregate(
         return aggregate_per_rank(run, resolved, metric_ctx)
     if mode == AggregationMode.THREAD:
         return aggregate_per_thread(run, resolved, metric_ctx)
-    if mode == AggregationMode.REGION:
-        return aggregate_per_region(run, resolved, metric_ctx)
+    if mode == AggregationMode.REGION_MERGED:
+        return aggregate_per_region_merged(run, resolved, metric_ctx)
+    if mode == AggregationMode.REGION_PER_THREAD:
+        return aggregate_per_region_per_thread(run, resolved, metric_ctx)
     raise ValueError(f"Unknown aggregation mode: {mode}")
