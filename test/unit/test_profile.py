@@ -183,7 +183,7 @@ def test_sum_roofline_points() -> None:
     total = sum_roofline_points(pts)
     assert total["flops"] == 300.0
     assert total["bytes"] == 80.0
-    assert total["time_s"] == 2.0  # max
+    assert total["time_s"] == 3.0  # sum (sequential execution)
 
 
 def test_sum_roofline_points_empty() -> None:

@@ -157,12 +157,12 @@ def compute_region_point(
 def sum_roofline_points(points: list[dict[str, float]]) -> dict[str, float]:
     """Sum a list of (flops, bytes, time_s) dicts.
 
-    Flops and bytes are summed; time_s uses ``max`` (all regions within a
-    thread execute sequentially, so total wall time is the max).
+    Flops, bytes, and time are all summed, all points in the list represent
+    sequential execution within a single thread.
     """
     flops = sum(p["flops"] for p in points)
     bytes_val = sum(p["bytes"] for p in points)
-    time_s = max((p["time_s"] for p in points), default=0.0)
+    time_s = sum(p["time_s"] for p in points)
     return {"flops": flops, "bytes": bytes_val, "time_s": time_s}
 
 
