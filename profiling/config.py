@@ -25,7 +25,8 @@ class AggregationMode(Enum):
     GLOBAL = "global"
     RANK = "rank"
     THREAD = "thread"
-    REGION = "region"
+    REGION_MERGED = "region_merged"
+    REGION_PER_THREAD = "region_per_thread"
 
 
 def _default_app_name(command: list[str]) -> str:

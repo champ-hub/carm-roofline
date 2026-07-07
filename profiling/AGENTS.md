@@ -16,7 +16,7 @@ The `profile` package provides a pipeline for profiling instrumented application
 | `perf_metrics.py` | Perf-specific metric definitions, event discovery, `resolve_perf_metrics()` |
 | `papi_loader.py` | PAPI HL rank-file discovery and parsing |
 | `perf_loader.py` | Perf CSV output parsing |
-| `aggregation.py` | Aggregation strategies (`global`, `per-rank`, `per-thread`, `per-region`) |
+| `aggregation.py` | Aggregation strategies (`global`, `per-rank`, `per-thread`, `region_merged`, `region_per_thread`) |
 | `config.py` | `ProfileConfig` + argument parsing |
 | `model.py` | Data model: `RegionMetrics`, `ThreadMetrics`, `RankMetrics`, `RunMetadata`, `RunResults` |
 | `output.py` | Output writers (CSV, JSON) |
@@ -86,7 +86,8 @@ Each backend has its own metric definitions registry (built at module load time)
 | `global` (default) | Single point: sum(flops), sum(bytes), max(time_s) across all ranks |
 | `per-rank` | One point per MPI rank for load-balance analysis |
 | `per-thread` | One point per (rank, thread) pair |
-| `per-region` | One point per unique region name |
+| `region_merged` | One point per unique region name, summed across all ranks/threads |
+| `region_per_thread` | One point per (rank, thread, region); no cross-thread aggregation |
 
 ### Output (`output.py`)
 
@@ -112,7 +113,7 @@ carm profile --help
 ```
 usage: carm profile [-h] [--backend {papi,perf}] [--papi-events PAPI_EVENTS]
                     [--perf-events PERF_EVENTS] [--perf-interval PERF_INTERVAL]
-                    [--aggregation {global,per-rank,per-thread,per-region}]
+                    [--aggregation {global,rank,thread,region_merged,region_per_thread}]
                     [--name NAME] [--output-dir OUTPUT_DIR] [--keep-artifacts]
                     [--data-type {f32,f64}] [--isa ISA]
                     [--verbose [{0,1,2,3,4}]]

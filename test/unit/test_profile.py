@@ -12,7 +12,8 @@ from profiling.aggregation import (
     aggregate,
     aggregate_global,
     aggregate_per_rank,
-    aggregate_per_region,
+    aggregate_per_region_merged,
+    aggregate_per_region_per_thread,
     aggregate_per_thread,
 )
 from profiling.config import AggregationMode
@@ -263,7 +264,7 @@ def test_aggregate_per_thread() -> None:
         assert pt.num_threads == 1
 
 
-def test_aggregate_per_region() -> None:
+def test_aggregate_per_region_merged() -> None:
     # Add a second region type to one thread only (avoid _make_sample_run's
     # shared ThreadMetrics reference across ranks)
     reg_a = RegionMetrics(
@@ -288,7 +289,7 @@ def test_aggregate_per_region() -> None:
     ]
     run = RunResults(metadata=RunMetadata(name="test"), ranks=ranks)
 
-    pts = aggregate_per_region(run, SAMPLE_RESOLVED, DEFAULT_CTX)
+    pts = aggregate_per_region_merged(run, SAMPLE_RESOLVED, DEFAULT_CTX)
     names = {pt.label for pt in pts}
     assert "test_daxpy" in names
     assert "test_saxpy" in names
@@ -317,10 +318,54 @@ def test_aggregate_dispatch_per_thread() -> None:
     assert len(pts) == 2
 
 
-def test_aggregate_dispatch_per_region() -> None:
+def test_aggregate_dispatch_per_region_merged() -> None:
     run = _make_sample_run()
-    pts = aggregate(run, AggregationMode.REGION, SAMPLE_RESOLVED, DEFAULT_CTX)
+    pts = aggregate(run, AggregationMode.REGION_MERGED, SAMPLE_RESOLVED, DEFAULT_CTX)
     assert len(pts) == 1  # only "daxpy" exists
+
+
+def test_aggregate_per_region_per_thread() -> None:
+    # Reuse the reg_a / reg_b two-region pattern from test_aggregate_per_region_merged,
+    # but expect one point per (rank, thread, region) with no merging.
+    reg_a = RegionMetrics(
+        name="daxpy",
+        parent_region_id="-1",
+        cycles=1364391136,
+        time_nsec=427162799,
+        counters={"PAPI_FP_OPS": 20971520, "PAPI_L1_DCA": 38637435},
+    )
+    reg_b = RegionMetrics(
+        name="saxpy",
+        parent_region_id="-1",
+        cycles=1000,
+        time_nsec=500000,
+        counters={"PAPI_FP_OPS": 1000},
+    )
+    th0 = ThreadMetrics(thread_id=0, regions=[reg_a, reg_b])
+    th1 = ThreadMetrics(thread_id=0, regions=[reg_a])
+    ranks = [
+        RankMetrics(rank_id=0, threads=[th0]),
+        RankMetrics(rank_id=1, threads=[th1]),
+    ]
+    run = RunResults(metadata=RunMetadata(name="test"), ranks=ranks)
+
+    pts = aggregate_per_region_per_thread(run, SAMPLE_RESOLVED, DEFAULT_CTX)
+    assert len(pts) == 3  # 2 regions in th0 + 1 region in th1
+    # Labels distinguish (rank, thread, region), so duplicate "daxpy" stays separate.
+    labels = [pt.label for pt in pts]
+    assert labels == [
+        "test_rank0_thread0_daxpy",
+        "test_rank0_thread0_saxpy",
+        "test_rank1_thread0_daxpy",
+    ]
+    assert all(pt.num_ranks == 1 and pt.num_threads == 1 and pt.num_regions == 1 for pt in pts)
+
+
+def test_aggregate_dispatch_per_region_per_thread() -> None:
+    run = _make_sample_run()
+    pts = aggregate(run, AggregationMode.REGION_PER_THREAD, SAMPLE_RESOLVED, DEFAULT_CTX)
+    # _make_sample_run: 2 ranks, 1 thread each, 1 "daxpy" region each -> 2 points.
+    assert len(pts) == 2
 
 
 def test_aggregate_unknown_mode() -> None:
@@ -368,7 +413,8 @@ def test_aggregation_mode_enum() -> None:
     assert AggregationMode.GLOBAL.value == "global"
     assert AggregationMode.RANK.value == "rank"
     assert AggregationMode.THREAD.value == "thread"
-    assert AggregationMode.REGION.value == "region"
+    assert AggregationMode.REGION_MERGED.value == "region_merged"
+    assert AggregationMode.REGION_PER_THREAD.value == "region_per_thread"
 
 
 # ---------------------------------------------------------------------------
@@ -567,7 +613,7 @@ def test_write_profile_jsonl_per_rank(tmp_path: Path) -> None:
         assert point["label"] in ("test_rank0", "test_rank1")
 
 
-def test_write_profile_jsonl_per_region(tmp_path: Path) -> None:
+def test_write_profile_jsonl_per_region_merged(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
     from profiling.output import write_profile_jsonl
 
@@ -593,8 +639,8 @@ def test_write_profile_jsonl_per_region(tmp_path: Path) -> None:
     ]
     run = RunResults(metadata=RunMetadata(name="test"), ranks=ranks)
 
-    cfg = MagicMock(machine_name="test_run", output_dir=tmp_path, aggregation=AggregationMode.REGION)
-    pts = aggregate_per_region(run, SAMPLE_RESOLVED, DEFAULT_CTX)
+    cfg = MagicMock(machine_name="test_run", output_dir=tmp_path, aggregation=AggregationMode.REGION_MERGED)
+    pts = aggregate_per_region_merged(run, SAMPLE_RESOLVED, DEFAULT_CTX)
     write_profile_jsonl(run, cfg, pts)
 
     jsonl_path = tmp_path / "test_run" / "applications.jsonl"
@@ -602,7 +648,7 @@ def test_write_profile_jsonl_per_region(tmp_path: Path) -> None:
     assert len(lines) == 1  # single line per run
 
     record = json.loads(lines[0])
-    assert record["aggregation"] == "region"
+    assert record["aggregation"] == "region_merged"
 
     points = record["points"]
     assert isinstance(points, list)
