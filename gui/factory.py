@@ -158,6 +158,12 @@ def _register_callbacks(
         n_clicks: int | None,
         store_data: dict[str, Any] | None,
     ) -> dict[str, Any]:
+        ctx = callback_context
+        if not ctx.triggered:
+            return store_data or {}
+        val = ctx.triggered[0].get("value", 0)
+        if not val:  # component recreated during sidebar rebuild, not a real click
+            return store_data or {}
         store = RoofStore.from_dict(store_data or {})
         _tr(f"_add_roof enter roofs={len(store.roofs)}")
         store.add_roof(roof_template=make_default_roof(opts))
