@@ -71,25 +71,30 @@ def aggregate_global(
 ) -> AggregatedPoint:
     """Aggregate all regions from all ranks/threads into a single point.
 
-    Flops/bytes are summed across all regions; runtime is the *max* time
-    across all regions (regions within a thread execute sequentially,
-    threads within a rank run in parallel).
+    Flops/bytes are summed across all regions; runtime is the *max* per-thread
+    total time (regions within a thread execute sequentially, threads within
+    a rank run in parallel).
     """
-    all_points: list[dict[str, float]] = []
+    thread_totals: list[dict[str, float]] = []
+    num_regions = 0
     for rank in run.ranks:
         for thread in rank.threads:
-            all_points.extend(_region_points(thread.regions, resolved, metric_ctx))
+            thread_points = _region_points(thread.regions, resolved, metric_ctx)
+            thread_totals.append(sum_roofline_points(thread_points))
+            num_regions += len(thread_points)
 
-    total = sum_roofline_points(all_points)
+    total_flops = sum(p["flops"] for p in thread_totals)
+    total_bytes = sum(p["bytes"] for p in thread_totals)
+    total_time = max((p["time_s"] for p in thread_totals), default=0.0)
     num_threads = sum(len(r.threads) for r in run.ranks)
     return AggregatedPoint(
         label=run.metadata.name or "global",
-        total_flops=total["flops"],
-        total_bytes=total["bytes"],
-        runtime_s=total["time_s"],
+        total_flops=total_flops,
+        total_bytes=total_bytes,
+        runtime_s=total_time,
         num_ranks=run.num_ranks,
         num_threads=num_threads,
-        num_regions=len(all_points),
+        num_regions=num_regions,
     )
 
 
@@ -100,25 +105,31 @@ def aggregate_per_rank(
 ) -> list[AggregatedPoint]:
     """Aggregate each rank independently into its own roofline point.
 
-    Within each rank, all thread regions are combined into a single point.
+    Within each rank, flops/bytes are summed across threads; runtime is the
+    *max* per-thread total time (parallel threads).
     """
     points: list[AggregatedPoint] = []
     for rank in run.ranks:
-        rank_points: list[dict[str, float]] = []
+        thread_totals: list[dict[str, float]] = []
+        num_regions = 0
         for thread in rank.threads:
-            rank_points.extend(_region_points(thread.regions, resolved, metric_ctx))
+            thread_points = _region_points(thread.regions, resolved, metric_ctx)
+            thread_totals.append(sum_roofline_points(thread_points))
+            num_regions += len(thread_points)
 
-        total = sum_roofline_points(rank_points)
+        total_flops = sum(p["flops"] for p in thread_totals)
+        total_bytes = sum(p["bytes"] for p in thread_totals)
+        total_time = max((p["time_s"] for p in thread_totals), default=0.0)
         label = f"{run.metadata.name}_rank{rank.rank_id}" if run.metadata.name else f"rank{rank.rank_id}"
         points.append(
             AggregatedPoint(
                 label=label,
-                total_flops=total["flops"],
-                total_bytes=total["bytes"],
-                runtime_s=total["time_s"],
+                total_flops=total_flops,
+                total_bytes=total_bytes,
+                runtime_s=total_time,
                 num_ranks=1,
                 num_threads=len(rank.threads),
-                num_regions=len(rank_points),
+                num_regions=num_regions,
             )
         )
     return points
@@ -161,33 +172,41 @@ def aggregate_per_region_merged(
 ) -> list[AggregatedPoint]:
     """Aggregate by region name across all ranks/threads.
 
-    All occurrences of the same region name across all ranks and threads are summed into a single point.
+    All occurrences of the same region name across all ranks and threads are combined into a single point. Time is
+    summed within each (rank, thread) (sequential calls within a thread), then the maximum across threads/ranks is taken
+    (parallel execution).
     """
-    by_name: dict[str, list[dict[str, float]]] = {}
-    rank_ids: dict[str, set[int]] = {}
-    thread_ids: dict[str, set[tuple[int, int]]] = {}
+    # by_region[region_name][(rank_id, thread_id)] = [point, point, ...]
+    by_region: dict[str, dict[tuple[int, int], list[dict[str, float]]]] = {}
 
     for rank in run.ranks:
         for thread in rank.threads:
+            thread_key = (rank.rank_id, thread.thread_id)
             for region in thread.regions:
                 region_point = compute_region_point(region.counters, region.time_nsec, resolved, metric_ctx)
-                by_name.setdefault(region.name, []).append(region_point)
-                rank_ids.setdefault(region.name, set()).add(rank.rank_id)
-                thread_ids.setdefault(region.name, set()).add((rank.rank_id, thread.thread_id))
+                by_region.setdefault(region.name, {}).setdefault(thread_key, []).append(region_point)
 
     points: list[AggregatedPoint] = []
-    for name, region_points in sorted(by_name.items()):
-        total = sum_roofline_points(region_points)
+    for name in sorted(by_region):
+        thread_groups = by_region[name]
+        # Sum within each thread (sequential calls)
+        per_thread_sums = {key: sum_roofline_points(pt_list) for key, pt_list in thread_groups.items()}
+
+        total_flops = sum(p["flops"] for p in per_thread_sums.values())
+        total_bytes = sum(p["bytes"] for p in per_thread_sums.values())
+        total_time = max((p["time_s"] for p in per_thread_sums.values()), default=0.0)
+
+        rank_ids: set[int] = {rk for (rk, _) in thread_groups}
         label = f"{run.metadata.name}_{name}" if run.metadata.name else name
         points.append(
             AggregatedPoint(
                 label=label,
-                total_flops=total["flops"],
-                total_bytes=total["bytes"],
-                runtime_s=total["time_s"],
-                num_ranks=len(rank_ids.get(name, set())),
-                num_threads=len(thread_ids.get(name, set())),
-                num_regions=len(region_points),
+                total_flops=total_flops,
+                total_bytes=total_bytes,
+                runtime_s=total_time,
+                num_ranks=len(rank_ids),
+                num_threads=len(thread_groups),
+                num_regions=sum(len(pt_list) for pt_list in thread_groups.values()),
             )
         )
     return points
