@@ -7,6 +7,7 @@ from typing import Any, cast
 import dash
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, callback_context, html
+from dash.exceptions import PreventUpdate
 
 from gui.components import build_carm_view_panel, build_layout, build_settings_panel
 from gui.config import GUIConfig
@@ -136,7 +137,6 @@ def _register_callbacks(
         Output(StoreID.ACTIVE_PANEL, "data"),
         Input(NavbarID.BTN_CARM_VIEW, "n_clicks"),
         Input(NavbarID.BTN_SETTINGS, "n_clicks"),
-        prevent_initial_call=True,
     )
     def _toggle_panel(carm_view_clicks: int | None, settings_clicks: int | None) -> ActivePanel:
         ctx = callback_context
@@ -152,18 +152,13 @@ def _register_callbacks(
         Output(StoreID.ROOF_STORE, "data"),
         Input(CarmViewPanelID.BTN_ADD_ROOF, "n_clicks"),
         State(StoreID.ROOF_STORE, "data"),
-        prevent_initial_call=True,
     )
     def _add_roof(
         n_clicks: int | None,
         store_data: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        ctx = callback_context
-        if not ctx.triggered:
-            return store_data or {}
-        val = ctx.triggered[0].get("value", 0)
-        if not val:  # component recreated during sidebar rebuild, not a real click
-            return store_data or {}
+        if not n_clicks:
+            raise PreventUpdate
         store = RoofStore.from_dict(store_data or {})
         _tr(f"_add_roof enter roofs={len(store.roofs)}")
         store.add_roof(roof_template=make_default_roof(opts))
@@ -183,10 +178,10 @@ def _register_callbacks(
     ) -> dict[str, Any]:
         ctx = callback_context
         if not ctx.triggered:
-            return store_data or {}
+            raise PreventUpdate
         val = ctx.triggered[0].get("value", 0)
         if not val:  # component recreated during sidebar rebuild, not a real click
-            return store_data or {}
+            raise PreventUpdate
         store = RoofStore.from_dict(store_data or {})
         _tr(f"_remove_roof enter trigger={ctx.triggered[0].get('prop_id', '?')} roofs={len(store.roofs)}")
         index = _get_trigger_index()
@@ -359,10 +354,10 @@ def _register_callbacks(
     ) -> dict[str, Any]:
         ctx = callback_context
         if not ctx.triggered:
-            return store_data or {}
+            raise PreventUpdate
         val = ctx.triggered[0].get("value", 0)
         if not val:
-            return store_data or {}
+            raise PreventUpdate
         store = RoofStore.from_dict(store_data or {})
         _tr(f"_toggle_collapse_roof trigger={ctx.triggered[0].get('prop_id', '?')} roofs={len(store.roofs)}")
         index = _get_trigger_index()
