@@ -1,0 +1,30 @@
+title: CARM-Roofline
+description: Cache-Aware Roofline Model benchmarking and visualization toolkit
+remote_theme: just-the-docs/just-the-docs
+plugins:
+  - jekyll-remote-theme
+
+# Just the Docs settings
+logo: "https://raw.githubusercontent.com/champ-hub/carm-roofline/dev/gui/assets/CHAMP_logo.svg"
+favicon_svg: "https://raw.githubusercontent.com/champ-hub/carm-roofline/dev/gui/assets/CARM_icon.svg"
+
+aux_links:
+  "CARM-Roofline on GitHub":
+    - "https://github.com/champ-hub/carm-roofline"
+
+footer_content: "Copyright &copy; CHaMP Team. Distributed under an Apache 2.0 license."
+
+# Enable search
+search_enabled: true
+
+color_scheme: dark
+
+# Heading anchor links
+heading_anchors: true
+
+# Enable mermaid for diagrams
+mermaid:
+  version: "11.4.0"
+
+# Aux links at the top
+aux_links_new_tab: false

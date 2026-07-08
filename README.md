@@ -1,7 +1,6 @@
 
 # The CARM Tool
 
-
 Cache-Aware Roofline Model (CARM) toolkit - benchmark, visualize and profile Intel, AMD, ARM, RISC-V CPUs and NVIDIA, AMD GPUs.
 
 The package provides:
@@ -12,6 +11,10 @@ The package provides:
 
 > [!WARNING]
 > The development branch and associated python package are still experimental, and do not include all features yet. For a stable release, please refer to the main branch.
+
+## Documentation
+
+You can find the full documentation at [https://champ-hub.github.io/carm-roofline](https://champ-hub.github.io/carm-roofline/).
 
 ## Installation
 
