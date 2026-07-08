@@ -34,6 +34,7 @@ from profiling.shared import (
     MetricDefinition,
     MetricResolutionConfig,
     MetricType,
+    RooflinePoint,
     compute_region_point,
     sum_roofline_points,
 )
@@ -177,20 +178,20 @@ def test_run_results_to_dict() -> None:
 
 def test_sum_roofline_points() -> None:
     pts = [
-        {"flops": 100.0, "bytes": 50.0, "time_s": 1.0},
-        {"flops": 200.0, "bytes": 30.0, "time_s": 2.0},
+        RooflinePoint(flops=100.0, bytes=50.0, time_s=1.0),
+        RooflinePoint(flops=200.0, bytes=30.0, time_s=2.0),
     ]
     total = sum_roofline_points(pts)
-    assert total["flops"] == 300.0
-    assert total["bytes"] == 80.0
-    assert total["time_s"] == 3.0  # sum (sequential execution)
+    assert total.flops == 300.0
+    assert total.bytes == 80.0
+    assert total.time_s == 3.0  # sum (sequential execution)
 
 
 def test_sum_roofline_points_empty() -> None:
     total = sum_roofline_points([])
-    assert total["flops"] == 0.0
-    assert total["bytes"] == 0.0
-    assert total["time_s"] == 0.0
+    assert total.flops == 0.0
+    assert total.bytes == 0.0
+    assert total.time_s == 0.0
 
 
 def test_compute_region_point() -> None:
@@ -200,16 +201,16 @@ def test_compute_region_point() -> None:
     # With DEFAULT_CTX (no data_type): double_ratio=0.0, single_ratio=1.0
     # DP_FLOPS via PAPI_FP_OPS = 1000 * 0.0 = 0.0
     # SP_FLOPS via PAPI_FP_OPS = 1000 * 1.0 = 1000.0
-    assert pt["flops"] == 1000.0
-    assert pt["bytes"] == 500 * DEFAULT_CTX.bytes_per_instruction  # bytes via PAPI_L1_DCA
-    assert pt["time_s"] == 1.0
+    assert pt.flops == 1000.0
+    assert pt.bytes == 500 * DEFAULT_CTX.bytes_per_instruction  # bytes via PAPI_L1_DCA
+    assert pt.time_s == 1.0
 
 
 def test_compute_region_point_no_events() -> None:
     pt = compute_region_point({"PAPI_TOT_CYC": 100}, 1_000_000_000, {}, DEFAULT_CTX)
-    assert pt["flops"] == 0.0
-    assert pt["bytes"] == 0.0
-    assert pt["time_s"] == 1.0
+    assert pt.flops == 0.0
+    assert pt.bytes == 0.0
+    assert pt.time_s == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -515,6 +516,7 @@ def test_default_app_name() -> None:
     assert _default_app_name([]) == "app"
     assert _default_app_name(["-flag", "--opt"]) == "app"
 
+
 # ---------------------------------------------------------------------------
 # Output tests
 # ---------------------------------------------------------------------------
@@ -522,6 +524,7 @@ def test_default_app_name() -> None:
 
 def test_write_applications_csv(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
+
     from profiling.output import write_applications_csv
 
     cfg = MagicMock(machine_name="test_run", output_dir=tmp_path)
@@ -538,6 +541,7 @@ def test_write_applications_csv(tmp_path: Path) -> None:
 
 def test_write_applications_csv_per_rank(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
+
     from profiling.output import write_applications_csv
 
     cfg = MagicMock(machine_name="test_run", output_dir=tmp_path)
@@ -553,6 +557,7 @@ def test_write_applications_csv_per_rank(tmp_path: Path) -> None:
 
 def test_write_profile_jsonl(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
+
     from profiling.output import write_profile_jsonl
 
     cfg = MagicMock(machine_name="test_run", output_dir=tmp_path, aggregation=AggregationMode.GLOBAL)
@@ -591,6 +596,7 @@ def test_write_profile_jsonl(tmp_path: Path) -> None:
 
 def test_write_profile_jsonl_per_rank(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
+
     from profiling.output import write_profile_jsonl
 
     cfg = MagicMock(machine_name="test_run", output_dir=tmp_path, aggregation=AggregationMode.RANK)
@@ -615,6 +621,7 @@ def test_write_profile_jsonl_per_rank(tmp_path: Path) -> None:
 
 def test_write_profile_jsonl_per_region_merged(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
+
     from profiling.output import write_profile_jsonl
 
     reg_a = RegionMetrics(

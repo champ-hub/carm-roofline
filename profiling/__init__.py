@@ -28,6 +28,7 @@ from .shared import (
     MetricDefinition,
     MetricResolutionConfig,
     MetricType,
+    RooflinePoint,
     compute_region_point,
     sum_roofline_points,
 )
@@ -43,6 +44,7 @@ __all__ = [
     "ProfilerBackend",
     "RankMetrics",
     "RegionMetrics",
+    "RooflinePoint",
     "RunMetadata",
     "RunResults",
     "ThreadMetrics",

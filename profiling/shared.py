@@ -108,6 +108,22 @@ class MetricDefinition:
     warning: str | None = None
 
 
+@dataclass(frozen=True)
+class RooflinePoint:
+    """Computed roofline metrics for a single region or aggregated set."""
+
+    flops: float = 0.0
+    bytes: float = 0.0
+    time_s: float = 0.0
+
+    def __add__(self, other: RooflinePoint) -> RooflinePoint:
+        return RooflinePoint(
+            flops=self.flops + other.flops,
+            bytes=self.bytes + other.bytes,
+            time_s=self.time_s + other.time_s,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Computing roofline point data from raw counters
 # ---------------------------------------------------------------------------
@@ -118,7 +134,7 @@ def compute_region_point(
     time_nsec: int,
     resolved: dict[MetricType, MetricDefinition],
     metric_ctx: MetricContext,
-) -> dict[str, float]:
+) -> RooflinePoint:
     """Compute (flops, bytes, time_s) for a single region from raw counters.
 
     Only metrics whose required events are all present in *counters* are
@@ -129,8 +145,7 @@ def compute_region_point(
         time_nsec: Wall-clock time in nanoseconds for the region.
         resolved: Resolved metric implementations from ``resolve_metrics()``.
 
-    Returns:
-        A dict with keys ``flops``, ``bytes``, and ``time_s``.
+        A `RooflinePoint` with flops, bytes, and time_s.
     """
     float_counters = {k: float(v) for k, v in counters.items()}
     available_set = frozenset(counters)
@@ -147,23 +162,16 @@ def compute_region_point(
         if impl.required_events <= available_set:
             bytes_val = impl.compute(float_counters, metric_ctx)
 
-    return {
-        "flops": flops,
-        "bytes": bytes_val,
-        "time_s": time_nsec / 1e9,
-    }
+    return RooflinePoint(flops=flops, bytes=bytes_val, time_s=time_nsec / 1e9)
 
 
-def sum_roofline_points(points: list[dict[str, float]]) -> dict[str, float]:
-    """Sum a list of (flops, bytes, time_s) dicts.
+def sum_roofline_points(points: list[RooflinePoint]) -> RooflinePoint:
+    """Sum a list of (flops, bytes, time_s) RooflinePoints.
 
     Flops, bytes, and time are all summed, all points in the list represent
     sequential execution within a single thread.
     """
-    flops = sum(p["flops"] for p in points)
-    bytes_val = sum(p["bytes"] for p in points)
-    time_s = sum(p["time_s"] for p in points)
-    return {"flops": flops, "bytes": bytes_val, "time_s": time_s}
+    return sum(points, start=RooflinePoint())
 
 
 def resolve_metrics(

@@ -25,6 +25,7 @@ from .shared import (
     MetricContext,
     MetricDefinition,
     MetricType,
+    RooflinePoint,
     compute_region_point,
     sum_roofline_points,
 )
@@ -59,7 +60,7 @@ def _region_points(
     regions: list[RegionMetrics],
     resolved: dict[MetricType, MetricDefinition],
     metric_ctx: MetricContext,
-) -> list[dict[str, float]]:
+) -> list[RooflinePoint]:
     """Compute (flops, bytes, time_s) for each region in a list."""
     return [compute_region_point(r.counters, r.time_nsec, resolved, metric_ctx) for r in regions]
 
@@ -75,17 +76,16 @@ def aggregate_global(
     total time (regions within a thread execute sequentially, threads within
     a rank run in parallel).
     """
-    thread_totals: list[dict[str, float]] = []
+    thread_totals: list[RooflinePoint] = []
     num_regions = 0
     for rank in run.ranks:
         for thread in rank.threads:
             thread_points = _region_points(thread.regions, resolved, metric_ctx)
             thread_totals.append(sum_roofline_points(thread_points))
             num_regions += len(thread_points)
-
-    total_flops = sum(p["flops"] for p in thread_totals)
-    total_bytes = sum(p["bytes"] for p in thread_totals)
-    total_time = max((p["time_s"] for p in thread_totals), default=0.0)
+    total_flops = sum(p.flops for p in thread_totals)
+    total_bytes = sum(p.bytes for p in thread_totals)
+    total_time = max((p.time_s for p in thread_totals), default=0.0)
     num_threads = sum(len(r.threads) for r in run.ranks)
     return AggregatedPoint(
         label=run.metadata.name or "global",
@@ -110,16 +110,16 @@ def aggregate_per_rank(
     """
     points: list[AggregatedPoint] = []
     for rank in run.ranks:
-        thread_totals: list[dict[str, float]] = []
+        thread_totals: list[RooflinePoint] = []
         num_regions = 0
         for thread in rank.threads:
             thread_points = _region_points(thread.regions, resolved, metric_ctx)
             thread_totals.append(sum_roofline_points(thread_points))
             num_regions += len(thread_points)
 
-        total_flops = sum(p["flops"] for p in thread_totals)
-        total_bytes = sum(p["bytes"] for p in thread_totals)
-        total_time = max((p["time_s"] for p in thread_totals), default=0.0)
+        total_flops = sum(p.flops for p in thread_totals)
+        total_bytes = sum(p.bytes for p in thread_totals)
+        total_time = max((p.time_s for p in thread_totals), default=0.0)
         label = f"{run.metadata.name}_rank{rank.rank_id}" if run.metadata.name else f"rank{rank.rank_id}"
         points.append(
             AggregatedPoint(
@@ -154,9 +154,9 @@ def aggregate_per_thread(
             points.append(
                 AggregatedPoint(
                     label=label,
-                    total_flops=total["flops"],
-                    total_bytes=total["bytes"],
-                    runtime_s=total["time_s"],
+                    total_flops=total.flops,
+                    total_bytes=total.bytes,
+                    runtime_s=total.time_s,
                     num_ranks=1,
                     num_threads=1,
                     num_regions=len(thread_points),
@@ -177,7 +177,7 @@ def aggregate_per_region_merged(
     (parallel execution).
     """
     # by_region[region_name][(rank_id, thread_id)] = [point, point, ...]
-    by_region: dict[str, dict[tuple[int, int], list[dict[str, float]]]] = {}
+    by_region: dict[str, dict[tuple[int, int], list[RooflinePoint]]] = {}
 
     for rank in run.ranks:
         for thread in rank.threads:
@@ -192,9 +192,9 @@ def aggregate_per_region_merged(
         # Sum within each thread (sequential calls)
         per_thread_sums = {key: sum_roofline_points(pt_list) for key, pt_list in thread_groups.items()}
 
-        total_flops = sum(p["flops"] for p in per_thread_sums.values())
-        total_bytes = sum(p["bytes"] for p in per_thread_sums.values())
-        total_time = max((p["time_s"] for p in per_thread_sums.values()), default=0.0)
+        total_flops = sum(p.flops for p in per_thread_sums.values())
+        total_bytes = sum(p.bytes for p in per_thread_sums.values())
+        total_time = max((p.time_s for p in per_thread_sums.values()), default=0.0)
 
         rank_ids: set[int] = {rk for (rk, _) in thread_groups}
         label = f"{run.metadata.name}_{name}" if run.metadata.name else name
@@ -235,9 +235,9 @@ def aggregate_per_region_per_thread(
                 points.append(
                     AggregatedPoint(
                         label=label,
-                        total_flops=region_point["flops"],
-                        total_bytes=region_point["bytes"],
-                        runtime_s=region_point["time_s"],
+                        total_flops=region_point.flops,
+                        total_bytes=region_point.bytes,
+                        runtime_s=region_point.time_s,
                         num_ranks=1,
                         num_threads=1,
                         num_regions=1,
