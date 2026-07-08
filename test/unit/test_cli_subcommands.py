@@ -93,7 +93,6 @@ def test_profile_help_shows_options(capsys: pytest.CaptureFixture[str]) -> None:
     assert "thread" in out
     assert "region_merged" in out
     assert "region_per_thread" in out
-    assert "results-dir" in out
     assert "command" in out
 
 

@@ -55,7 +55,6 @@ class ProfileConfig(InsertsArguments):
         verbose: Verbosity level (0-4).
         machine_name: Name for the results directory (each machine gets its own subdirectory).
         app_name: Application name recorded in the output metadata.
-        results_dir: Directory to scan for existing profiling result files.
         keep_artifacts: Whether to keep raw profiling output files.
         papi_events: Optional comma-separated PAPI event override.
         perf_events: Optional comma-separated perf event override.
@@ -75,7 +74,6 @@ class ProfileConfig(InsertsArguments):
             args.machine_name if args.machine_name is not None else generate_run_name(detect_machine_signature())
         )
         self.app_name: str = args.app_name if args.app_name is not None else _default_app_name(args.command)
-        self.results_dir: Path = args.results_dir
         self.keep_artifacts: bool = args.keep_artifacts
         self.papi_events: str | None = args.papi_events
         self.perf_events: str | None = args.perf_events
@@ -120,12 +118,6 @@ class ProfileConfig(InsertsArguments):
             default=default_results_root(),
             type=Path,
             help="Directory to write result files (default: platform user data dir for app 'carm')",
-        )
-        parser.add_argument(
-            "--results-dir",
-            default=default_results_root() / "profile",
-            type=Path,
-            help="Directory to scan for existing profiling result files (default: <output-dir>/profile)",
         )
         parser.add_argument(
             "--keep-artifacts",
