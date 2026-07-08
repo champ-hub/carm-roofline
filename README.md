@@ -34,10 +34,17 @@ source carm-env/bin/activate
 pip install carm-roofline[all]
 ```
 
+If cloning the repository directly (e.g. for development or access to example applications), use `--recurse-submodules` to also fetch the examples:
+
+```bash
+git clone --recurse-submodules https://github.com/champ-hub/carm-roofline
+```
+
 ## Requirements
 
 - Python 3.9+
-- GCC (for compiling benchmark binaries)
+- C compiler (e.g. gcc, clang)
+- Optional: [PAPI](https://github.com/icl-utk-edu/papi) headers and binaries for profiling
 
 ## Command-Line Interface
 
@@ -51,7 +58,7 @@ Available subcommands:
 
 - `benchmark` - run benchmark suites
 - `gui` - launch the results dashboard
-- `profile` - coming soon
+- `profile` - profile an application with PAPI or perf
 
 Show help:
 
@@ -59,6 +66,7 @@ Show help:
 carm --help
 carm benchmark --help
 carm gui --help
+carm profile --help
 ```
 
 ## Basic Usage
