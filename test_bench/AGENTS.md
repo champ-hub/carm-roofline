@@ -56,9 +56,27 @@ The new test_bench (v2) uses a **wrapper-based inline measurement approach** to 
 - Every per-thread chunk is 64-byte aligned, avoiding cache-line overlap across thread buffers
 
 ### NUMA Page Placement
+
 - The single shared buffer is reused across all benchmarks in sequence. Without intervention, physical pages placed on NUMA node 0 by one benchmark would be silently accessed as remote memory by a subsequent benchmark whose threads run on node 1.
-- `run_all_benchmarks()` calls `madvise(combined_buffer, combined_total, MADV_DONTNEED)` **before every benchmark**. On `MAP_ANONYMOUS | MAP_PRIVATE` mappings (which glibc uses for large allocations), this immediately discards all physical pages. The next access by each thread triggers a fresh page fault, and the kernel allocates the new physical page on the faulting thread's local NUMA node.
-- This ensures correct first-touch NUMA placement for every benchmark regardless of run order.
+- `run_all_benchmarks()` calls `madvise(combined_buffer, combined_total, MADV_DONTNEED)` **before every benchmark**. This discards the physical page mappings, so the next access triggers a fresh page fault.
+  **However**, a **read** fault on `MAP_ANONYMOUS | MAP_PRIVATE` memory maps the
+  [shared kernel zero page](https://linuxvox.com/blog/linux-will-zeroed-page-pagefault-on-first-read-or-on-first-write/)
+  — a single read-only physical page — instead of allocating a new page on the faulting thread's local NUMA node.
+  This means load-only benchmarks (e.g. `--ld-st-ratio 1:0`) would never trigger COW page allocation,
+  causing every access to hit the zero page in L1 regardless of working set size.
+- To force allocation of real per-thread physical pages, each thread's wrapper function in `wrapper.inl`
+  writes one byte per 4 KiB page across its own buffer region **before** the calibration loop:
+  ```c
+  for (size_t off = 0; off < tdata->read_size; off += 4096)
+      ((volatile char *)read_ptr)[off] = 0;
+  for (size_t off = 0; off < tdata->write_size; off += 4096)
+      ((volatile char *)write_ptr)[off] = 0;
+  ```
+  This write forces the kernel's copy-on-write (COW) handler to allocate a real physical page
+  on the faulting thread's local NUMA node. Every subsequent read on that page goes to real DRAM,
+  not the shared zero page. The overhead is negligible (~3 ms for a 14 GiB buffer).
+- This ensures correct first-touch NUMA placement and correct bandwidth measurement for **all**
+  load-store ratios, including load-only.
 
 ### Priority Management
 - Process niceness set to `PRIO_MIN (-20)` during benchmarking via `setpriority()`
