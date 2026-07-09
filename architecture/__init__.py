@@ -5,7 +5,13 @@ import contextvars
 from exec_interface import ExecutionInterface
 
 from .architecture import Architecture
-from .identity import MachineSignature, detect_machine_signature, generate_run_name, signature_from_architecture
+from .identity import (
+    MachineSignature,
+    detect_machine_signature,
+    generate_run_name,
+    signature_from_architecture,
+    write_machine_json,
+)
 from .memory import SimpleMemoryTopology
 
 # Context variable to hold the execution interface, for compatibility with simulation and native execution
@@ -31,4 +37,5 @@ __all__ = [
     "get_execution_interface",
     "set_execution_interface",
     "signature_from_architecture",
+    "write_machine_json",
 ]

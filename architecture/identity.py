@@ -11,6 +11,8 @@ machine yields the same name across runs.
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import platform
 import re
 from dataclasses import dataclass
@@ -21,6 +23,8 @@ from .memory import MemoryLevelInfo, MemoryTopology, MemoryTopologyLike
 
 if TYPE_CHECKING:
     from .architecture import Architecture
+
+_BYTES_PER_GIB = 1024**3
 
 
 @dataclass(frozen=True)
@@ -55,17 +59,52 @@ class MachineSignature:
     vendor: str
     memory_levels: tuple[MemoryLevelSignature, ...]
 
+    def _canonical_hash_string(self) -> str:
+        """Canonical string fed to SHA-256 for the config hash.
+
+        Format: ``arch=<arch>;vendor=<vendor>;levels=<levels>`` where
+        ``<levels>`` is a ``|``-separated list of
+        ``<name>:<size_bytes>:<instances>:<num_sharing_threads>``.
+        """
+        levels_str = "|".join(
+            f"{lvl.name}:{lvl.size_bytes}:{lvl.instances}:{lvl.num_sharing_threads}" for lvl in self.memory_levels
+        )
+        return f"arch={self.arch};vendor={self.vendor};levels={levels_str}"
+
     @property
     def config_hash(self) -> str:
         """Deterministic 8-char hex SHA256 of non-model-name fields.
 
         Hash inputs: arch, vendor, memory_levels (name, size, instances, sharing).
+
+        .. note::
+            DRAM ``size_bytes`` comes from ``/proc/zoneinfo`` ``present`` pages
+            (physical capacity, stable across reboots).  Falls back to a
+            rounded-``MemTotal`` value when zoneinfo is unavailable.
+            ``num_sharing_threads`` is set to 0 for DRAM (not a hardware
+            property; CPU online count may vary).  Cache-level fields are
+            used verbatim.
         """
-        levels_str = "|".join(
-            f"{lvl.name}:{lvl.size_bytes}:{lvl.instances}:{lvl.num_sharing_threads}" for lvl in self.memory_levels
-        )
-        canonical = f"arch={self.arch};vendor={self.vendor};levels={levels_str}"
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:8]
+        return hashlib.sha256(self._canonical_hash_string().encode("utf-8")).hexdigest()[:8]
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize all fields for machine.json debugging output."""
+        return {
+            "model_name": self.model_name,
+            "arch": self.arch,
+            "vendor": self.vendor,
+            "config_hash": self.config_hash,
+            "hash_input": self._canonical_hash_string(),
+            "memory_levels": [
+                {
+                    "name": lvl.name,
+                    "size_bytes": lvl.size_bytes,
+                    "instances": lvl.instances,
+                    "num_sharing_threads": lvl.num_sharing_threads,
+                }
+                for lvl in self.memory_levels
+            ],
+        }
 
 
 def read_cpuinfo() -> CpuInfo:
@@ -102,21 +141,69 @@ def read_cpuinfo() -> CpuInfo:
     return CpuInfo(model_name=model_name, vendor=vendor)
 
 
+def _get_physical_ram_bytes() -> int | None:
+    """Total physical RAM (bytes) from ``/proc/zoneinfo``, or ``None``.
+
+    Sums the ``present`` field across all zones — this is the number of
+    physical pages present, derived from the firmware's e820/device-tree
+    memory map at boot.  It reflects hardware capacity and is stable across
+    reboots, unlike ``MemTotal`` which subtracts kernel runtime reservations.
+    """
+    try:
+        with open("/proc/zoneinfo") as f:
+            total_present = 0
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) == 2 and parts[0] == "present":
+                    total_present += int(parts[1])
+        return total_present * os.sysconf("SC_PAGE_SIZE")
+    except (OSError, ValueError):
+        return None
+
+
 def _levels_from_topology(topology: MemoryTopologyLike | None) -> tuple[MemoryLevelSignature, ...]:
-    """Convert a memory topology to a tuple of deterministic level signatures."""
+    """Convert a memory topology to a tuple of deterministic level signatures.
+
+    DRAM levels use the ``present`` page count from ``/proc/zoneinfo`` (a
+    hardware-capacity value stable across reboots).  Falls back to rounding
+    the topology's ``MemTotal``-based size to the nearest GiB when zoneinfo
+    is unavailable (containers, odd kernels).
+
+    ``num_sharing_threads`` is set to 0 for DRAM (not a hardware property;
+    ``shared_cpu_list`` varies with CPU online count).
+
+    Cache levels (L1/L2/L3) are passed through unchanged.
+    """
+    # Read physical RAM once — stable firmware value
+    physical_ram = _get_physical_ram_bytes()
+
     if topology is None:
         return ()
     levels: list[MemoryLevelSignature] = []
     for lvl in topology:
         if isinstance(lvl, MemoryLevelInfo):
-            levels.append(
-                MemoryLevelSignature(
-                    name=lvl.name,
-                    size_bytes=int(lvl.size),
-                    instances=lvl.instances,
-                    num_sharing_threads=lvl.num_sharing_threads,
+            if lvl.name == "DRAM":
+                if physical_ram is not None:
+                    size_bytes = physical_ram
+                else:
+                    size_bytes = round(int(lvl.size) / _BYTES_PER_GIB) * _BYTES_PER_GIB
+                levels.append(
+                    MemoryLevelSignature(
+                        name=lvl.name,
+                        size_bytes=size_bytes,
+                        instances=lvl.instances,
+                        num_sharing_threads=0,
+                    )
                 )
-            )
+            else:
+                levels.append(
+                    MemoryLevelSignature(
+                        name=lvl.name,
+                        size_bytes=int(lvl.size),
+                        instances=lvl.instances,
+                        num_sharing_threads=lvl.num_sharing_threads,
+                    )
+                )
     return tuple(levels)
 
 
@@ -206,3 +293,18 @@ def _short_model_name(name: str) -> str:
 def generate_run_name(signature: MachineSignature) -> str:
     """Generate ``"<short_model>_<config_hash>"`` (e.g. ``"Ryzen-7-7735HS_59486dd1"``)."""
     return f"{_short_model_name(signature.model_name)}_{signature.config_hash}"
+
+
+def write_machine_json(signature: MachineSignature, directory: Path) -> None:
+    """Write machine.json to *directory* if it does not already exist.
+
+    The file contains the full MachineSignature serialized as JSON, including
+    all hash inputs and the computed hash, so future runs can debug why a
+    machine hash changed.
+    """
+    path = directory / "machine.json"
+    if path.exists():
+        return
+    directory.mkdir(parents=True, exist_ok=True)
+    with open(path, "x", encoding="utf-8") as f:
+        json.dump(signature.to_dict(), f, indent=2, sort_keys=True)
