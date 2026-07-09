@@ -1,7 +1,6 @@
 ---
-title: Benchmark Command
-nav_order: 3
-parent: Home
+title: Benchmarking
+parent: Commands
 ---
 
 # `carm benchmark`

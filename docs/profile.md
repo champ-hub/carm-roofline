@@ -1,7 +1,6 @@
 ---
-title: Profile Command
-nav_order: 5
-parent: Home
+title: Profiling
+parent: Commands
 ---
 
 # `carm profile`
