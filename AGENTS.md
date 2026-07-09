@@ -40,6 +40,7 @@ CLI args → CARMContext → generate → compile → execute → parse → outp
 | `exec_interface.py` | Native/simulated/cross-compiled command execution |
 | `run_config.py` | Run configuration (verbosity, output format, dry-run) |
 | `units.py` | Type-safe unit wrappers (Bytes, Frequency, Performance, Bandwidth, etc.) |
+| `docs/` | GitHub Pages website (Jekyll): user-facing docs, quickstart, command reference |
 
 ## Key Directories
 
@@ -59,6 +60,7 @@ CLI args → CARMContext → generate → compile → execute → parse → outp
 ├── profiling/            Application profiling pipeline (PAPI/perf backends)
 ├── gui/                  Dash+Plotly interactive dashboard
 ├── test/                 Pytest test suite (unit/integration)
+├── docs/                 GitHub Pages website source (Jekyll): user docs, quickstart
 └── carm.py               Main entry point
 ```
 
@@ -210,6 +212,7 @@ class Unit[T](ABC):  # Generic arithmetic wrapper
 | `results_paths.py` | `default_results_root()` via platformdirs |
 | `pyproject.toml` | Single source of truth: dependencies, ruff, mypy, pytest config |
 | `.pre-commit-config.yaml` | Pre-commit hooks (ruff, mypy, clang-format, trailing-whitespace) |
+| `docs/` | GitHub Pages website source (Jekyll): user docs, quickstart, command reference |
 | `.github/copilot-instructions.md` | (Loaded as system context) Central developer guidance, module index |
 | `test/conftest.py` | Shared pytest fixtures (ISA instances, mock context) |
 
