@@ -46,7 +46,7 @@ Your roof lines (one per cache level) and compute-performance ceilings appear on
 
 ![CARM plot for 4 threads](img/4-thread-roof.png)
 
-{: .tip}
+{: .tip }
 Create multiple roofs (use the **+ Add Roof** button) to compare the performance of different thread counts side by side. Each roof appears in a different colour.
 
 ---
@@ -70,7 +70,7 @@ make serial # builds lulesh2.0.serial
 
 All build variants link `-lpapi` (required by the PAPI instrumentation added in this fork).
 
-{: .note}
+{: .note }
 If `libpapi` development headers are not installed, install them via your package manager or from source. A source build is recommended, as older versions of PAPI may not support the hardware counters on recent hardware.
 
 ---
@@ -101,8 +101,9 @@ OMP_NUM_THREADS=4 carm profile \
     -- mpirun -np 1 examples/lulesh-papi/lulesh2.0 -s 20
 ```
 
-
-> **Flags explained:**
+{: .note-title }
+> Flags explained
+>
 > - `--aggregation region_merged` — merges multiple occurrences of the same region across threads/ranks into a single point per region. See the [Profiling](profile) reference for other aggregation modes.
 > - `--data-type f64` — tells the metric resolver the code uses double-precision (matching LULESH's `Real_t = double`)
 > - The `-s 20` is a LULESH flag: it sets the problem size to 20
@@ -154,7 +155,7 @@ Based on its position relative to the roofline, a region's performance character
 
 The **arithmetic intensity** (x-axis, FLOP/Byte) is a key metric: higher is usually better, making memory bottlenecks less likely.
 
-{: .rule-of-thumb}
+{: .note-title }
 > Rule of Thumb
 >
 > If your region is memory-bound (left of the L1 ridge point), any optimisation that reduces data movement helps more than adding compute throughput. If it is compute-bound (right of the ridge point), improving parallelism or using wider vector instructions moves the point up.
