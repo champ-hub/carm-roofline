@@ -20,6 +20,7 @@ You can specify different benchmark parameters (data type, thread count, etc.) f
 # Double-precision, 1, 2, and 4 threads (ISAs are automatically detected)
 carm benchmark --data-type f64 --threads 1 2 4
 ```
+
 {: .tip}
 For a faster first run, use `--test-time 5` (5 seconds per measurement instead of the default 25). Accuracy degrades, but the shape will be visible.
 
