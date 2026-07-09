@@ -17,6 +17,7 @@ from architecture import (
     generate_run_name,
     set_execution_interface,
     signature_from_architecture,
+    write_machine_json,
 )
 from arguments import InsertsArguments, TopLevelHelpFormatter
 from benchmark.interface import run_full_benchmark
@@ -58,8 +59,9 @@ def _handle_benchmark(args: argparse.Namespace) -> int:
     # Make exec_iface globally available for architecture feature detection
     set_execution_interface(exec_iface)
     architecture = Architecture(args)
+    signature = signature_from_architecture(architecture)
     if args.name is None:
-        args.name = generate_run_name(signature_from_architecture(architecture))
+        args.name = generate_run_name(signature)
     benchmarking = Benchmarking(args)
     run_config = RunConfig(args)
 
@@ -73,6 +75,7 @@ def _handle_benchmark(args: argparse.Namespace) -> int:
         detail("Dry run finished: benchmark code generated successfully.")
         return 0
 
+    write_machine_json(signature, run_config.output_dir / run_config.name)
     output_benchmark_results(context, benchmark_suites)
     return 0
 

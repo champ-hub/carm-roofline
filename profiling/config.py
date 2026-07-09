@@ -6,7 +6,7 @@ import argparse
 from enum import Enum
 from pathlib import Path
 
-from architecture import detect_machine_signature, generate_run_name
+from architecture import MachineSignature, detect_machine_signature, generate_run_name
 from arguments import InsertsArguments, add_verbose_argument, enum_action
 from benchmark.generation import ISA_NAME_TO_CLASS, DataType
 from results_paths import default_results_root
@@ -70,8 +70,9 @@ class ProfileConfig(InsertsArguments):
         self.aggregation: AggregationMode = args.aggregation
         self.verbose: int = args.verbose
         self.output_dir: Path = args.output_dir
+        self.machine_signature: MachineSignature = detect_machine_signature()
         self.machine_name: str = (
-            args.machine_name if args.machine_name is not None else generate_run_name(detect_machine_signature())
+            args.machine_name if args.machine_name is not None else generate_run_name(self.machine_signature)
         )
         self.app_name: str = args.app_name if args.app_name is not None else _default_app_name(args.command)
         self.keep_artifacts: bool = args.keep_artifacts

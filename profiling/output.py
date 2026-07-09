@@ -10,6 +10,7 @@ import csv
 import json
 from datetime import datetime
 
+from architecture import write_machine_json
 from output_utils import detail, info
 
 from .aggregation import AggregatedPoint
@@ -28,7 +29,12 @@ def write_profile_results(
     (GUI-compatible legacy format).  JSONL is written to
     ``<output_dir>/<machine_name>/applications.jsonl`` (one appended line per run,
     embedding run metadata and the aggregated points).
+
+    A ``machine.json`` debugging file is also written to
+    ``<output_dir>/<machine_name>/machine.json`` on the first run.
     """
+    machine_dir = config.output_dir / config.machine_name
+    write_machine_json(config.machine_signature, machine_dir)
     write_applications_csv(points, config, run)
     write_profile_jsonl(run, config, points)
 
