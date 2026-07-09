@@ -170,6 +170,8 @@ measure_benchmark(const benchmark_metadata_t *metadata, wrapper_fn_t wrapper_fn,
         tdata[i].read_ptr = (void *) ((char *) combined_data + thread_offset);
         tdata[i].write_ptr = (void *) ((char *) combined_data + thread_offset + aligned_read);
         tdata[i].freq = freq;
+        tdata[i].read_size = aligned_read;
+        tdata[i].write_size = aligned_write;
 
 #if VERBOSITY >= 4
         if (tdata[i].read_ptr != NULL) {

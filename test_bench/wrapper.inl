@@ -19,6 +19,13 @@ static void *_WRAPPER_EXPAND(UBENCH_NAME)(void *arg)
     void *read_ptr = tdata->read_ptr;
     void *write_ptr = tdata->write_ptr;
 
+    /* Force COW: write one byte per page so the kernel allocates real physical pages (not the shared zero page). This
+     * ensures NUMA-correct first-touch placement and prevents load-only benchmarks from measuring L1 bandwidth
+     * regardless of working set size. */
+    for (size_t off = 0; off < tdata->read_size; off += 4096)
+        ((volatile char *) read_ptr)[off] = 0;
+    for (size_t off = 0; off < tdata->write_size; off += 4096)
+        ((volatile char *) write_ptr)[off] = 0;
     barrier_sync();
 
     uint64_t reps = CARM_BENCH_START_REPS;

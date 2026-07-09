@@ -47,6 +47,8 @@ typedef struct {
     void *read_ptr;  /* Per-thread slice of the read (load) buffer */
     void *write_ptr; /* Per-thread slice of the write (store) buffer */
     float freq;
+    size_t read_size;  /* Per-thread read buffer size (aligned, bytes) */
+    size_t write_size; /* Per-thread write buffer size (aligned, bytes) */
     /* Timing results per thread (nanoseconds) */
     uint64_t *elapsed_ns; /* Elapsed time in nanoseconds */
 } thread_wrapper_data_t;
