@@ -8,12 +8,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from rich.table import Table
+
 from benchmark.generation.code_gen.operation import ArithmeticOperation
-from output_utils import info, warn
-from units import Cycles
+from output_utils import error, get_console, info, warn
+from units import ArithmeticIntensity, Bandwidth, Cycles, Performance
 
 from .base import OutputHandler
-from .common import format_precision_label
+from .common import format_precision_label, safe_matplotlib_import, save_or_show_plot
 
 if TYPE_CHECKING:
     from benchmark.benchmark import ISABenchmarkSuite
@@ -21,70 +23,190 @@ if TYPE_CHECKING:
     from context import CARMContext
 
 
-def _gather_roofline_points(suite: ISABenchmarkSuite) -> dict[str, tuple[float, float]]:
-    """Gather roofline points (intensity, performance) from a benchmark suite.
-
-    Roofline analysis requires both arithmetic intensity and GOPS,
-    which are only available from MixedBenchmarkResult.
-
-    Note:
-        Skips invalid values (NaN, inf, or non-positive) with warning.
-    """
-    # Basic implementation used by tests and future consumers.
-    # Collect intensity/performance pairs from MixedBenchmarkResult-like objects.
-    points: dict[str, tuple[float, float]] = {}
-
-    for name, bench in suite.benchmarks.items():
-        res = getattr(bench, "results", None)
-        if res is None:
-            continue
-        # we expect attributes 'arithmetic_intensity' and 'performance'
-        ai = getattr(res, "arithmetic_intensity", None)
-        perf = getattr(res, "performance", None)
-        if ai is None or perf is None:
-            # nothing to record for this benchmark
-            continue
-        try:
-            ai_val = float(ai)
-            perf_val = float(perf)
-        except Exception:
-            warn(f"Skipping invalid roofline point for {name} (non-numeric)")
-            continue
-
-        if ai_val <= 0 or perf_val <= 0:
-            warn(f"Skipping invalid roofline point for {name} (non-positive values)")
-            continue
-
-        points[name] = (ai_val, perf_val)
-    return points
-
-
 def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) -> None:
-    info("Roofline summary per ISA:")
+    """Print a merged roofline summary table.
+
+    One row per ISA x (data_type, threads, loads, stores) combo, showing peak
+    intensity. Values are displayed via their unit class __str__ methods
+    (e.g., "8.95 GOPS/s", "380.00 GB/s", "0.02 FLOP/B").
+    At verbose >= 3, also prints the arithmetic and memory detail tables.
+    """
+    table = Table(title="Roofline Summary")
+    table.add_column("ISA", style="cyan")
+    table.add_column("Prec.", justify="left")
+    table.add_column("Thr.", style="magenta", justify="right")
+    table.add_column("Peak", justify="right")
+    for level in _CACHE_LEVELS:
+        table.add_column(level, justify="right")
+        table.add_column(f"{level} AI", justify="right")
+
+    for isa, suite in sorted(isa_suites.items(), key=lambda kv: kv[0]):
+        mem_benches = suite.get_memory_benchmarks()
+        arith_benches = suite.get_arithmetic_benchmarks()
+
+        for (dt, nt, _ld, _st), group in sorted(_group_combos(mem_benches).items()):
+            # Collect Bandwidth per cache level from this combo's memory benchmarks
+            bw_by_level: dict[str, Bandwidth | None] = dict.fromkeys(_CACHE_LEVELS)
+            for bench in group:
+                if bench.results is not None and bench.cache_level in bw_by_level:
+                    bw_by_level[bench.cache_level] = bench.results.bandwidth
+
+            # Find peak Performance from arithmetic benchmarks matching this combo
+            peak_perf: Performance | None = None
+            for bench in arith_benches.values():
+                if bench.results is None:
+                    continue
+                if bench.params.data_type != dt or bench.params.num_threads != nt:
+                    continue
+                if peak_perf is None or bench.results.performance > peak_perf:
+                    peak_perf = bench.results.performance
+
+            row: list[str] = [isa, format_precision_label(dt), str(nt)]
+            if peak_perf is not None:
+                row.append(str(peak_perf))
+            else:
+                row.append("-")
+
+            for level in _CACHE_LEVELS:
+                bw = bw_by_level[level]
+                if bw is not None and bw.value > 0 and peak_perf is not None:
+                    ridge = ArithmeticIntensity(peak_perf.value / bw.value)
+                    row.append(str(bw))
+                    row.append(str(ridge))
+                else:
+                    row.append("-")
+                    row.append("-")
+            table.add_row(*row)
+
+    get_console().print(table)
+
+    if context.run_config.verbose >= 3:
+        from . import arithmetic, memory
+
+        arithmetic._print_table(context, isa_suites)
+        memory._print_table(context, isa_suites)
+
+
+_ROOFLINE_COLORS = [
+    "#1f77b4",
+    "#ff7f0e",
+    "#2ca02c",
+    "#d62728",
+    "#9467bd",
+    "#8c564b",
+    "#e377c2",
+    "#7f7f7f",
+    "#bcbd22",
+    "#17becf",
+]
+_LINE_STYLES = {"L1": "-", "L2": "--", "L3": "-.", "DRAM": ":"}
+_CACHE_LEVELS = ("L1", "L2", "L3", "DRAM")
+
+
+def _plot_roofline_to_axis(
+    roofline_data: dict[str, tuple[float, dict[str, float]]],
+    ax: Any,
+    np: Any,
+) -> None:
+    """Draw roofline curves on a matplotlib log-log axis.
+
+    For each ISA: horizontal ceiling at peak Gflop/s, and one bandwidth slope
+    per cache level (y = bandwidth x AI, clipped at the ceiling).
+    """
+    all_ridges: list[float] = []
+    for peak_gflops, bw_gbps in roofline_data.values():
+        for bw in bw_gbps.values():
+            if bw > 0:
+                all_ridges.append(peak_gflops / bw)
+
+    if not all_ridges:
+        warn("No valid roofline ridge points to plot")
+        return
+
+    ai_min = min(all_ridges) / 10
+    ai_max = max(all_ridges) * 10
+    ai_values = np.logspace(np.log10(ai_min), np.log10(ai_max), 200)
+    if not isinstance(ai_values, list):
+        ai_values = list(ai_values)
+
+    for idx, (isa, (peak_gflops, bw_gbps)) in enumerate(sorted(roofline_data.items())):
+        color = _ROOFLINE_COLORS[idx % len(_ROOFLINE_COLORS)]
+
+        # Compute ridge points for this ISA to clip the ceiling
+        isa_ridges = [peak_gflops / bw for level in _CACHE_LEVELS if (bw := bw_gbps.get(level, 0)) > 0]
+        if isa_ridges:
+            min_ridge = min(isa_ridges)
+            ceiling_ai = [ai for ai in ai_values if ai >= min_ridge]
+        else:
+            ceiling_ai = []
+        if ceiling_ai:
+            ax.plot(
+                ceiling_ai,
+                [peak_gflops] * len(ceiling_ai),
+                color=color,
+                linestyle="-",
+                linewidth=1.5,
+                label=f"{isa} ceiling",
+            )
+        for level in _CACHE_LEVELS:
+            bw = bw_gbps.get(level, 0)
+            if bw <= 0:
+                continue
+            perf = [min(bw * ai, peak_gflops) for ai in ai_values]
+            ax.plot(
+                ai_values,
+                perf,
+                color=color,
+                linestyle=_LINE_STYLES[level],
+                linewidth=1,
+                alpha=1,
+            )
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Arithmetic Intensity (FLOP/byte)")
+    ax.set_ylabel("Performance (Gflop/s)")
+    ax.set_title("Roofline Model")
+    ax.legend(fontsize=8)
 
 
 def _write_plot(isa_suites: dict[str, ISABenchmarkSuite], output_path: Path | None = None) -> None:
-    """Generate roofline plots or warn when no data.
+    """Generate and save roofline plot.
 
-    This minimal implementation is sufficient for unit tests and avoids
-    raising exceptions during missing-data scenarios.  Full plotting logic
-    may be added later.
+    Draws log-log roofline curves (bandwidth slopes + compute ceiling) per ISA.
+    Gracefully handles missing data, invalid values, and I/O errors.
     """
-    # gather all points across ISAs; warn if none found
-    any_points = False
-    for _isa, suite in isa_suites.items():
-        pts = _gather_roofline_points(suite)
-        if pts:
-            any_points = True
-            break
+    roofline_data: dict[str, tuple[float, dict[str, float]]] = {}
+    for isa, suite in sorted(isa_suites.items(), key=lambda kv: kv[0]):
+        try:
+            peak = suite.get_peak_performance()
+            bw_by_level = suite.get_bandwidth_by_level()
+        except ValueError:
+            warn(f"Skipping {isa} in roofline plot: missing or incomplete benchmark results")
+            continue
+        peak_gflops = float(peak) / 1e9
+        bw_gbps = {level: float(bw) / 1e9 for level, bw in bw_by_level.items()}
+        roofline_data[isa] = (peak_gflops, bw_gbps)
 
-    if not any_points:
+    if not roofline_data:
         warn("No roofline data found")
         return
 
-    # Placeholder: in a complete implementation we would import matplotlib
-    # and numpy and draw the curves. For now just silently succeed.
-    return
+    plt, np = safe_matplotlib_import()
+    if plt is None:
+        return
+
+    fig = None
+    try:
+        fig, ax = plt.subplots(figsize=(10, 7))
+        _plot_roofline_to_axis(roofline_data, ax, np)
+        plt.tight_layout()
+        save_or_show_plot(output_path, "roofline.png", plt=plt)
+    except Exception as e:
+        error(f"Failed to generate roofline plot: {e}")
+    finally:
+        if fig is not None:
+            plt.close(fig)
 
 
 def _to_isa_label(isa_name: str, context: CARMContext) -> str:
