@@ -28,3 +28,14 @@ mermaid:
 
 # Aux links at the top
 aux_links_new_tab: false
+
+callouts:
+  tip:
+    title: Tip
+    color: yellow
+  note:
+    title: Note
+    color: blue
+  warning:
+    title: Warning
+    color: red
