@@ -34,6 +34,4 @@ See the [Installation](installation) page for detailed setup instructions.
 | Page | Description |
 |------|-------------|
 | [Installation](installation) | Requirements, pip install, virtual environment, from-source install |
-| [Benchmark](benchmark) | Run benchmarks, argument reference |
-| [GUI](gui) | Launch the interactive dashboard, argument reference |
-| [Profile](profile) | Profile applications, argument reference |
+| [Commands](commands) | Subcommand reference — benchmarking, GUI, profiling |

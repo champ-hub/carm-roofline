@@ -1,7 +1,6 @@
 ---
-title: GUI Command
-nav_order: 4
-parent: Home
+title: GUI
+parent: Commands
 ---
 
 # `carm gui`
