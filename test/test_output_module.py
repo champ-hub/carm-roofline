@@ -48,6 +48,15 @@ def make_fake_matplotlib():
         def set_title(self, *args, **kwargs):
             return None
 
+        def set_xscale(self, *args, **kwargs):
+            return None
+
+        def set_yscale(self, *args, **kwargs):
+            return None
+
+        def legend(self, *args, **kwargs):
+            return None
+
         def text(self, *args, **kwargs):
             return None
 
@@ -494,6 +503,8 @@ def test_arithmetic_plot_saves_file(monkeypatch, tmp_path, capsys):
 
 def test_roofline_plot_handles_missing_data(monkeypatch):
     """Roofline plot gracefully handles suites with no points and prints notice."""
+    from benchmark.suites import RooflineBenchmarkSuite
+
     # fake matplotlib and numpy
     mpl, _ = make_fake_matplotlib()
     np = make_fake_numpy()
@@ -512,11 +523,114 @@ def test_roofline_plot_handles_missing_data(monkeypatch):
 
     monkeypatch.setattr(roofline, "warn", _warn)
 
-    empty_suite = _Suite(benchmarks=[_Benchmark("b1", _Result())])
+    # Empty suite raises ValueError from get_peak_performance (no arithmetic benchmarks)
+    empty_suite = RooflineBenchmarkSuite(isa_name="isaX")
     isa_suites = {"isaX": empty_suite}
 
     roofline._write_plot(isa_suites, None)
     assert any("No roofline data found" in msg for msg in warnings)
+
+
+def _make_minimal_roofline_suite(
+    isa_name: str = "isa1",
+    performance_gops: float = 10e9,
+    bandwidth_bps: float = 40e9,
+) -> "RooflineBenchmarkSuite":
+    """Create a minimal roofline suite with one arith + one L1 mem benchmark."""
+    from benchmark.benchmark import (
+        ArithmeticBenchmark,
+        ArithmeticBenchmarkResult,
+        MemoryBenchmark,
+        MemoryBenchmarkResult,
+    )
+    from benchmark.benchmarking import LoadStoreRatio
+    from benchmark.generation.code_gen import DataType
+    from benchmark.generation.code_gen.operation import ArithmeticOperation
+    from benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
+    from benchmark.suites import RooflineBenchmarkSuite
+    from test_bench.builder import MicrobenchmarkFunctionSpec
+    from units import Bandwidth, Bytes, Operations, Performance, Seconds
+
+    arith_params = ArithmeticBenchmarkParams(
+        data_type=DataType.f32,
+        thread_affinity=[0],
+        operation=ArithmeticOperation.fma,
+        num_ops=Operations(1024),
+    )
+    arith_spec = MicrobenchmarkFunctionSpec(
+        function_name="arith",
+        body="",
+        read_array_size=Bytes(0),
+        write_array_size=Bytes(0),
+        frequency=2.5,
+        thread_affinity=[0],
+    )
+    arith_bench = ArithmeticBenchmark(params=arith_params, spec=arith_spec)
+    arith_bench.results = ArithmeticBenchmarkResult(
+        time_taken=Seconds(0.1), num_repetitions=1000, performance=Performance(performance_gops)
+    )
+
+    mem_params = MemoryBenchmarkParams(
+        data_type=DataType.f32,
+        thread_affinity=[0],
+        load_store_ratio=LoadStoreRatio(2, 1),
+        size_per_thread=Bytes(1024),
+        memory_level_name="L1",
+    )
+    mem_spec = MicrobenchmarkFunctionSpec(
+        function_name="mem",
+        body="",
+        read_array_size=Bytes(0),
+        write_array_size=Bytes(0),
+        frequency=2.5,
+        thread_affinity=[0],
+    )
+    mem_bench = MemoryBenchmark(params=mem_params, spec=mem_spec, working_set_bytes=Bytes(1024), cache_level="L1")
+    mem_bench.results = MemoryBenchmarkResult(
+        time_taken=Seconds(0.1), num_repetitions=1000, bandwidth=Bandwidth(bandwidth_bps), cache_level="L1"
+    )
+
+    suite = RooflineBenchmarkSuite(isa_name=isa_name)
+    suite.add_benchmark(arith_bench.name, arith_bench)
+    suite.add_benchmark(mem_bench.name, mem_bench)
+    return suite
+
+
+def test_roofline_cli_prints_summary():
+    """Roofline CLI prints a merged summary table with unit-formatted values."""
+    from benchmark.output import TestType, _get_handler_for_test_type
+
+    context = _make_fake_context(["isa1"], freq_hz=3.0e9)
+    context.benchmarking.test = TestType.ROOFLINE
+
+    suite = _make_minimal_roofline_suite()
+    isa_suites = {"isa1": suite}
+
+    handler = _get_handler_for_test_type(TestType.ROOFLINE)
+    try:
+        handler.print_table(context, isa_suites)
+    except Exception as e:
+        pytest.fail(f"Handler raised exception: {e}")
+
+
+def test_roofline_plot_saves_file(monkeypatch, tmp_path):
+    """Roofline plot saves image file when matplotlib is available."""
+    # install fake matplotlib and numpy
+    mpl, _ = make_fake_matplotlib()
+    np = make_fake_numpy()
+    monkeypatch.setitem(sys.modules, "matplotlib", mpl)
+    monkeypatch.setitem(sys.modules, "matplotlib.pyplot", mpl.pyplot)
+    monkeypatch.setitem(sys.modules, "numpy", np)
+
+    # reload handlers so they pick up fake matplotlib/numpy
+    _, _, _, roofline = reload_handlers(monkeypatch)
+
+    suite = _make_minimal_roofline_suite()
+    isa_suites = {"isa1": suite}
+
+    roofline._write_plot(isa_suites, tmp_path)
+    saved = [str(p) for p in mpl.pyplot._saved]
+    assert any("roofline.png" in str(p) for p in saved), f"Plot not saved. Saved: {saved}"
 
 
 def test_roofline_legacy_csv_compatibility(tmp_path):
@@ -648,7 +762,6 @@ def test_roofline_legacy_csv_compatibility(tmp_path):
     # FP_FMA columns should mirror FP columns when FMA is the primary instruction
     assert rows[2][19] == rows[2][17]
     assert rows[2][20] == rows[2][18]
-
 
     # second write should append row only (no repeated headers)
     _write_csv(context, isa_suites, output_dir=tmp_path)
