@@ -23,7 +23,7 @@ from arguments import InsertsArguments, TopLevelHelpFormatter
 from benchmark.interface import run_full_benchmark
 from benchmark.output import output_benchmark_results
 from context import Architecture, Benchmarking, CARMContext, ExecutionInterface, RunConfig
-from error import UserError
+from core import UserError
 from gui.config import GUIConfig
 from output_utils import configure_verbosity, debug, detail, error, info
 from profiling import ProfileConfig, profile_main

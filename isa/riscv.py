@@ -3,11 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from .code_gen import ControlInstructions, DataType, TypedInstructions, instruction as inst
-from .code_gen.instruction import _Instruction
-from .code_gen.operation import ArithmeticOperation, MemoryOperation, Operation
-from .code_gen.register import CyclicRegisterSet, HelperRegisterSet, TypedRegisterSets
-from .isa import BaseISA, InlineASM
+from benchmark.generation.code_gen import ControlInstructions, TypedInstructions, instruction as inst
+from benchmark.generation.code_gen.instruction import _Instruction
+from benchmark.generation.code_gen.register import CyclicRegisterSet, HelperRegisterSet, TypedRegisterSets
+from core import ArithmeticOperation, DataType, MemoryOperation, Operation
+from isa.base import BaseISA, InlineASM
 
 if TYPE_CHECKING:
     from architecture.architecture import Architecture

@@ -23,17 +23,7 @@ repos:
       - id: clang-format
         types_or: [c, c++]
         args: [--style=file]
-        exclude: |
-          (?x)^(
-            legacy_bench_gen/|
-            Bench/|
-            config/|
-            CustomClient/|
-            GPU/|
-            dbi_carm_roi.h|
-            Test/|
-            misc-tools/
-          )
+        exclude: '^test_bench/'
 
 
   - repo: https://github.com/pre-commit/mirrors-mypy
@@ -59,16 +49,6 @@ repos:
         ]
         exclude: |
           (?x)(
-            ^legacy_bench_gen/|
-            ^run\.py$|
-            ^run_gpu\.py$|
-            AI_Calculator\.py$|
-            ^utils\.py$|
-            ^output_utils\.py$|
-            ^plot_timing_distribution\.py$|
             ^test_bench/|
-            ^Test/|
-            ^CustomClient/|
-            ^build/|
-            ^misc-tools/
+            ^build/
           )

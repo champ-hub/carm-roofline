@@ -9,9 +9,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from error import UserError
+from core import Bytes, UserError
 from output_utils import debug, format_if_container
-from units import Bytes
 
 _CPU_ROOT = Path("/sys/devices/system/cpu")
 

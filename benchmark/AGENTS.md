@@ -317,9 +317,9 @@ Performs CLI output, optional legacy roofline CSV emission (`--output-format csv
 
 ### Adding a New Operation
 
-1. Add operation to `ArithmeticOperation` or `MemoryOperation` enums in `generation/code_gen/operation.py`
-2. Implement operation in ISA classes (x86.py, arm.py, riscv.py)
-3. Update `operation_counts` dict in `generation/code_gen/operation.py` if operation count differs
+1. Add operation to `ArithmeticOperation` or `MemoryOperation` enums in `core/operation.py`
+2. Implement operation in ISA classes (x86/arm/riscv in `isa/`)
+3. Update `_ARITHMETIC_OPS_COUNT` dict in `core/operation.py` if operation count differs
 
 ### Debugging Failed Benchmarks
 

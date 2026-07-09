@@ -29,8 +29,10 @@ CLI args → CARMContext → generate → compile → execute → parse → outp
 |--------|------|
 | `carm.py` | Main entry point, CLI parser, subcommand dispatch |
 | `context.py` | `CARMContext` dataclass threading through pipeline |
+| `core/` | Domain primitives (DataType, Operation, UserError, type-safe units) |
+| `isa/` | ISA identity hierarchy (BaseISA, ALL_ISAS, ISA_NAME_TO_CLASS) |
 | `architecture/` | Hardware auto-detection (CPU, cache, ISA features, frequency) |
-| `benchmark/generation/` | ISA-specific inline assembly code generation |
+| `benchmark/generation/` | ISA-specific code generation utilities (instructions, registers, parameters) |
 | `benchmark/suites/` | Benchmark suite orchestration (arithmetic, memory, roofline) |
 | `benchmark/output/` | Strategy-pattern output dispatch (table/plot/json/csv) |
 | `test_bench/` | C measurement harness (calibration, timing, threading) |
@@ -39,23 +41,23 @@ CLI args → CARMContext → generate → compile → execute → parse → outp
 | `arguments.py` | `InsertsArguments` base class for modular argument injection |
 | `exec_interface.py` | Native/simulated/cross-compiled command execution |
 | `run_config.py` | Run configuration (verbosity, output format, dry-run) |
-| `units.py` | Type-safe unit wrappers (Bytes, Frequency, Performance, Bandwidth, etc.) |
 | `docs/` | GitHub Pages website (Jekyll): user-facing docs, quickstart, command reference |
 
 ## Key Directories
 
-```
 ├── architecture/         Hardware detection (C probes, sysfs parsing, ISA feature discovery)
 │   ├── architecture.py   Architecture class, ISAFrequencies
 │   ├── detect.py         DetectedArchitecture, DetectionBuilder, native_detect/detect_for_isa
 │   ├── memory.py         MemoryTopology (sysfs), SimpleMemoryTopology (CLI/TOML)
 │   └── tests/            C probe source files per ISA family
 ├── benchmark/            Benchmark system facade
-│   ├── generation/       ISA code generation (BaseISA hierarchy, code_gen utilities)
+│   ├── generation/       ISA code generation (instruction/register/parameter utilities)
 │   ├── suites/           Benchmark suite classes (arithmetic, memory, roofline, sweep)
 │   ├── output/           Strategy-pattern output handlers per test type
 │   ├── interface.py      run_full_benchmark() orchestration
 │   └── benchmarking.py   Benchmarking config (TestType, CLI args)
+├── core/                 Domain primitives (DataType, Operation, UserError, units)
+├── isa/                  ISA identity hierarchy (BaseISA, ISA_NAME_TO_CLASS, ALL_ISAS)
 ├── test_bench/           C measurement harness (builder.py, test_bench.c/h, wrapper.inl)
 ├── profiling/            Application profiling pipeline (PAPI/perf backends)
 ├── gui/                  Dash+Plotly interactive dashboard
@@ -104,7 +106,7 @@ pre-commit run --all-files
 - Ruff-managed: line-length 120, quote-style double, indent-style space, LF endings
 - Target Python 3.9 (no 3.10+ match statements in production code)
 - `from __future__ import annotations` in every file
-- Excluded from ruff/mypy: `legacy_bench_gen/`, `run.py`, `run_gpu.py`, `*AI_Calculator.py`, `utils.py`, `output_utils.py`, `gui/dashboard.py`, `gui/gui_utils.py`, `test/`
+- Excluded from ruff/mypy: `legacy_bench_gen/`, `run.py`, `run_gpu.py`, `*AI_Calculator.py`, `output_utils.py`, `gui/dashboard.py`, `gui/gui_utils.py`, `test/`
 - C code: clang-format with style=file (`.clang-format` at root)
 
 ### Naming
@@ -143,12 +145,12 @@ exec_iface.compile(...)
 
 ### ISA Registration
 
-ISAs register via explicit tuples in `benchmark/generation/__init__.py`:
+ISAs register via explicit tuples in `isa/__init__.py`:
 
 ```python
-ALL_ISAS = (X86AVX512, X86AVX2, X86AVX, X86SSE, X86Scalar, ...)
-ISA_NAME_TO_CLASS = {"x86_avx512": X86AVX512, ...}
-INCOMPATIBLE_ISAS: set[frozenset[type[BaseISA]]] = {frozenset({X86AVX, X86AVX2})}
+ALL_ISAS = (ArmScalar, ArmNeon, ArmSVE, RISCVScalar, RISCV_RVV_071, RISCV_RVV, X86Scalar, ...)
+ISA_NAME_TO_CLASS = {"x86_avx2": X86AVX2, ...}
+INCOMPATIBLE_ISAS = {frozenset({RISCV_RVV_071, RISCV_RVV})}
 ```
 
 ### Error Handling
@@ -187,7 +189,7 @@ class ArithmeticOutputHandler:
 
 Dispatch map keyed by `TestType` enum, built in `benchmark/output/__init__.py`.
 
-### Type-Safe Units (`units.py`)
+### Type-Safe Units (`core/units.py`)
 
 ```python
 class Unit[T](ABC):  # Generic arithmetic wrapper
@@ -203,11 +205,11 @@ class Unit[T](ABC):  # Generic arithmetic wrapper
 | `carm.py` | Entry point, CLI parser, subcommand dispatch |
 | `context.py` | `CARMContext` dataclass (architecture, benchmarking, exec_interface, run_config) |
 | `arguments.py` | `InsertsArguments`, validators, `enum_action`, `TopLevelHelpFormatter` |
-| `error.py` | `UserError` exception class |
+| `core/` | Domain primitives package (DataType, Operation, UserError, type-safe units) |
 | `exec_interface.py` | Compile/run abstraction with simulator support |
-| `run_config.py` | `RunConfig` with verbose/dry-run/output format settings |
+| `isa/` | ISA identity hierarchy (BaseISA, ALL_ISAS, ISA_NAME_TO_CLASS) |
 | `output_utils.py` | Verbosity-leveled Rich console output |
-| `units.py` | Type-safe unit wrappers |
+| `run_config.py` | `RunConfig` with verbose/dry-run/output format settings |
 | `workspace.py` | `workspace_context()` temp directory manager |
 | `results_paths.py` | `default_results_root()` via platformdirs |
 | `pyproject.toml` | Single source of truth: dependencies, ruff, mypy, pytest config |

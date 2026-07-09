@@ -10,17 +10,16 @@ from typing import TYPE_CHECKING, Any
 
 from rich.table import Table
 
-from benchmark.generation.code_gen.operation import ArithmeticOperation
+from core import ArithmeticIntensity, ArithmeticOperation, Bandwidth, Cycles, Performance
 from output_utils import error, get_console, info, warn
-from units import ArithmeticIntensity, Bandwidth, Cycles, Performance
 
 from .base import OutputHandler
 from .common import format_precision_label, safe_matplotlib_import, save_or_show_plot
 
 if TYPE_CHECKING:
     from benchmark.benchmark import ISABenchmarkSuite
-    from benchmark.generation.isa import BaseISA
     from context import CARMContext
+    from isa import BaseISA
 
 
 def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) -> None:

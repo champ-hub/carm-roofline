@@ -8,9 +8,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
+from core import ArithmeticIntensity, Bandwidth, Bytes, Performance, Seconds
 from output_utils import debug
 from test_bench.builder import MicrobenchmarkFunctionSpec
-from units import ArithmeticIntensity, Bandwidth, Bytes, Performance, Seconds
 
 from .generation import ArithmeticBenchmarkParams, BenchmarkParams, MemoryBenchmarkParams
 

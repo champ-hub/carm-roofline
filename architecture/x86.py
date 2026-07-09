@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from architecture.detect import ROOT, DetectedArchitecture, TestContext, run_generic_tests, run_test
-from units import Frequency
+from core import Frequency
 
 
 def detect(threads: int = 1) -> DetectedArchitecture:

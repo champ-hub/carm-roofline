@@ -19,8 +19,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, TypedDict
 
+from core import ArithmeticIntensity, Bandwidth, Performance
 from output_utils import debug, detail, info, warn
-from units import ArithmeticIntensity, Bandwidth, Performance
 
 
 class RecordType(str, Enum):

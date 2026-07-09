@@ -3,8 +3,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from benchmark import generation as bench_gen
 from exec_interface import ExecutionInterface
+from isa import RISCV_RVV, RISCV_RVV_071, RISCVScalar
 
 from .detect import ROOT, DetectedArchitecture, TestContext, run_generic_tests
 
@@ -24,7 +24,7 @@ def detect(threads: int = 1) -> DetectedArchitecture:
     detected = run_generic_tests(ctx, threads=threads)
 
     # Build ISA list with scalar as base
-    isa_list = [bench_gen.RISCVScalar.name]
+    isa_list = [RISCVScalar.name]
 
     # Detect RVV version using RISC-V specific test
     exec_iface = _get_execution_interface()
@@ -33,9 +33,9 @@ def detect(threads: int = 1) -> DetectedArchitecture:
     if rvv_version_probe_path.exists():
         # Try compiling with RVV 1.0 flag first (most common)
         if _can_compile_rvv(exec_iface, rvv_version_probe_path, "RISCV_RVV"):
-            isa_list.append(bench_gen.RISCV_RVV.name)
+            isa_list.append(RISCV_RVV.name)
         elif _can_compile_rvv(exec_iface, rvv_version_probe_path, "RISCV_RVV_0_7_1"):
-            isa_list.append(bench_gen.RISCV_RVV_071.name)
+            isa_list.append(RISCV_RVV_071.name)
 
     detected.isa = isa_list
 

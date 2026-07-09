@@ -4,14 +4,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-import units
-from benchmark.generation.code_gen.operation import ArithmeticOperation
-from units import Bytes, Operations
+from core import ArithmeticOperation, Bytes, Operations
 
 if TYPE_CHECKING:
     from benchmark.benchmarking import LoadStoreRatio
 
-from .code_gen import DataType
+from core import DataType
 
 
 class BenchParamError(Exception):
@@ -52,14 +50,14 @@ class ArithmeticBenchmarkParams(BenchmarkParams):
         params = ArithmeticBenchmarkParams(
             data_type=DataType.f32,
             operation=ArithmeticOperation.fma,
-            num_ops=units.Operations(1000),
+            num_ops=Operations(1000),
             thread_affinity=[0, 1, 2, 3],
         )
         spec = isa.generate_arithmetic(params)
     """
 
     operation: ArithmeticOperation
-    num_ops: units.Operations
+    num_ops: Operations
 
     def __post_init__(self) -> None:
         super().__post_init__()

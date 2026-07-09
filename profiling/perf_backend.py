@@ -10,7 +10,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from error import UserError
+from core import UserError
 from output_utils import debug, detail, error, info, warn
 
 from .backends import ProfilerBackend

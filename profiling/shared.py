@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
-from benchmark.generation import BaseISA, DataType
-from benchmark.generation.code_gen.operation import ArithmeticOperation
+from core import ArithmeticOperation, DataType
+from isa import BaseISA
 from output_utils import debug, detail
 
 

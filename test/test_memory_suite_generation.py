@@ -8,10 +8,10 @@ from types import SimpleNamespace
 from architecture.memory import CacheAwareThreadAffinity, MemoryLevelInfo
 from benchmark.benchmarking import LoadStoreRatio
 from benchmark.generation import MemoryLayoutMode
-from benchmark.generation.code_gen import DataType
+from core import DataType
 from benchmark.suites.memory import MemoryBenchmarkSuite
 from test_bench.builder import MicrobenchmarkFunctionSpec
-from units import Bytes, Frequency
+from core import Bytes, Frequency
 
 
 @dataclass

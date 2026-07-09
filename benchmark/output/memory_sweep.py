@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING, Any
 from rich.table import Table
 
 from benchmark.benchmark import MemoryBenchmarkResult
-from benchmark.generation.isa import BaseISA
 from benchmark.suites import MemorySweepBenchmarkSuite
+from core import Cycles
+from isa import BaseISA
 from output_utils import error, warn
-from units import Cycles
 
 from .base import NON_ROOFLINE_CSV_ERROR_MSG, OutputHandler
 from .common import safe_matplotlib_import, save_or_show_plot

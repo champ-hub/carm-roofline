@@ -23,10 +23,10 @@ from benchmark import (
 )
 from benchmark.benchmarking import LoadStoreRatio
 from benchmark.generation import ArithmeticBenchmarkParams, MemoryBenchmarkParams
-from benchmark.generation.code_gen import DataType
-from benchmark.generation.code_gen.operation import ArithmeticOperation
+from core import DataType
+from core import ArithmeticOperation
 from test_bench.builder import MicrobenchmarkFunctionSpec
-from units import Bytes, Frequency, Operations, Seconds
+from core import Bytes, Frequency, Operations, Seconds
 
 
 def make_spec(

@@ -3,8 +3,8 @@ from __future__ import annotations
 from enum import Enum, auto
 from typing import Union, overload
 
-from .data_type import DataType
-from .operation import ArithmeticOperation, MemoryOperation, Operation
+from core import ArithmeticOperation, DataType, MemoryOperation, Operation
+
 from .register import CyclicRegisterSet
 
 # Type alias for objects that can be converted to string

@@ -16,7 +16,7 @@ import pytest
 from benchmark.benchmarking import LoadStoreRatio, TestType as BenchmarkTestType
 from benchmark.output import OutputKind
 from results_paths import default_results_root
-from units import Frequency, Operations, Performance, Seconds
+from core import Frequency, Operations, Performance, Seconds
 
 
 def make_fake_matplotlib():
@@ -235,7 +235,7 @@ def _make_fake_context(isa_names: list[str], freq_hz: float = 3.0e9, nominal_hz:
 
     class _FakeBenchmarking:
         def __init__(self):
-            from benchmark.generation.code_gen.operation import ArithmeticOperation
+            from core import ArithmeticOperation
 
             self.test = BenchmarkTestType.ARITHMETIC
             self.threads = 1
@@ -403,13 +403,13 @@ def test_plot_output_dispatches_via_registered_strategy_path(monkeypatch, test_t
 def test_arithmetic_cli_prints_gops(capsys):
     """CLI arithmetic output prints GOPS per ISA."""
     from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
-    from benchmark.generation.code_gen import DataType
-    from benchmark.generation.code_gen.operation import ArithmeticOperation
+    from core import DataType
+    from core import ArithmeticOperation
     from benchmark.generation.parameters import ArithmeticBenchmarkParams
     from benchmark.output import TestType, _get_handler_for_test_type
     from benchmark.suites import ArithmeticBenchmarkSuite
     from test_bench.builder import MicrobenchmarkFunctionSpec
-    from units import Bytes
+    from core import Bytes
 
     # Create proper ArithmeticBenchmarkResult objects
     r1 = ArithmeticBenchmarkResult(time_taken=Seconds(100.0), num_repetitions=1000, performance=Performance(5.0))
@@ -469,8 +469,8 @@ def test_arithmetic_cli_prints_gops(capsys):
 def test_arithmetic_plot_saves_file(monkeypatch, tmp_path, capsys):
     """Arithmetic plot saves image file when matplotlib is available."""
     from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkParams, ArithmeticBenchmarkResult
-    from benchmark.generation.code_gen.operation import ArithmeticOperation
-    from units import Operations
+    from core import ArithmeticOperation
+    from core import Operations
 
     # install fake matplotlib into sys.modules
     mpl, _pyplot = make_fake_matplotlib()
@@ -544,12 +544,12 @@ def _make_minimal_roofline_suite(
         MemoryBenchmarkResult,
     )
     from benchmark.benchmarking import LoadStoreRatio
-    from benchmark.generation.code_gen import DataType
-    from benchmark.generation.code_gen.operation import ArithmeticOperation
+    from core import DataType
+    from core import ArithmeticOperation
     from benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
     from benchmark.suites import RooflineBenchmarkSuite
     from test_bench.builder import MicrobenchmarkFunctionSpec
-    from units import Bandwidth, Bytes, Operations, Performance, Seconds
+    from core import Bandwidth, Bytes, Operations, Performance, Seconds
 
     arith_params = ArithmeticBenchmarkParams(
         data_type=DataType.f32,
@@ -642,13 +642,13 @@ def test_roofline_legacy_csv_compatibility(tmp_path):
         MemoryBenchmarkResult,
     )
     from benchmark.benchmarking import LoadStoreRatio, TestType
-    from benchmark.generation.code_gen import DataType
-    from benchmark.generation.code_gen.operation import ArithmeticOperation
+    from core import DataType
+    from core import ArithmeticOperation
     from benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
     from benchmark.output.roofline import _write_csv
     from benchmark.suites import RooflineBenchmarkSuite
     from test_bench.builder import MicrobenchmarkFunctionSpec
-    from units import Bandwidth, Bytes, Performance, Seconds
+    from core import Bandwidth, Bytes, Performance, Seconds
 
     context = _make_fake_context(["isa1"], freq_hz=3.0e9)
     context.benchmarking.test = TestType.ROOFLINE
@@ -779,13 +779,13 @@ def test_roofline_csv_gates_by_format(tmp_path):
         MemoryBenchmarkResult,
     )
     from benchmark.benchmarking import LoadStoreRatio, TestType
-    from benchmark.generation.code_gen import DataType
-    from benchmark.generation.code_gen.operation import ArithmeticOperation
+    from core import DataType
+    from core import ArithmeticOperation
     from benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
     from benchmark.output import output_benchmark_results
     from benchmark.suites import RooflineBenchmarkSuite
     from test_bench.builder import MicrobenchmarkFunctionSpec
-    from units import Bandwidth, Bytes, Performance, Seconds
+    from core import Bandwidth, Bytes, Performance, Seconds
 
     context = _make_fake_context(["isa1"], freq_hz=3.0e9)
     context.benchmarking.test = TestType.ROOFLINE
@@ -854,12 +854,12 @@ def test_roofline_csv_gates_by_format(tmp_path):
 def test_memory_cli_and_plot(monkeypatch, tmp_path, capsys):
     """Memory CLI prints bandwidth and plotting saves image when matplotlib available."""
     from benchmark.benchmark import MemoryBenchmark, MemoryBenchmarkResult
-    from benchmark.generation.code_gen import DataType
+    from core import DataType
     from benchmark.generation.parameters import MemoryBenchmarkParams
     from benchmark.output.memory import MemoryOutputHandler
     from benchmark.suites import MemoryBenchmarkSuite
     from test_bench.builder import MicrobenchmarkFunctionSpec
-    from units import Bandwidth, Bytes
+    from core import Bandwidth, Bytes
 
     # Create proper MemoryBenchmarkResult (12.34 GB/s → Bandwidth(12.34e9) so output shows "GB/s")
     r1 = MemoryBenchmarkResult(
@@ -935,12 +935,12 @@ def test_mixed_combines_handlers(monkeypatch, tmp_path, capsys):
         MemoryBenchmark,
         MemoryBenchmarkResult,
     )
-    from benchmark.generation.code_gen import DataType
-    from benchmark.generation.code_gen.operation import ArithmeticOperation
+    from core import DataType
+    from core import ArithmeticOperation
     from benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
     from benchmark.suites import ArithmeticBenchmarkSuite, MemoryBenchmarkSuite
     from test_bench.builder import MicrobenchmarkFunctionSpec
-    from units import Bandwidth, Bytes, Performance, Seconds
+    from core import Bandwidth, Bytes, Performance, Seconds
 
     context = _make_fake_context(["isaA", "isaB"], freq_hz=3.0e9)
 
@@ -1031,13 +1031,13 @@ class TestJsonlOutput:
             MemoryBenchmarkResult,
         )
         from benchmark.benchmarking import LoadStoreRatio
-        from benchmark.generation.code_gen import DataType
-        from benchmark.generation.code_gen.operation import ArithmeticOperation
+        from core import DataType
+        from core import ArithmeticOperation
         from benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
         from benchmark.output.jsonl import write_jsonl_benchmarks
         from benchmark.suites import ArithmeticBenchmarkSuite, MemoryBenchmarkSuite
         from test_bench.builder import MicrobenchmarkFunctionSpec
-        from units import Bandwidth, Bytes, Operations, Performance, Seconds
+        from core import Bandwidth, Bytes, Operations, Performance, Seconds
 
         context = _make_fake_context(["isa1"], freq_hz=2.0e9)
 
@@ -1099,13 +1099,13 @@ class TestJsonlOutput:
         import json
 
         from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
-        from benchmark.generation.code_gen import DataType
-        from benchmark.generation.code_gen.operation import ArithmeticOperation
+        from core import DataType
+        from core import ArithmeticOperation
         from benchmark.generation.parameters import ArithmeticBenchmarkParams
         from benchmark.output.jsonl import write_jsonl_benchmarks
         from benchmark.suites import ArithmeticBenchmarkSuite
         from test_bench.builder import MicrobenchmarkFunctionSpec
-        from units import Bytes, Operations, Performance, Seconds
+        from core import Bytes, Operations, Performance, Seconds
 
         context = _make_fake_context(["isa1"], freq_hz=2.0e9)
 
@@ -1164,12 +1164,12 @@ class TestJsonlOutput:
 
         from benchmark.benchmark import MemoryBenchmark, MemoryBenchmarkResult
         from benchmark.benchmarking import LoadStoreRatio
-        from benchmark.generation.code_gen import DataType
+        from core import DataType
         from benchmark.generation.parameters import MemoryBenchmarkParams
         from benchmark.output.jsonl import write_jsonl_benchmarks
         from benchmark.suites import MemoryBenchmarkSuite
         from test_bench.builder import MicrobenchmarkFunctionSpec
-        from units import Bandwidth, Bytes, Seconds
+        from core import Bandwidth, Bytes, Seconds
 
         context = _make_fake_context(["isa1"], freq_hz=2.0e9)
 
@@ -1229,13 +1229,13 @@ class TestJsonlOutput:
     def test_jsonl_skips_null_results(self, tmp_path):
         """Benchmarks with null results do not produce JSONL lines."""
         from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
-        from benchmark.generation.code_gen import DataType
-        from benchmark.generation.code_gen.operation import ArithmeticOperation
+        from core import DataType
+        from core import ArithmeticOperation
         from benchmark.generation.parameters import ArithmeticBenchmarkParams
         from benchmark.output.jsonl import write_jsonl_benchmarks
         from benchmark.suites import ArithmeticBenchmarkSuite
         from test_bench.builder import MicrobenchmarkFunctionSpec
-        from units import Bytes, Operations, Performance, Seconds
+        from core import Bytes, Operations, Performance, Seconds
 
         context = _make_fake_context(["isa1"], freq_hz=2.0e9)
 
@@ -1288,13 +1288,13 @@ class TestJsonlOutput:
         import json
 
         from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
-        from benchmark.generation.code_gen import DataType
-        from benchmark.generation.code_gen.operation import ArithmeticOperation
+        from core import DataType
+        from core import ArithmeticOperation
         from benchmark.generation.parameters import ArithmeticBenchmarkParams
         from benchmark.output.jsonl import write_jsonl_benchmarks
         from benchmark.suites import ArithmeticBenchmarkSuite
         from test_bench.builder import MicrobenchmarkFunctionSpec
-        from units import Bytes, Operations, Performance, Seconds
+        from core import Bytes, Operations, Performance, Seconds
 
         context = _make_fake_context(["isa1"], freq_hz=2.0e9)
 

@@ -37,7 +37,7 @@ class ArithmeticBenchmarkSuite(ISABenchmarkSuite):
         Raises:
             ValueError: Unsupported precision or unknown ISA name.
         """
-        from benchmark.generation.isa import BaseISA
+        from isa import BaseISA
 
         benchmark = context.benchmarking
         architecture = context.architecture

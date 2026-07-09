@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from error import UserError
+from core import UserError
 
 from .config import BackendType, ProfileConfig
 from .shared import (

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from output_utils import error, info, warn
 
 if TYPE_CHECKING:
-    from benchmark.generation.code_gen import DataType
+    from core import DataType
 
 
 def format_precision_label(data_type: DataType) -> str:

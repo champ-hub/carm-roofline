@@ -8,16 +8,16 @@ from dataclasses import dataclass
 from itertools import product
 from typing import TYPE_CHECKING
 
+from core import Bytes
 from output_utils import debug, warn
-from units import Bytes
 
 from ..benchmark import MemoryBenchmark
 from ..generation import MemoryBenchmarkParams, MemoryLayoutMode
 from .base import ISABenchmarkSuite
 
 if TYPE_CHECKING:
-    from benchmark.generation.isa import BaseISA
     from context import CARMContext
+    from isa import BaseISA
 
 # Fraction of a cache level's capacity to target, to avoid eviction effects.
 _CACHE_COVERAGE = 0.75

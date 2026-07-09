@@ -13,16 +13,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from core import Cycles
 from output_utils import info, warn
 from roofline_assembly import RecordType
-from units import Cycles
 
 if TYPE_CHECKING:
     from benchmark.benchmark import ArithmeticBenchmark, MemoryBenchmark
-    from benchmark.generation.isa import BaseISA
     from benchmark.suites.base import ISABenchmarkSuite
     from context import CARMContext
-    from units import Frequency
+    from core import Frequency
+    from isa import BaseISA
 
 
 def _serialize_arithmetic(

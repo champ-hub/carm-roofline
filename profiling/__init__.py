@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from error import UserError
+from core import UserError
 from output_utils import detail, info, warn
 from workspace import workspace_context
 

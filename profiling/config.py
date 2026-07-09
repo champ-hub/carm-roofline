@@ -8,7 +8,8 @@ from pathlib import Path
 
 from architecture import MachineSignature, detect_machine_signature, generate_run_name
 from arguments import InsertsArguments, add_verbose_argument, enum_action
-from benchmark.generation import ISA_NAME_TO_CLASS, DataType
+from core import DataType
+from isa import ISA_NAME_TO_CLASS
 from results_paths import default_results_root
 
 
