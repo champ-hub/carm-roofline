@@ -12,8 +12,8 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from core import Bandwidth, Bytes
 from output_utils import debug
-from units import Bandwidth, Bytes
 
 from ..benchmark import MemoryBenchmark
 from ..generation import MemoryBenchmarkParams, MemoryLayoutMode
@@ -53,7 +53,7 @@ class MemorySweepBenchmarkSuite(ISABenchmarkSuite):
             ValueError: If the ISA name is unknown or the topology has fewer than
                 one level.
         """
-        from benchmark.generation.isa import BaseISA
+        from isa import BaseISA
 
         benchmark = context.benchmarking
         architecture = context.architecture

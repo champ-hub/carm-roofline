@@ -10,11 +10,8 @@ from enum import Enum
 from typing import TypeVar
 
 from arguments import InsertsArguments, enum_action, positive_float, positive_int
-from benchmark.generation.code_gen.operation import ArithmeticOperation
+from core import ArithmeticOperation, Bytes, DataType, Operations
 from output_utils import warn
-from units import Bytes, Operations
-
-from .generation import DataType
 
 
 class TestType(Enum):

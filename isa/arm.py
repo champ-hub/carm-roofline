@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from .code_gen import ControlInstructions, DataType, Operation, TypedInstructions, instruction as inst
-from .code_gen.instruction import _Instruction
-from .code_gen.operation import ArithmeticOperation, MemoryOperation
-from .code_gen.register import CyclicRegisterSet, HelperRegisterSet, TypedRegisterSets
-from .isa import BaseISA
+from benchmark.generation.code_gen import ControlInstructions, TypedInstructions, instruction as inst
+from benchmark.generation.code_gen.instruction import _Instruction
+from benchmark.generation.code_gen.register import CyclicRegisterSet, HelperRegisterSet, TypedRegisterSets
+from core import ArithmeticOperation, DataType, MemoryOperation, Operation
+from isa.base import BaseISA
 
 
 class BaseArm(BaseISA):

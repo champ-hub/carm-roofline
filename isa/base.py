@@ -4,13 +4,16 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from benchmark.generation.code_gen import ControlInstructions, TypedInstructions, instruction as inst
+from benchmark.generation.code_gen.register import CyclicRegisterSet, HelperRegisterSet, TypedRegisterSets
+from benchmark.generation.parameters import (
+    ArithmeticBenchmarkParams,
+    BenchParamError,
+    MemoryBenchmarkParams,
+    MemoryLayoutMode,
+)
+from core import ArithmeticOperation, Bytes, DataType, MemoryOperation
 from output_utils import debug
-from units import Bytes
-
-from .code_gen import ControlInstructions, DataType, TypedInstructions, instruction as inst
-from .code_gen.operation import ArithmeticOperation, MemoryOperation
-from .code_gen.register import CyclicRegisterSet, HelperRegisterSet, TypedRegisterSets
-from .parameters import ArithmeticBenchmarkParams, BenchParamError, MemoryBenchmarkParams, MemoryLayoutMode
 
 if TYPE_CHECKING:
     from architecture import Architecture

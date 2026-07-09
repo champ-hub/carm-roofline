@@ -16,7 +16,7 @@ parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
 
 from benchmark.benchmarking import LoadStoreRatio
-from benchmark.generation import (
+from isa import (
     RISCV_RVV,
     RISCV_RVV_071,
     X86AVX,
@@ -26,16 +26,16 @@ from benchmark.generation import (
     ArmNeon,
     ArmScalar,
     ArmSVE,
-    DataType,
-    MemoryLayoutMode,
     RISCVScalar,
     X86Scalar,
 )
-from benchmark.generation.code_gen.operation import ArithmeticOperation, Operation
-from benchmark.generation.isa import BaseISA
+from benchmark.generation import MemoryLayoutMode
+from isa import BaseISA
 from benchmark.generation.parameters import ArithmeticBenchmarkParams, BenchParamError, MemoryBenchmarkParams
 from test_bench.builder import MicrobenchmarkFunctionSpec
-from units import Bytes, Operations
+from core import ArithmeticOperation, Operation
+from core import Bytes, Operations
+from core import DataType
 
 
 class TestISACodegen:

@@ -13,7 +13,7 @@ import shutil
 import subprocess
 from typing import Callable
 
-from benchmark.generation import DataType
+from core import DataType
 from output_utils import detail, warn
 
 from .shared import (

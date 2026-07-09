@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from units import (
+from core import (
     ArithmeticIntensity,
     Bandwidth,
     Bytes,

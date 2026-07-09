@@ -31,7 +31,7 @@ and ignored calibration entirely.  For DRAM benchmarks with 512 MiB+ working set
 
 The new test_bench (v2) uses a **wrapper-based inline measurement approach** to eliminate function pointer indirection while maintaining type safety and code organization:
 
-- **Generator** ([test_bench/builder.py](builder.py)) renders the `microbenchmarks.h` header from function specs produced by [benchmark/generation/isa.py](../benchmark/generation/isa.py). The header contains inline microbenchmark functions (e.g., `x86_fma()`, `arm_neon_add()`) and a `MICROBENCHMARK_LIST` macro.
+- **Generator** ([test_bench/builder.py](builder.py)) renders the `microbenchmarks.h` header from function specs produced by [isa/base.py](../isa/base.py). The header contains inline microbenchmark functions (e.g., `x86_fma()`, `arm_neon_add()`) and a `MICROBENCHMARK_LIST` macro.
 - **Wrapper system** ([test_bench/wrapper.inl](wrapper.inl)) creates `wrapper_<benchmark_name>` functions that contain the full measurement logic (calibration, synchronization, timing) and directly call the inline benchmark.
 - **Main entry point** ([test_bench/test_bench.c](test_bench.c)) orchestrates threading, result aggregation, and CSV output.
 - **Shared definitions** ([test_bench/test_bench.h](test_bench.h)) provides type definitions, global variables, and helper functions visible to both test_bench.c and wrapper.inl.

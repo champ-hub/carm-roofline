@@ -11,8 +11,8 @@ parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
 
 from architecture import SimpleMemoryTopology
-from benchmark.generation import X86AVX, X86SSE, ArmNeon, RISCVScalar
-from units import Bytes, Frequency
+from isa import X86AVX, X86SSE, ArmNeon, RISCVScalar
+from core import Bytes, Frequency
 
 
 @pytest.fixture

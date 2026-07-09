@@ -38,7 +38,7 @@ def __init__(args):
          → Call native_detect(num_threads) to auto-detect
     4. Else:
          → Call detect_for_isa(first_isa, num_threads)
-    5. Import ISA_NAME_TO_CLASS from benchmark.generation
+    5. Import ISA_NAME_TO_CLASS from isa
     6. Call _replace_and_warn() to merge detected + user args
     7. If --isa is explicitly provided, validate compatibility via check_isa_compatibility()
     8. Build ISA class list and ISAFrequencies object
@@ -83,13 +83,13 @@ Detailed topology parsed from Linux sysfs (`/sys/devices/system/cpu`). Includes 
 `__iter__()` exposes cache levels followed by a final `DRAM` level using detected system memory.
 
 **ISAFrequencies:**
-Per-ISA frequency storage with unit-aware Unit objects (units module):
+Per-ISA frequency storage with unit-aware Unit objects (core/units module):
 ```python
 # Construction methods:
 ISAFrequencies({"x86_avx2": 2.4*GHz, "x86_avx512": 2.0*GHz})
 ISAFrequencies.from_base_frequency(2.4*GHz, [X86AVX2, X86AVX512])  # All get same freq
 ```
-- Stores unit-aware Unit objects (units module)
+- Stores unit-aware Unit objects (core/units module)
 - Access via dictionary interface
 - Used for per-ISA frequency variation (x86 AVX-512 downclocking)
 
@@ -109,7 +109,7 @@ Validates power-of-two integers:
 **check_isa_compatibility(isas: list[str]):**
 Validates ISA selection using family-based approach:
 1. Ensures all ISAs from same family (no mixing x86 + ARM)
-2. Checks `benchmark.generation.INCOMPATIBLE_ISAS` for within-family conflicts
+2. Checks `isa.INCOMPATIBLE_ISAS` for within-family conflicts
 3. Raises ValueError with descriptive message on incompatibility
 
 ### Command-Line Arguments
@@ -316,7 +316,7 @@ Returns:
 ```
 
 **ISA List Building:**
-- Imports ISA classes from `benchmark.generation` (ArmScalar, ArmNeon, ArmSVE)
+- Imports ISA classes from `isa` (ArmScalar, ArmNeon, ArmSVE)
 - Always includes `ArmScalar.name` as base
 - Conditionally adds `ArmNeon.name` and `ArmSVE.name` based on detected features
 - Uses class names to ensure consistency with generation system
@@ -534,7 +534,7 @@ The `_replace_and_warn()` method merges user values with detection and warns abo
 
 ### Dependencies
 - Removed: previously used `pint` for unit-aware parsing; no longer a dependency
-- **benchmark.generation** - ISA classes (for name consistency and compatibility checking)
+- **isa** - ISA classes (for name consistency and compatibility checking)
 - **exec_interface** - Cross-compilation/simulation support via ExecutionInterface
 - **output_utils** - Logging (configure_verbosity, detail, debug, warn)
 

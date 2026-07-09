@@ -21,7 +21,6 @@ from typing import Any
 from rich.console import Console
 from rich.theme import Theme
 
-
 # Console instances for stdout and stderr with custom theme
 _theme = Theme(
     {
@@ -34,6 +33,7 @@ _theme = Theme(
 )
 _console_out = Console(theme=_theme, file=sys.stdout, highlight=False, markup=False)
 _console_err = Console(theme=_theme, file=sys.stderr, highlight=False, markup=False)
+
 
 def get_console() -> Console:
     """Get the appropriate console based on current verbosity (errors to stderr, others to stdout)."""
@@ -62,6 +62,7 @@ class Verbosity(IntEnum):
     CONFIG = 3
     DEBUG = 4
 
+
 _verbosity: int = Verbosity.CONFIG.value
 
 
@@ -70,13 +71,13 @@ def set_verbosity(level: int | Verbosity) -> None:
     level_int = int(level)
     if level_int < 0:
         raise ValueError("verbosity must be non-negative")
-    global _verbosity
+    global _verbosity  # noqa: PLW0603
     _verbosity = level_int
 
 
 def reset_verbosity(level: int | Verbosity) -> None:
     """Reset verbosity to a previously saved level."""
-    global _verbosity
+    global _verbosity  # noqa: PLW0603
     _verbosity = int(level)
 
 
@@ -89,6 +90,7 @@ def configure_verbosity(level: int | Verbosity | None) -> None:
 def get_verbosity() -> int:
     """Return the current verbosity as an int."""
     return _verbosity
+
 
 def should_emit(level: int | Verbosity) -> bool:
     """Check whether a message at ``level`` should be printed."""
@@ -182,13 +184,12 @@ __all__ = [
     "configure_verbosity",
     "debug",
     "detail",
-    "eprint",
     "error",
+    "format_if_container",
     "get_verbosity",
+    "info",
     "reset_verbosity",
     "set_verbosity",
     "should_emit",
-    "info",
     "warn",
-    "format_if_container",
 ]

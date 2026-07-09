@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from typing import Union
 
-from .data_type import DataType
+from core import DataType
 
 __all__ = [
     "CyclicRegisterSet",

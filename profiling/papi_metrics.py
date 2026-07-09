@@ -21,7 +21,7 @@ import subprocess
 import xml.etree.ElementTree as ET
 from typing import Callable
 
-from benchmark.generation import DataType
+from core import DataType
 from output_utils import warn
 
 from .shared import (

@@ -5,13 +5,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from arguments import InsertsArguments, positive_int
-from benchmark import generation as bench_gen
-from error import UserError
+from core import Frequency, UserError
+from isa import INCOMPATIBLE_ISAS, ISA_NAME_TO_CLASS
 from output_utils import configure_verbosity, debug, detail, format_if_container, warn
-from units import Frequency
 
 if TYPE_CHECKING:
-    from benchmark.generation import BaseISA
+    from isa import BaseISA
 
 from .config import load_memory_topology_from_toml
 from .detect import DetectedArchitecture, detect_for_isa, native_detect
@@ -32,7 +31,7 @@ def check_isa_compatibility(selected_isas: list[type[BaseISA]]) -> None:
 
     # Check for special incompatibilities within the same family
     isa_set = set(selected_isas)
-    for incompatible_pair in bench_gen.INCOMPATIBLE_ISAS:
+    for incompatible_pair in INCOMPATIBLE_ISAS:
         if incompatible_pair.issubset(isa_set):
             pair_names = ", ".join(isa.name for isa in incompatible_pair)
             raise UserError(f"Incompatible ISAs selected: {pair_names}")
@@ -245,10 +244,8 @@ class Architecture(InsertsArguments):
             detected = native_detect(threads=num_threads)
             isa_strs = detected.isa or []
 
-            self.isa: list[type[BaseISA]] = [bench_gen.ISA_NAME_TO_CLASS[isa_str] for isa_str in isa_strs]
+            self.isa: list[type[BaseISA]] = [ISA_NAME_TO_CLASS[isa_str] for isa_str in isa_strs]
         else:
-            from benchmark.generation import ISA_NAME_TO_CLASS
-
             self.isa = [ISA_NAME_TO_CLASS[isa_name] for isa_name in args.isa]
             # Verify that the selected ISAs are compatible
             check_isa_compatibility(self.isa)
@@ -279,7 +276,7 @@ class Architecture(InsertsArguments):
 
     @staticmethod
     def insert_arguments(parser: argparse.ArgumentParser) -> None:
-        from benchmark.generation import ISA_NAME_TO_CLASS
+        from isa import ISA_NAME_TO_CLASS
 
         parser.add_argument(
             "-i",

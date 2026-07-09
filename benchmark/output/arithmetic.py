@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Any
 
 from rich.table import Table
 
+from core import Cycles
 from output_utils import error, get_console, warn
-from units import Cycles
 
 from .base import NON_ROOFLINE_CSV_ERROR_MSG, OutputHandler
 from .common import (
@@ -47,7 +47,7 @@ def _collect_gops_by_isa(isa_suites: dict[str, ISABenchmarkSuite]) -> dict[str, 
 
 def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) -> None:
     from benchmark.benchmark import ArithmeticBenchmarkResult
-    from benchmark.generation.isa import BaseISA
+    from isa import BaseISA
 
     print_extra = context.run_config.verbose >= 3
 

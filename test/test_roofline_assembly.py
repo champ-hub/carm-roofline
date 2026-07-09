@@ -16,7 +16,7 @@ from roofline_assembly import (
     load_all_benchmarks,
     load_benchmarks,
 )
-from units import ArithmeticIntensity, Bandwidth, Performance
+from core import ArithmeticIntensity, Bandwidth, Performance
 
 pytestmark = pytest.mark.unit
 

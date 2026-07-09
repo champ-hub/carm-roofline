@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from units import ArithmeticIntensity, Bandwidth
+from core import ArithmeticIntensity, Bandwidth
 
 from .arithmetic import ArithmeticBenchmarkSuite
 from .base import ISABenchmarkSuite

@@ -11,7 +11,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from units import Seconds
+from core import Seconds
 
 if TYPE_CHECKING:
     from .benchmark import BaseBenchmark

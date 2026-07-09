@@ -18,8 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
-from error import UserError
-from units import Bytes
+from core import Bytes, UserError
 
 from .memory import SimpleMemoryTopology
 

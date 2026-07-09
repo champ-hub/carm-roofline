@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from benchmark.generation.code_gen import DataType
+from core import DataType
 from benchmark.generation.code_gen.register import (
     CyclicRegisterSet,
     HelperRegisterSet,

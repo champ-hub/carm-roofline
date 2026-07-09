@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from architecture.detect import DetectedArchitecture, TestContext, run_generic_tests
-from benchmark.generation import ArmNeon, ArmScalar, ArmSVE
+from isa import ArmNeon, ArmScalar, ArmSVE
 
 
 def detect(threads: int = 1) -> DetectedArchitecture:

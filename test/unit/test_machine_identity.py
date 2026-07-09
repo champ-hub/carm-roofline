@@ -19,7 +19,7 @@ from architecture.identity import (
     write_machine_json,
 )
 from architecture.memory import MemoryLevelInfo
-from units import Bytes
+from core import Bytes
 
 pytestmark = pytest.mark.unit
 

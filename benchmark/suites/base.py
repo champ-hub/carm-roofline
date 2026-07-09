@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from units import Bandwidth, Performance
+from core import Bandwidth, Performance
 
 if TYPE_CHECKING:
     from context import CARMContext

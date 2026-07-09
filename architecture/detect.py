@@ -15,12 +15,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from error import UserError
+from core import Frequency, UserError
 from output_utils import debug, detail, warn
-from units import Frequency
 
 if TYPE_CHECKING:
-    from benchmark.generation import BaseISA
+    from isa import BaseISA
 
 from .memory import MemoryTopology
 

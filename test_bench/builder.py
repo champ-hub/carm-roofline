@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from units import Bandwidth, Bytes, Frequency, Seconds
+from core import Bandwidth, Bytes, Frequency, Seconds
 
 if TYPE_CHECKING:
     from benchmark import BaseBenchmark

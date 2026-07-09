@@ -5,11 +5,12 @@ from typing import Any
 import pytest
 
 from benchmark.benchmarking import LoadStoreRatio
-from benchmark.generation.code_gen import DataType, instruction as inst
+from core import DataType
+from benchmark.generation.code_gen import instruction as inst
 from benchmark.generation.code_gen.register import RegisterCollection
-from benchmark.generation.isa import BaseISA, InlineASM
+from isa.base import BaseISA, InlineASM
 from benchmark.generation.parameters import BenchParamError, MemoryBenchmarkParams
-from units import Bytes
+from core import Bytes
 
 
 class DummyISA(BaseISA):
