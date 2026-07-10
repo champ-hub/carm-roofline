@@ -254,11 +254,11 @@ def build_roofline_figure(
     # Axis ranges, log10 coordinates (Plotly "log" axis convention).
     if ridge_pairs:
         ridge_ai_list = [ai for ai, _bw in ridge_pairs]
-        x_min_data = min(ridge_ai_list) / 10.0
-        x_max_data = max(ridge_ai_list) * 10.0
-        min_ai = min(ridge_ai_list)
-        leftmost_bw = min(bw for ai, bw in ridge_pairs if ai == min_ai)
-        y_min_gops = leftmost_bw * x_min_data / 1e9
+        x_min_data = min(ridge_ai_list) / 16.0
+        x_max_data = max(ridge_ai_list) * 4.0
+        max_ai = max(ridge_ai_list)
+        rightmost_bw = max(bw for ai, bw in ridge_pairs if ai == max_ai)
+        y_min_gops = rightmost_bw * x_min_data / 1e9
         x_range = [math.log10(x_min_data), math.log10(x_max_data)]
     else:
         x_range = [-2.0, 2.0]
@@ -465,7 +465,7 @@ def build_roofline_figure(
             "gridcolor": "lightgray",
             "range": y_range,
         },
-        margin={"l": 60, "r": 280, "t": 20, "b": 60, "autoexpand": False},
+        uirevision="roofline-plot",
         hovermode="closest",
         dragmode="zoom",
         legend={
