@@ -200,6 +200,14 @@ _BW_LINE_STYLES: dict[str, dict[str, object]] = {
     "DRAM": {"dash": "2px 2px", "width": 1.5},
 }
 
+_BW_FILL_OPACITIES: dict[str, float] = {
+    "L1": 0.30,
+    "L2": 0.20,
+    "L3": 0.10,
+    "DRAM": 0.05,
+}
+
+
 MIN_MARKER_SIZE: float = 50.0
 
 
@@ -366,8 +374,8 @@ def build_roofline_figure(
         peak_perf_raw = max(p.value for p in model.peak_performance_by_op.values()) if has_perf else 0.0
         peak_perf = peak_perf_raw / roof_divisor
 
-        _first = True
-
+        # Pre-compute bandwidth line segments for levels that exist
+        segments: list[tuple[str | None, float, float, float, float, Any, Any]] = []
         for level in ("L1", "L2", "L3", "DRAM"):
             bw = model.bandwidth_by_level.get(level)
             if bw is None:
@@ -382,16 +390,63 @@ def build_roofline_figure(
             else:
                 ai_right = 1e6
                 y_right = bw_norm.value * ai_right / 1e9
-
             style = _BW_LINE_STYLES.get(level, {"dash": "solid", "width": 1})
+            segments.append((level, ai_left, ai_right, y_left, y_right, bw_norm, style))
+        # Append synthetic extension anchor so every real segment has a
+        # "next" to pair with in a single fill loop.
+        segments.append((None, 1e6, 1e6, y_min_gops, y_min_gops, None, None))
+
+        # Shaded fills: each level draws a band toward the next level
+        for i, seg in enumerate(segments):
+            _level, c_al, c_ar, c_yl, c_yr = seg[:5]
+            if _level is None:  # reached the synthetic anchor
+                break
+            level = _level
+            next_seg = segments[i + 1]
+            is_ext = next_seg[0] is None
+
+            if is_ext:
+                # Lowest level: fill from DRAM bandwidth left, along roof to ridge,
+                # then right, down, and back to bandwidth left
+                x_pts = [c_al, c_ar, 1e6, 1e6]
+                y_pts = [c_yl, c_yr, c_yr, c_yl]
+            else:
+                _, n_al, n_ar, n_yl, n_yr = next_seg[:5]
+                x_pts = [c_al, c_ar, n_ar, n_al]
+                y_pts = [c_yl, c_yr, n_yr, n_yl]
+
+            opacity = _BW_FILL_OPACITIES.get(level, 0.1)
+            r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+            fill_color = f"rgba({r},{g},{b},{opacity})"
+
+            fig.add_trace(
+                go.Scatter(
+                    x=x_pts,
+                    y=y_pts,
+                    mode="lines",
+                    fill="toself",
+                    fillcolor=fill_color,
+                    line={"width": 0},
+                    showlegend=False,
+                    hoverinfo="skip",
+                    name="",
+                )
+            )
+
+        _first = True
+        for seg in segments:
+            _level, ai_left, ai_right, y_left, y_right, _bw_norm, line_style = seg
+            if _level is None:  # skip synthetic anchor
+                continue
+            level = _level
             fig.add_trace(
                 go.Scatter(
                     x=[ai_left, ai_right],
                     y=[y_left, y_right],
                     mode="lines",
-                    name=roof.label if _first else f"{roof.label} {level} ({bw_norm!s})",
+                    name=roof.label if _first else f"{roof.label} {level} ({_bw_norm!s})",
                     legendgroup=roof.id,
-                    line={"color": color, **style},
+                    line={"color": color, **line_style},
                     hoverinfo="skip",
                     showlegend=_first,
                 )

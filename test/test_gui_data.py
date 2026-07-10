@@ -269,8 +269,8 @@ def test_build_roofline_figure_dynamic_ranges() -> None:
         load_store_ratio="2:1",
     )
     fig = build_roofline_figure([roof], records)
-    assert list(fig.layout.xaxis.range) == pytest.approx([math.log10(0.03), math.log10(40.0)], rel=1e-6)
-    assert list(fig.layout.yaxis.range) == pytest.approx([math.log10(12.0), math.log10(240.0)], rel=1e-6)
+    assert list(fig.layout.xaxis.range) == pytest.approx([math.log10(0.01875), math.log10(16.0)], rel=1e-6)
+    assert list(fig.layout.yaxis.range) == pytest.approx([math.log10(0.5625), math.log10(240.0)], rel=1e-6)
     assert fig.layout.xaxis.dtick == pytest.approx(math.log10(2))
     assert fig.layout.yaxis.dtick == pytest.approx(math.log10(2))
     assert fig.layout.xaxis.tick0 == 0
