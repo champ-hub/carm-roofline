@@ -112,6 +112,23 @@ def test_build_roofline_figure_renders_application_points() -> None:
     markers = [t for t in fig.data if t.mode == "markers"]
     assert len(markers) == 1
     assert list(markers[0].x) == [0.5, 1.0]
+    # marker sizes are not uniform (different runtimes produce different sizes)
+    assert markers[0].marker.size is not None
+    sizes = list(markers[0].marker.size)
+    assert len(sizes) == 2
+    assert sizes == pytest.approx([50.0, 2550.0])
+    # sizemode is 'area'
+    assert markers[0].marker.sizemode == "area"
+    # marker opacity is 0.6
+    assert markers[0].marker.opacity == 0.6
+    # customdata contains (num_threads, duration_string) pairs
+    assert len(markers[0].customdata) == 2
+    assert markers[0].customdata[0][0] == 1  # num_threads=1
+    assert markers[0].customdata[1][0] == 2  # num_threads=2
+    assert isinstance(markers[0].customdata[0][1], str)
+    assert isinstance(markers[0].customdata[1][1], str)
+    # hovertemplate contains Duration
+    assert "Duration=" in markers[0].hovertemplate
 
 
 def test_build_roofline_figure_normalize_by_threads() -> None:

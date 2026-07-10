@@ -66,6 +66,7 @@ class SettingsPanelID(ID):
     """IDs for the settings panel."""
 
     SWITCH_NORMALIZE = "switch-normalize"
+    SLIDER_MARKER_SIZE = "slider-marker-size"
 
 
 class PlotAreaID(ID):

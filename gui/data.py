@@ -8,6 +8,7 @@ from typing import Any, TypedDict
 
 import plotly.graph_objects as go
 
+from core.units import Seconds
 from output_utils import debug, warn
 from roofline_assembly import (
     ApplicationRecord,
@@ -104,6 +105,7 @@ class RoofStore:
         self.roofs: list[RoofConfig] = [roof_template or RoofConfig()]
         self.active_panel: ActivePanel = ActivePanel.CARM_VIEW
         self.normalize_by_threads: bool = False
+        self.marker_scale_factor: float = 50.0
 
     # Roof CRUD
     def add_roof(self, roof_template: RoofConfig | None = None) -> RoofConfig:
@@ -149,6 +151,7 @@ class RoofStore:
             ],
             "active_panel": self.active_panel,
             "normalize_by_threads": self.normalize_by_threads,
+            "marker_scale_factor": self.marker_scale_factor,
         }
 
     @classmethod
@@ -171,6 +174,7 @@ class RoofStore:
         ]
         store.active_panel = ActivePanel(data.get("active_panel", "carm_view"))
         store.normalize_by_threads = data.get("normalize_by_threads", False)
+        store.marker_scale_factor = data.get("marker_scale_factor", 50.0)
         return store
 
 
@@ -196,12 +200,15 @@ _BW_LINE_STYLES: dict[str, dict[str, object]] = {
     "DRAM": {"dash": "2px 2px", "width": 1.5},
 }
 
+MIN_MARKER_SIZE: float = 50.0
+
 
 def build_roofline_figure(
     roofs: list[RoofConfig],
     records: list[BenchmarkRecord],
     applications_by_id: dict[str, ApplicationRecord] | None = None,
     normalize_by_threads: bool = False,
+    marker_scale_factor: float = 50.0,
 ) -> go.Figure:
     """Build a Plotly roofline figure from real benchmark records.
 
@@ -260,16 +267,44 @@ def build_roofline_figure(
 
     y_range = [math.log10(y_min_gops), math.log10(y_max_gops)] if ridge_pairs else [0.0, 3.5]
 
+    # Compute runtime range for marker-size normalization
+    runtime_min = float("inf")
+    runtime_max = float("-inf")
+    if applications_by_id:
+        for roof in roofs:
+            for app_id in roof.app_ids:
+                rec = applications_by_id.get(app_id)
+                if rec and rec.points:
+                    for p in rec.points:
+                        if p.runtime_s < runtime_min:
+                            runtime_min = p.runtime_s
+                        if p.runtime_s > runtime_max:
+                            runtime_max = p.runtime_s
+    if runtime_min == float("inf"):
+        runtime_min = runtime_max = 0.0
+    runtime_range = runtime_max - runtime_min
+
     for idx, (roof, model) in enumerate(zip(roofs, models)):
         color = _COLORS[idx % len(_COLORS)]
         roof_divisor = roof.threads if (normalize_by_threads and roof.threads and roof.threads > 0) else 1
 
-        # ── Application points (drawn even when no ceiling data) ─────────
+        # Application points (drawn even when no ceiling data)
         if applications_by_id:
             for app_id in roof.app_ids:
                 rec = applications_by_id.get(app_id)
                 if rec is None or not rec.points:
                     continue
+                marker_sizes = [
+                    max(
+                        MIN_MARKER_SIZE,
+                        MIN_MARKER_SIZE
+                        + ((p.runtime_s - runtime_min) / runtime_range) * MIN_MARKER_SIZE * marker_scale_factor,
+                    )
+                    if runtime_range > 0
+                    else MIN_MARKER_SIZE
+                    for p in rec.points
+                ]
+                duration_strings = [str(Seconds(p.runtime_s)) for p in rec.points]
                 fig.add_trace(
                     go.Scatter(
                         x=[p.arithmetic_intensity for p in rec.points],
@@ -283,14 +318,26 @@ def build_roofline_figure(
                         name=rec.label,
                         legendgroup=roof.id,
                         showlegend=True,
-                        marker={"color": color, "symbol": "circle", "size": 7},
+                        marker={
+                            "color": color,
+                            "symbol": "circle",
+                            "size": marker_sizes,
+                            "sizemode": "area",
+                            "opacity": 0.6,
+                        },
                         text=[p.label for p in rec.points],
-                        customdata=[[p.num_threads] for p in rec.points],
+                        customdata=list(
+                            zip(
+                                [p.num_threads for p in rec.points],
+                                duration_strings,
+                            )
+                        ),
                         hovertemplate=(
                             f"{rec.label}<br>%{{text}}<br>"
                             f"AI=%{{x:.3f}} OPS/Byte<br>"
                             f"Perf=%{{y:.1f}} GOPS/s<br>"
-                            f"Threads=%{{customdata[0]}}"
+                            f"Threads=%{{customdata[0]}}<br>"
+                            f"Duration=%{{customdata[1]}}"
                             "<extra></extra>"
                         ),
                     )
@@ -351,7 +398,7 @@ def build_roofline_figure(
             )
             _first = False
 
-        # ── Compute-performance ceilings (single segment: left-most ridge → right edge) ──
+        # Compute-performance ceilings (single segment: left-most ridge → right edge)
         for op_name, perf in model.peak_performance_by_op.items():
             perf_norm = perf / roof_divisor
             gops = perf_norm.value / 1e9
@@ -376,7 +423,7 @@ def build_roofline_figure(
             )
             _first = False
 
-        # ── Invisible ridge-point hover markers (one per op x cache level) ──
+        # Invisible ridge-point hover markers (one per op x cache level)
         if model.bandwidth_by_level and model.peak_performance_by_op:
             for op_name, perf in model.peak_performance_by_op.items():
                 gops = (perf / roof_divisor).value / 1e9
