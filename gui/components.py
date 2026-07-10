@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import dash_bootstrap_components as dbc
-from dash import html
+from dash import dcc, html
 
 from gui.data import (
     COMPUTE_INST_OPTIONS,
@@ -297,6 +297,21 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
                     ),
                 ],
             ),
+            html.Div(
+                className="settings-slider-row",
+                children=[
+                    html.Span("Point size multiplier", className="settings-toggle-label"),
+                    dcc.Slider(
+                        id=SettingsPanelID.SLIDER_MARKER_SIZE,
+                        min=0,
+                        max=200,
+                        step=1,
+                        value=store.marker_scale_factor,
+                        marks={0: "0", 50: "50", 100: "100", 150: "150", 200: "200"},
+                        tooltip={"placement": "bottom", "always_visible": True},
+                    ),
+                ],
+            ),
         ],
     )
 
@@ -321,8 +336,6 @@ def build_layout(
     store: RoofStore, roof_options: FilterOptions | None = None, app_options: list[DropdownOption] | None = None
 ) -> html.Div:
     """Top-level application layout."""
-
-    from dash import dcc
 
     return html.Div(
         className="app-container",
@@ -349,7 +362,6 @@ def build_layout(
 
 def dcc_dropdown(id_: Any, options: list[str], value: str | None, placeholder: str | None = None) -> html.Div:
     """A searchable single-select dcc.Dropdown."""
-    from dash import dcc
 
     return html.Div(
         dcc.Dropdown(
@@ -371,7 +383,6 @@ def _multi_dropdown(
     placeholder: str | None = None,
 ) -> html.Div:
     """A searchable multi-select dcc.Dropdown with label-value options."""
-    from dash import dcc
 
     return html.Div(
         dcc.Dropdown(
@@ -395,7 +406,6 @@ def dcc_input(
     step_val: int | float | None = None,
 ) -> html.Div:
     """A dcc.Input wrapped in a div."""
-    from dash import dcc
 
     kwargs: dict[str, Any] = {
         "id": id_,
@@ -414,7 +424,6 @@ def dcc_input(
 
 def dcc_graph(id_: str, figure: Any, config: Any = None) -> html.Div:
     """A dcc.Graph wrapped in a div."""
-    from dash import dcc
 
     return html.Div(
         dcc.Graph(id=id_, figure=figure, style={"height": "100%"}, config=config),

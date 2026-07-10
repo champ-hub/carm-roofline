@@ -32,7 +32,7 @@ from roofline_assembly import (
     load_all_benchmarks,
 )
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# Helpers
 
 
 def _parse_trigger_id() -> dict[str, Any]:
@@ -67,7 +67,7 @@ def _first_int_or_none(vals: list[int]) -> int | None:
     return vals[0] if vals else None
 
 
-# ── App factory ────────────────────────────────────────────────────────────────
+# App factory
 
 
 def create_app(config: GUIConfig) -> dash.Dash:
@@ -132,7 +132,7 @@ def _register_callbacks(
         if config.gui_debug:
             debug(f"[CB#{_cb_seq}] {msg}")
 
-    # ── 1. Toggle active panel ─────────────────────────────────────────────────
+    # 1. Toggle active panel
     @app.callback(
         Output(StoreID.ACTIVE_PANEL, "data"),
         Input(NavbarID.BTN_CARM_VIEW, "n_clicks"),
@@ -147,7 +147,7 @@ def _register_callbacks(
             return ActivePanel.SETTINGS
         return ActivePanel.CARM_VIEW
 
-    # ── 2. Add roof ────────────────────────────────────────────────────────────
+    # 2. Add roof
     @app.callback(
         Output(StoreID.ROOF_STORE, "data"),
         Input(CarmViewPanelID.BTN_ADD_ROOF, "n_clicks"),
@@ -165,7 +165,7 @@ def _register_callbacks(
         _tr(f"_add_roof exit  roofs={len(store.roofs)}")
         return store.to_dict()
 
-    # ── 3. Remove roof ─────────────────────────────────────────────────────────
+    # 3. Remove roof
     @app.callback(
         Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
         Input({"type": RoofCardID.BTN_REMOVE_ROOF, "index": ALL}, "n_clicks"),
@@ -190,7 +190,7 @@ def _register_callbacks(
         _tr(f"_remove_roof exit  roofs={len(store.roofs)}")
         return store.to_dict()
 
-    # ── 8. Regenerate plot + sidebar on store, panel, or UI change ────────
+    # 8. Regenerate plot + sidebar on store, panel, or UI change
     @app.callback(
         Output(PlotAreaID.ROOFLINE_PLOT, "figure"),
         Output(SidebarID.SIDEBAR_CONTENT, "children"),
@@ -307,14 +307,20 @@ def _register_callbacks(
                 )
             )
 
-        figure = build_roofline_figure(resolved_roofs, recs, app_by_id, normalize_by_threads=store.normalize_by_threads)
+        figure = build_roofline_figure(
+            resolved_roofs,
+            recs,
+            app_by_id,
+            normalize_by_threads=store.normalize_by_threads,
+            marker_scale_factor=store.marker_scale_factor,
+        )
         figure_dict = cast("dict[str, Any]", figure.to_dict())
         carm_view_panel = build_carm_view_panel(store, per_roof_opts, resolved_roofs, app_dropdown_options)
         settings_panel = build_settings_panel(store, None)
         _tr(f"_update_plot_and_sidebar exit traces={len(figure_dict.get('data', []))}")
         return figure_dict, [carm_view_panel, settings_panel]
 
-    # ── 9. Normalize by threads toggle ─────────────────────────────────────────
+    # 9. Normalize by threads toggle
     @app.callback(
         Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
         Input(SettingsPanelID.SWITCH_NORMALIZE, "value"),
@@ -329,7 +335,22 @@ def _register_callbacks(
         store.normalize_by_threads = bool(normalize)
         return store.to_dict()
 
-    # ── 12. Sync button styles with active panel ──────────────────────────────
+    # 10. Marker scale slider
+    @app.callback(
+        Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
+        Input(SettingsPanelID.SLIDER_MARKER_SIZE, "value"),
+        State(StoreID.ROOF_STORE, "data"),
+        prevent_initial_call=True,
+    )
+    def _update_marker_scale(
+        scale: float | None,
+        store_data: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        store = RoofStore.from_dict(store_data or {})
+        store.marker_scale_factor = float(scale if scale is not None else 50.0)
+        return store.to_dict()
+
+    # 12. Sync button styles with active panel
     @app.callback(
         Output(NavbarID.BTN_CARM_VIEW, "className"),
         Output(NavbarID.BTN_SETTINGS, "className"),
@@ -341,7 +362,7 @@ def _register_callbacks(
         settings_cls = f"navbar-btn{' navbar-btn--active' if not is_carm_view else ''}"
         return carm_view_cls, settings_cls
 
-    # ── 14. Toggle roof card collapse ──────────────────────────────────────────
+    # 14. Toggle roof card collapse
     @app.callback(
         Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
         Input({"type": RoofCardID.BTN_COLLAPSE_ROOF, "index": ALL}, "n_clicks"),

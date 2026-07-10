@@ -278,3 +278,10 @@
 .legend-label {
     font-size: 11px;
 }
+
+.settings-slider-row {
+    padding: 8px 16px;
+}
+.settings-slider-row .dcc-slider {
+    margin-top: 8px;
+}
