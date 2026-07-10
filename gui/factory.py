@@ -190,23 +190,9 @@ def _register_callbacks(
         _tr(f"_remove_roof exit  roofs={len(store.roofs)}")
         return store.to_dict()
 
-    # 8. Regenerate plot + sidebar on store, panel, or UI change
-    @app.callback(
-        Output(PlotAreaID.ROOFLINE_PLOT, "figure"),
-        Output(SidebarID.SIDEBAR_CONTENT, "children"),
-        Input(StoreID.ROOF_STORE, "data"),
-        Input(StoreID.ACTIVE_PANEL, "data"),
-        Input({"type": RoofCardID.DROPDOWN_MACHINE, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_ISA, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_THREADS, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_COMPUTE, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_DATA_TYPE, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_LS_RATIO, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_APPS, "index": ALL}, "value"),
-    )
-    def _update_plot_and_sidebar(
+    # 8a. Shared: merge dropdown values into store and resolve roofs
+    def _resolve_roof_data(
         store_data: dict[str, Any] | None,
-        active_panel: str | None,
         machine_vals: list[str | None],
         isa_vals: list[str | None],
         threads_vals: list[str | None],
@@ -214,19 +200,11 @@ def _register_callbacks(
         data_type_vals: list[str | None],
         ls_ratio_vals: list[str | None],
         app_ids_vals: list[list[str] | None],
-    ) -> tuple[dict[str, Any], list[html.Div]]:
+        active_panel: str | None = None,
+    ) -> tuple[RoofStore, list[RoofConfig], list[FilterOptions | None]]:
         store = RoofStore.from_dict(store_data or {})
-        store.active_panel = ActivePanel(active_panel) if active_panel else ActivePanel.CARM_VIEW
-        _tr(
-            f"_update_plot_and_sidebar enter "
-            f"roofs={len(store.roofs)} "
-            f"mach={len(machine_vals)} isa={len(isa_vals)} "
-            f"thr={len(threads_vals)} comp={len(compute_vals)} "
-            f"dt={len(data_type_vals)} ls={len(ls_ratio_vals)} "
-            f"panel={store.active_panel}"
-        )
-        # Merge live UI values into the store model so the figure and sidebar reflect the latest user choices regardless
-        # of which Input triggered.
+        if active_panel is not None:
+            store.active_panel = ActivePanel(active_panel) if active_panel else ActivePanel.CARM_VIEW
         for i, roof in enumerate(store.roofs):
             if i < len(machine_vals):
                 roof.machine = machine_vals[i]
@@ -248,7 +226,7 @@ def _register_callbacks(
                 roof.load_store_ratio = ls_ratio_vals[i]
             if i < len(app_ids_vals):
                 roof.app_ids = list(app_ids_vals[i] or [])
-        debug(f"_update_plot_and_sidebar: {len(store.roofs)} roof(s), panel={store.active_panel}")
+        debug(f"_resolve_roof_data: {len(store.roofs)} roof(s), panel={store.active_panel}")
         recs = records or []
         per_roof_opts: list[FilterOptions | None] = []
         resolved_roofs: list[RoofConfig] = []
@@ -306,19 +284,92 @@ def _register_callbacks(
                     app_ids=roof.app_ids,
                 )
             )
+        return store, resolved_roofs, per_roof_opts
 
+    # 8b. Update plot (no ACTIVE_PANEL, panel switches shouldn't rebuild the figure)
+    @app.callback(
+        Output(PlotAreaID.ROOFLINE_PLOT, "figure"),
+        Input(StoreID.ROOF_STORE, "data"),
+        Input({"type": RoofCardID.DROPDOWN_MACHINE, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_ISA, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_THREADS, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_COMPUTE, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_DATA_TYPE, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_LS_RATIO, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_APPS, "index": ALL}, "value"),
+    )
+    def _update_plot(
+        store_data: dict[str, Any] | None,
+        machine_vals: list[str | None],
+        isa_vals: list[str | None],
+        threads_vals: list[str | None],
+        compute_vals: list[list[str] | None],
+        data_type_vals: list[str | None],
+        ls_ratio_vals: list[str | None],
+        app_ids_vals: list[list[str] | None],
+    ) -> dict[str, Any]:
+        _tr("_update_plot enter")
+        store, resolved_roofs, _per_roof_opts = _resolve_roof_data(
+            store_data,
+            machine_vals,
+            isa_vals,
+            threads_vals,
+            compute_vals,
+            data_type_vals,
+            ls_ratio_vals,
+            app_ids_vals,
+        )
         figure = build_roofline_figure(
             resolved_roofs,
-            recs,
+            records or [],
             app_by_id,
             normalize_by_threads=store.normalize_by_threads,
             marker_scale_factor=store.marker_scale_factor,
         )
         figure_dict = cast("dict[str, Any]", figure.to_dict())
+        _tr(f"_update_plot exit traces={len(figure_dict.get('data', []))}")
+        return figure_dict
+
+    # 8c. Update sidebar (includes ACTIVE_PANEL, needs to toggle panel visibility)
+    @app.callback(
+        Output(SidebarID.SIDEBAR_CONTENT, "children"),
+        Input(StoreID.ROOF_STORE, "data"),
+        Input(StoreID.ACTIVE_PANEL, "data"),
+        Input({"type": RoofCardID.DROPDOWN_MACHINE, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_ISA, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_THREADS, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_COMPUTE, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_DATA_TYPE, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_LS_RATIO, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_APPS, "index": ALL}, "value"),
+    )
+    def _update_sidebar(
+        store_data: dict[str, Any] | None,
+        active_panel: str | None,
+        machine_vals: list[str | None],
+        isa_vals: list[str | None],
+        threads_vals: list[str | None],
+        compute_vals: list[list[str] | None],
+        data_type_vals: list[str | None],
+        ls_ratio_vals: list[str | None],
+        app_ids_vals: list[list[str] | None],
+    ) -> list[html.Div]:
+        _tr("_update_sidebar enter")
+        store, resolved_roofs, per_roof_opts = _resolve_roof_data(
+            store_data,
+            machine_vals,
+            isa_vals,
+            threads_vals,
+            compute_vals,
+            data_type_vals,
+            ls_ratio_vals,
+            app_ids_vals,
+            active_panel=active_panel,
+        )
         carm_view_panel = build_carm_view_panel(store, per_roof_opts, resolved_roofs, app_dropdown_options)
         settings_panel = build_settings_panel(store, None)
-        _tr(f"_update_plot_and_sidebar exit traces={len(figure_dict.get('data', []))}")
-        return figure_dict, [carm_view_panel, settings_panel]
+        _tr(f"_update_sidebar exit panel={store.active_panel}")
+        return [carm_view_panel, settings_panel]
 
     # 9. Normalize by threads toggle
     @app.callback(
