@@ -268,22 +268,44 @@ def _register_callbacks(
             # Final filtered options for display (after stabilization)
             per_roof_opts.append(fo)
 
-            # Resolve None -> first available value for the plot
+            # Resolve None -> first available value for the plot. Iterate: each resolved value narrows the options for
+            # the next field so the auto-resolution always picks a compatible combination.
+            cur_machine = roof.machine if roof.machine is not None else _first_or_none(fo["machine"])
+            fo2 = discover_filter_options_for_selection(recs, machine=cur_machine)
+            cur_isa = roof.isa if roof.isa is not None else _first_or_none(fo2["isa"])
+            fo2 = discover_filter_options_for_selection(recs, machine=cur_machine, isa=cur_isa)
+            cur_threads = roof.threads if roof.threads is not None else _first_int_or_none(fo2["threads"])
+            fo2 = discover_filter_options_for_selection(
+                recs,
+                machine=cur_machine,
+                isa=cur_isa,
+                num_threads=cur_threads,
+            )
+            cur_data_type = roof.data_type if roof.data_type is not None else _first_or_none(fo2["data_type"])
+            fo2 = discover_filter_options_for_selection(
+                recs,
+                machine=cur_machine,
+                isa=cur_isa,
+                num_threads=cur_threads,
+                data_type=cur_data_type,
+            )
+            cur_ls_ratio = (
+                roof.load_store_ratio if roof.load_store_ratio is not None else _first_or_none(fo2["load_store_ratio"])
+            )
             resolved_roofs.append(
                 RoofConfig(
                     roof_id=roof.id,
                     label=roof.label,
-                    machine=roof.machine if roof.machine is not None else _first_or_none(fo["machine"]),
-                    isa=roof.isa if roof.isa is not None else _first_or_none(fo["isa"]),
-                    threads=roof.threads if roof.threads is not None else _first_int_or_none(fo["threads"]),
-                    data_type=roof.data_type if roof.data_type is not None else _first_or_none(fo["data_type"]),
+                    machine=cur_machine,
+                    isa=cur_isa,
+                    threads=cur_threads,
+                    data_type=cur_data_type,
                     compute_insts=roof.compute_insts,
-                    load_store_ratio=roof.load_store_ratio
-                    if roof.load_store_ratio is not None
-                    else _first_or_none(fo["load_store_ratio"]),
+                    load_store_ratio=cur_ls_ratio,
                     app_ids=roof.app_ids,
                 )
             )
+
         return store, resolved_roofs, per_roof_opts
 
     # 8b. Update plot (no ACTIVE_PANEL, panel switches shouldn't rebuild the figure)

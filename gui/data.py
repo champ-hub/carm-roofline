@@ -46,11 +46,11 @@ class RoofConfig:
     id: str = ""
     label: str = ""
     machine: str | None = "Machine A"
-    isa: str | None = "x86_avx2"
-    threads: int | None = 1
-    data_type: str | None = "f32"
+    isa: str | None = None
+    threads: int | None = None
+    data_type: str | None = None
     compute_insts: list[str] = field(default_factory=lambda: ["fma", "add"])
-    load_store_ratio: str | None = "2:1"
+    load_store_ratio: str | None = None
     collapsed: bool = False
     app_ids: list[str] = field(default_factory=list)
 
@@ -59,11 +59,11 @@ class RoofConfig:
         roof_id: str = "",
         label: str = "",
         machine: str | None = "Machine A",
-        isa: str | None = "x86_avx2",
-        threads: int | None = 1,
-        data_type: str | None = "f32",
+        isa: str | None = None,
+        threads: int | None = None,
+        data_type: str | None = None,
         compute_insts: list[str] | None = None,
-        load_store_ratio: str | None = "2:1",
+        load_store_ratio: str | None = None,
         app_ids: list[str] | None = None,
         collapsed: bool = False,
     ) -> None:
@@ -82,19 +82,18 @@ class RoofConfig:
 def make_default_roof(opts: FilterOptions | None = None) -> RoofConfig:
     """Create a RoofConfig with defaults derived from available data options.
 
-    Falls back to static defaults when no data-derived options are available.
+    Only *machine* is pinned to the first available option (or a fallback);
+    all other user-facing filter fields start as ``None`` so the auto-resolution
+    in ``_resolve_roof_data`` picks the broadest viable value from the data.
     """
     machine = opts["machine"][0] if opts and opts["machine"] else "Machine A"
-    isa = opts["isa"][0] if opts and opts["isa"] else "x86_avx2"
-    threads = opts["threads"][0] if opts and opts["threads"] else 1
-    ratio = opts["load_store_ratio"][0] if opts and opts["load_store_ratio"] else "2:1"
     return RoofConfig(
         machine=machine,
-        isa=isa,
-        threads=threads,
-        data_type="f32",
+        isa=None,
+        threads=None,
+        data_type=None,
         compute_insts=["fma", "add"],
-        load_store_ratio=ratio,
+        load_store_ratio=None,
     )
 
 
@@ -270,6 +269,7 @@ def build_roofline_figure(
         x_range = [math.log10(x_min_data), math.log10(x_max_data)]
     else:
         x_range = [-2.0, 2.0]
+        y_min_gops = 1e-3
 
     y_max_gops = max(peak_perf_values) / 1000000000.0 * 2.0 if peak_perf_values else 1000.0
 
