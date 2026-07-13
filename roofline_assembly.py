@@ -49,6 +49,7 @@ class BenchmarkRecord(TypedDict, total=False):
     # Memory-specific
     load_store_ratio: str
     cache_level: str
+    memory_level_name: str
     bandwidth_gbps: float
 
 
@@ -308,6 +309,16 @@ def load_all_applications(results_root: Path) -> list[ApplicationRecord]:
 # ── Filtering ─────────────────────────────────────────────────────────────────
 
 
+def _is_sweep_record(record: BenchmarkRecord) -> bool:
+    """Return True if this is a memory-sweep record, not a standard cache-level benchmark.
+
+    Sweep benchmarks use ``memory_level_name = "sweepNN"`` and are not
+    suitable for roofline ceiling construction even though they carry
+    a ``cache_level`` like ``"L1"``.
+    """
+    return bool(record.get("memory_level_name", "").startswith("sweep"))
+
+
 def _matches_filter(record: BenchmarkRecord, flt: RooflineFilter) -> bool:
     """Return True when *record* matches all non-None fields of *flt*."""
     if flt.machine is not None and record.get("machine") != flt.machine:
@@ -365,6 +376,8 @@ def assemble_roofline(
     mem_by_level: dict[str, BenchmarkRecord] = {}
     for rec in matched:
         if rec.get("type") != RecordType.MEMORY:
+            continue
+        if _is_sweep_record(rec):
             continue
         level = rec.get("cache_level")
         if not level:
@@ -439,7 +452,11 @@ def discover_filter_options(
     isas = sorted({r["isa"] for r in records if "isa" in r})
     threads = sorted({r["num_threads"] for r in records if "num_threads" in r})
     load_store_ratios = sorted(
-        {r["load_store_ratio"] for r in records if r.get("type") == RecordType.MEMORY and "load_store_ratio" in r}
+        {
+            r["load_store_ratio"]
+            for r in records
+            if r.get("type") == RecordType.MEMORY and "load_store_ratio" in r and not _is_sweep_record(r)
+        }
     )
     data_types = sorted({r["data_type"] for r in records if "data_type" in r})
     result: FilterOptions = {
@@ -501,7 +518,10 @@ def discover_filter_options_for_selection(
         {
             r["load_store_ratio"]
             for r in records
-            if r.get("type") == RecordType.MEMORY and "load_store_ratio" in r and _matches_filter(r, flt)
+            if r.get("type") == RecordType.MEMORY
+            and "load_store_ratio" in r
+            and _matches_filter(r, flt)
+            and not _is_sweep_record(r)
         }
     )
 
