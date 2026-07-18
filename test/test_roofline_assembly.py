@@ -191,7 +191,7 @@ def test_discover_filter_options(jsonl_fixture: Path) -> None:
     assert "f32" in result["data_type"]
     assert "machine" in result
     assert "isa" in result
-    assert "threads" in result
+    assert "num_threads" in result
     assert "load_store_ratio" in result
 
 
@@ -200,7 +200,7 @@ def test_discover_filter_options_cross_field(jsonl_fixture: Path) -> None:
     records = load_benchmarks(jsonl_fixture)
     # Filter by test_isa -> only threads=1 records match
     result = discover_filter_options(records, RooflineFilter(isa="test_isa"))
-    assert result["threads"] == [1]
+    assert result["num_threads"] == [1]
     # ISA options are unconstrained (isa filter not applied to isa field itself)
     assert "test_isa" in result["isa"]
     # other_isa has arithmetic but no matching memory -> should NOT appear in options.

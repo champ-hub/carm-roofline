@@ -18,7 +18,7 @@ def test_roofstore_round_trip_preserves_all_fields() -> None:
         label="Test Roof",
         machine="Machine X",
         isa="arm_neon",
-        threads=4,
+        num_threads=4,
         data_type="f64",
         compute_insts=["mul", "div"],
         load_store_ratio="1:1",
@@ -32,7 +32,7 @@ def test_roofstore_round_trip_preserves_all_fields() -> None:
     assert r.label == "Test Roof"
     assert r.machine == "Machine X"
     assert r.isa == "arm_neon"
-    assert r.threads == 4
+    assert r.num_threads == 4
     assert r.data_type == "f64"
     assert r.compute_insts == ["mul", "div"]  # the field that was silently lost
     assert r.load_store_ratio == "1:1"
@@ -46,7 +46,7 @@ def test_roofstore_round_trip_with_none_fields() -> None:
         label="Cleared Roof",
         machine=None,
         isa=None,
-        threads=None,
+        num_threads=None,
         data_type=None,
         load_store_ratio=None,
     )
@@ -55,7 +55,7 @@ def test_roofstore_round_trip_with_none_fields() -> None:
     r = restored.roofs[0]
     assert r.machine is None
     assert r.isa is None
-    assert r.threads is None
+    assert r.num_threads is None
     assert r.data_type is None
     assert r.load_store_ratio is None
 
@@ -163,7 +163,7 @@ def test_build_roofline_figure_normalize_by_threads() -> None:
         label="Test Roof",
         isa="test_isa",
         machine="test_machine",
-        threads=2,
+        num_threads=2,
         data_type="f32",
         compute_insts=["fma"],
         load_store_ratio="2:1",
@@ -263,7 +263,7 @@ def test_build_roofline_figure_dynamic_ranges() -> None:
     roof = RoofConfig(
         isa="test_isa",
         machine="test_machine",
-        threads=1,
+        num_threads=1,
         data_type="f32",
         compute_insts=["fma"],
         load_store_ratio="2:1",
