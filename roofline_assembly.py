@@ -58,7 +58,7 @@ class FilterOptions(TypedDict):
 
     machine: list[str]
     isa: list[str]
-    threads: list[int]
+    num_threads: list[int]
     load_store_ratio: list[str]
     data_type: list[str]
 
@@ -500,7 +500,7 @@ def discover_filter_options(
     return FilterOptions(
         machine=result["machine"],
         isa=result["isa"],
-        threads=result["num_threads"],
+        num_threads=result["num_threads"],
         data_type=result["data_type"],
         load_store_ratio=result["load_store_ratio"],
     )

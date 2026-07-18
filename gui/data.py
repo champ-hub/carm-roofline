@@ -47,7 +47,7 @@ class RoofConfig:
     label: str = ""
     machine: str | None = "Machine A"
     isa: str | None = None
-    threads: int | None = None
+    num_threads: int | None = None
     data_type: str | None = None
     compute_insts: list[str] = field(default_factory=lambda: ["fma", "add"])
     load_store_ratio: str | None = None
@@ -60,7 +60,7 @@ class RoofConfig:
         label: str = "",
         machine: str | None = "Machine A",
         isa: str | None = None,
-        threads: int | None = None,
+        num_threads: int | None = None,
         data_type: str | None = None,
         compute_insts: list[str] | None = None,
         load_store_ratio: str | None = None,
@@ -72,7 +72,7 @@ class RoofConfig:
         self.collapsed = collapsed
         self.machine = machine
         self.isa = isa
-        self.threads = threads
+        self.num_threads = num_threads
         self.data_type = data_type
         self.compute_insts = compute_insts or ["fma", "add"]
         self.load_store_ratio = load_store_ratio
@@ -90,7 +90,7 @@ def make_default_roof(opts: FilterOptions | None = None) -> RoofConfig:
     return RoofConfig(
         machine=machine,
         isa=None,
-        threads=None,
+        num_threads=None,
         data_type=None,
         compute_insts=["fma", "add"],
         load_store_ratio=None,
@@ -139,7 +139,7 @@ class RoofStore:
                     "label": r.label,
                     "machine": r.machine,
                     "isa": r.isa,
-                    "threads": r.threads,
+                    "num_threads": r.num_threads,
                     "data_type": r.data_type,
                     "compute_insts": r.compute_insts,
                     "load_store_ratio": r.load_store_ratio,
@@ -162,7 +162,7 @@ class RoofStore:
                 label=r["label"],
                 machine=r["machine"],
                 isa=r["isa"],
-                threads=r["threads"],
+                num_threads=r.get("num_threads", r.get("threads")),
                 data_type=r.get("data_type", "f32"),
                 compute_insts=r.get("compute_insts", ["fma", "add"]),
                 load_store_ratio=r.get("load_store_ratio", "2:1"),
@@ -234,11 +234,11 @@ def build_roofline_figure(
     peak_perf_values: list[float] = []
 
     for roof in roofs:
-        roof_divisor = roof.threads if (normalize_by_threads and roof.threads and roof.threads > 0) else 1
+        roof_divisor = roof.num_threads if (normalize_by_threads and roof.num_threads and roof.num_threads > 0) else 1
         flt = RooflineFilter(
             machine=roof.machine if roof.machine else None,
             isa=roof.isa if roof.isa else None,
-            num_threads=roof.threads,
+            num_threads=roof.num_threads,
             data_type=roof.data_type if roof.data_type else None,
             operations=frozenset(roof.compute_insts) if roof.compute_insts else None,
             load_store_ratio=roof.load_store_ratio if roof.load_store_ratio else None,
@@ -294,7 +294,7 @@ def build_roofline_figure(
 
     for idx, (roof, model) in enumerate(zip(roofs, models)):
         color = _COLORS[idx % len(_COLORS)]
-        roof_divisor = roof.threads if (normalize_by_threads and roof.threads and roof.threads > 0) else 1
+        roof_divisor = roof.num_threads if (normalize_by_threads and roof.num_threads and roof.num_threads > 0) else 1
 
         # Application points (drawn even when no ceiling data)
         if applications_by_id:
@@ -357,7 +357,7 @@ def build_roofline_figure(
         if not has_bw and not has_perf:
             warn(
                 f"No matching data for roof '{roof.label}' "
-                f"(machine={roof.machine}, isa={roof.isa}, threads={roof.threads}, "
+                f"(machine={roof.machine}, isa={roof.isa}, num_threads={roof.num_threads}, "
                 f"data_type={roof.data_type}, ratio={roof.load_store_ratio})"
             )
             fig.add_annotation(
@@ -374,7 +374,7 @@ def build_roofline_figure(
             warn(
                 f"Incomplete roofline for '{roof.label}': memory data found but no matching "
                 f"arithmetic benchmarks (machine={roof.machine}, isa={roof.isa}, "
-                f"threads={roof.threads}, data_type={roof.data_type}, ratio={roof.load_store_ratio})"
+                f"num_threads={roof.num_threads}, data_type={roof.data_type}, ratio={roof.load_store_ratio})"
             )
             fig.add_annotation(
                 text=f"{roof.label}: no compute-performance data for these filters",

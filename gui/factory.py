@@ -102,7 +102,7 @@ def create_app(config: GUIConfig) -> dash.Dash:
         opts = discover_filter_options(records)
         debug(f"Available machines: {opts['machine']}")
         debug(f"Available ISAs: {opts['isa']}")
-        debug(f"Available threads: {opts['threads']}")
+        debug(f"Available threads: {opts['num_threads']}")
         debug(f"Available load-store ratios: {opts['load_store_ratio']}")
 
     # Build a sensible default roof config from the first available options
@@ -214,9 +214,9 @@ def _register_callbacks(
             if i < len(threads_vals):
                 thr = threads_vals[i]
                 if thr is not None:
-                    roof.threads = int(thr)
+                    roof.num_threads = int(thr)
                 else:
-                    roof.threads = None
+                    roof.num_threads = None
             if i < len(compute_vals):
                 cv = compute_vals[i]
                 if cv is not None:
@@ -242,7 +242,7 @@ def _register_callbacks(
             base = RooflineFilter(
                 machine=roof.machine,
                 isa=roof.isa,
-                num_threads=roof.threads,
+                num_threads=roof.num_threads,
                 data_type=roof.data_type,
                 load_store_ratio=roof.load_store_ratio,
             )
@@ -253,9 +253,9 @@ def _register_callbacks(
             if roof.isa is not None and roof.isa not in fo["isa"]:
                 debug(f"_resolve_roof_data[{roof.id}]: isa '{roof.isa}' not in options -> None")
                 roof.isa = None
-            if roof.threads is not None and roof.threads not in fo["threads"]:
-                debug(f"_resolve_roof_data[{roof.id}]: threads {roof.threads} not in options -> None")
-                roof.threads = None
+            if roof.num_threads is not None and roof.num_threads not in fo["num_threads"]:
+                debug(f"_resolve_roof_data[{roof.id}]: threads {roof.num_threads} not in options -> None")
+                roof.num_threads = None
             if roof.data_type is not None and roof.data_type not in fo["data_type"]:
                 debug(f"_resolve_roof_data[{roof.id}]: data_type '{roof.data_type}' not in options -> None")
                 roof.data_type = None
@@ -268,7 +268,7 @@ def _register_callbacks(
             user_locks = RooflineFilter(
                 machine=roof.machine,
                 isa=roof.isa,
-                num_threads=roof.threads,
+                num_threads=roof.num_threads,
                 data_type=roof.data_type,
                 load_store_ratio=roof.load_store_ratio,
             )
@@ -276,11 +276,10 @@ def _register_callbacks(
             # Auto-resolution: pick first valid for any field the user did not set.
             # `acc` is seeded with ALL user locks so every discover_filter_options call
             # respects every user constraint. Uses "modify filter, call again" pattern.
-            # Note field-name split: roof.threads (GUI) ↔ flt.num_threads (RooflineFilter).
             acc = RooflineFilter(
                 machine=roof.machine,
                 isa=roof.isa,
-                num_threads=roof.threads,
+                num_threads=roof.num_threads,
                 data_type=roof.data_type,
                 load_store_ratio=roof.load_store_ratio,
             )
@@ -293,9 +292,9 @@ def _register_callbacks(
             cur_isa = roof.isa if roof.isa is not None else _first_or_none(discover_filter_options(recs, acc)["isa"])
             acc = replace(acc, isa=cur_isa)
             cur_threads = (
-                roof.threads
-                if roof.threads is not None
-                else _first_int_or_none(discover_filter_options(recs, acc)["threads"])
+                roof.num_threads
+                if roof.num_threads is not None
+                else _first_int_or_none(discover_filter_options(recs, acc)["num_threads"])
             )
             acc = replace(acc, num_threads=cur_threads)
             cur_data_type = (
@@ -317,7 +316,7 @@ def _register_callbacks(
                     label=roof.label,
                     machine=cur_machine,
                     isa=cur_isa,
-                    threads=cur_threads,
+                    num_threads=cur_threads,
                     data_type=cur_data_type,
                     compute_insts=roof.compute_insts,
                     load_store_ratio=cur_ls_ratio,

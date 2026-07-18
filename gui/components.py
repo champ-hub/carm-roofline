@@ -152,8 +152,8 @@ def build_roof_card(
         else None
     )
     ph_threads = (
-        f"{resolved_roof.threads} (auto)"
-        if roof.threads is None and resolved_roof is not None and resolved_roof.threads is not None
+        f"{resolved_roof.num_threads} (auto)"
+        if roof.num_threads is None and resolved_roof is not None and resolved_roof.num_threads is not None
         else None
     )
     ph_data_type = (
@@ -217,8 +217,8 @@ def build_roof_card(
                                 "Threads",
                                 dcc_dropdown(
                                     _make_id(RoofCardID.DROPDOWN_THREADS, index=index),
-                                    [str(t) for t in options["threads"]] if options else THREADS_OPTIONS,
-                                    str(roof.threads) if roof.threads is not None else None,
+                                    [str(t) for t in options["num_threads"]] if options else THREADS_OPTIONS,
+                                    str(roof.num_threads) if roof.num_threads is not None else None,
                                     placeholder=ph_threads,
                                 ),
                             ),
