@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from typing import Any, cast
 
 import dash
@@ -26,8 +27,8 @@ from roofline_assembly import (
     ApplicationRecord,
     BenchmarkRecord,
     FilterOptions,
+    RooflineFilter,
     discover_filter_options,
-    discover_filter_options_for_selection,
     load_all_applications,
     load_all_benchmarks,
 )
@@ -237,61 +238,65 @@ def _register_callbacks(
                 resolved_roofs.append(roof)
                 continue
 
-            # Stabilize: clear fields whose value isn't in the cross-filtered options.
-            changed = True
-            while changed:
-                changed = False
-                fo = discover_filter_options_for_selection(
-                    recs,
-                    machine=roof.machine,
-                    isa=roof.isa,
-                    num_threads=roof.threads,
-                    data_type=roof.data_type,
-                    load_store_ratio=roof.load_store_ratio,
-                )
-                if roof.machine is not None and roof.machine not in fo["machine"]:
-                    roof.machine = None
-                    changed = True
-                if roof.isa is not None and roof.isa not in fo["isa"]:
-                    roof.isa = None
-                    changed = True
-                if roof.threads is not None and roof.threads not in fo["threads"]:
-                    roof.threads = None
-                    changed = True
-                if roof.data_type is not None and roof.data_type not in fo["data_type"]:
-                    roof.data_type = None
-                    changed = True
-                if roof.load_store_ratio is not None and roof.load_store_ratio not in fo["load_store_ratio"]:
-                    roof.load_store_ratio = None
-                    changed = True
-
-            # Final filtered options for display (after stabilization)
-            per_roof_opts.append(fo)
-
-            # Resolve None -> first available value for the plot. Iterate: each resolved value narrows the options for
-            # the next field so the auto-resolution always picks a compatible combination.
-            cur_machine = roof.machine if roof.machine is not None else _first_or_none(fo["machine"])
-            fo2 = discover_filter_options_for_selection(recs, machine=cur_machine)
-            cur_isa = roof.isa if roof.isa is not None else _first_or_none(fo2["isa"])
-            fo2 = discover_filter_options_for_selection(recs, machine=cur_machine, isa=cur_isa)
-            cur_threads = roof.threads if roof.threads is not None else _first_int_or_none(fo2["threads"])
-            fo2 = discover_filter_options_for_selection(
-                recs,
-                machine=cur_machine,
-                isa=cur_isa,
-                num_threads=cur_threads,
+            # Stabilization: single pass — clears stale values incompatible with current locks
+            base = RooflineFilter(
+                machine=roof.machine,
+                isa=roof.isa,
+                num_threads=roof.threads,
+                data_type=roof.data_type,
+                load_store_ratio=roof.load_store_ratio,
             )
-            cur_data_type = roof.data_type if roof.data_type is not None else _first_or_none(fo2["data_type"])
-            fo2 = discover_filter_options_for_selection(
-                recs,
-                machine=cur_machine,
-                isa=cur_isa,
-                num_threads=cur_threads,
-                data_type=cur_data_type,
+            fo = discover_filter_options(recs, base)
+            if roof.machine is not None and roof.machine not in fo["machine"]:
+                debug(f"_resolve_roof_data[{roof.id}]: machine '{roof.machine}' not in options -> None")
+                roof.machine = None
+            if roof.isa is not None and roof.isa not in fo["isa"]:
+                debug(f"_resolve_roof_data[{roof.id}]: isa '{roof.isa}' not in options -> None")
+                roof.isa = None
+            if roof.threads is not None and roof.threads not in fo["threads"]:
+                debug(f"_resolve_roof_data[{roof.id}]: threads {roof.threads} not in options -> None")
+                roof.threads = None
+            if roof.data_type is not None and roof.data_type not in fo["data_type"]:
+                debug(f"_resolve_roof_data[{roof.id}]: data_type '{roof.data_type}' not in options -> None")
+                roof.data_type = None
+            if roof.load_store_ratio is not None and roof.load_store_ratio not in fo["load_store_ratio"]:
+                debug(f"_resolve_roof_data[{roof.id}]: ratio '{roof.load_store_ratio}' not in options -> None")
+                roof.load_store_ratio = None
+
+            # Sequential auto-resolution: pick first valid for unset fields.
+            # `acc` accumulates pinned values; each discover call ignores the field
+            # being resolved (its own lock never constrains its own options, by
+            # design of discover_filter_options). This is the "modify filter, call
+            # again" pattern: rebuild acc one field at a time via replace().
+            # Note field-name split: roof.threads (GUI) ↔ flt.num_threads (RooflineFilter).
+            acc = RooflineFilter()
+            cur_machine = (
+                roof.machine
+                if roof.machine is not None
+                else _first_or_none(discover_filter_options(recs, acc)["machine"])
             )
+            acc = replace(acc, machine=cur_machine)
+            cur_isa = roof.isa if roof.isa is not None else _first_or_none(discover_filter_options(recs, acc)["isa"])
+            acc = replace(acc, isa=cur_isa)
+            cur_threads = (
+                roof.threads
+                if roof.threads is not None
+                else _first_int_or_none(discover_filter_options(recs, acc)["threads"])
+            )
+            acc = replace(acc, num_threads=cur_threads)
+            cur_data_type = (
+                roof.data_type
+                if roof.data_type is not None
+                else _first_or_none(discover_filter_options(recs, acc)["data_type"])
+            )
+            acc = replace(acc, data_type=cur_data_type)
             cur_ls_ratio = (
-                roof.load_store_ratio if roof.load_store_ratio is not None else _first_or_none(fo2["load_store_ratio"])
+                roof.load_store_ratio
+                if roof.load_store_ratio is not None
+                else _first_or_none(discover_filter_options(recs, acc)["load_store_ratio"])
             )
+            acc = replace(acc, load_store_ratio=cur_ls_ratio)
+
             resolved_roofs.append(
                 RoofConfig(
                     roof_id=roof.id,
@@ -305,6 +310,7 @@ def _register_callbacks(
                     app_ids=roof.app_ids,
                 )
             )
+            per_roof_opts.append(discover_filter_options(recs, acc))
 
         return store, resolved_roofs, per_roof_opts
 
