@@ -370,6 +370,21 @@ def build_roofline_figure(
                 font={"color": color, "size": 12},
             )
             continue
+        if has_bw and not has_perf:
+            warn(
+                f"Incomplete roofline for '{roof.label}': memory data found but no matching "
+                f"arithmetic benchmarks (machine={roof.machine}, isa={roof.isa}, "
+                f"threads={roof.threads}, data_type={roof.data_type}, ratio={roof.load_store_ratio})"
+            )
+            fig.add_annotation(
+                text=f"{roof.label}: no compute-performance data for these filters",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.35,
+                showarrow=False,
+                font={"color": color, "size": 12, "style": "italic"},
+            )
 
         peak_perf_raw = max(p.value for p in model.peak_performance_by_op.values()) if has_perf else 0.0
         peak_perf = peak_perf_raw / roof_divisor

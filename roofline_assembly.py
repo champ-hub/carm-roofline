@@ -63,6 +63,10 @@ class FilterOptions(TypedDict):
     data_type: list[str]
 
 
+RooflineTuple = tuple[str, str, int, str, str]
+ALL_TUPLE_FIELDS = ("machine", "isa", "num_threads", "data_type", "load_store_ratio")
+
+
 # ── Filter & model data structures ────────────────────────────────────────────
 
 
@@ -309,14 +313,20 @@ def load_all_applications(results_root: Path) -> list[ApplicationRecord]:
 # ── Filtering ─────────────────────────────────────────────────────────────────
 
 
-def _is_sweep_record(record: BenchmarkRecord) -> bool:
-    """Return True if this is a memory-sweep record, not a standard cache-level benchmark.
+def _is_roofline_memory_record(record: BenchmarkRecord) -> bool:
+    """Return True if this memory record is a standard cache-level benchmark suitable for roofline ceiling construction.
 
-    Sweep benchmarks use ``memory_level_name = "sweepNN"`` and are not
-    suitable for roofline ceiling construction even though they carry
-    a ``cache_level`` like ``"L1"``.
+    A memory record is roofline-eligible iff its ``memory_level_name`` agrees with its ``cache_level`` — both name the
+    same target cache level. Sweep benchmarks deliberately differ (sweep index vs classified level) and are excluded.
     """
-    return bool(record.get("memory_level_name", "").startswith("sweep"))
+    if record.get("type") != RecordType.MEMORY:
+        return False
+    mem_level = record.get("memory_level_name")
+    cache_lvl = record.get("cache_level")
+    # Legacy records without memory_level_name are not sweeps.
+    if mem_level is None:
+        return cache_lvl is not None
+    return mem_level == cache_lvl
 
 
 def _matches_filter(record: BenchmarkRecord, flt: RooflineFilter) -> bool:
@@ -372,12 +382,9 @@ def assemble_roofline(
     peak_performance_by_op: dict[str, Performance] = {}
     timestamps: set[str] = set()
 
-    # Memory: group by cache_level → latest timestamp
     mem_by_level: dict[str, BenchmarkRecord] = {}
     for rec in matched:
-        if rec.get("type") != RecordType.MEMORY:
-            continue
-        if _is_sweep_record(rec):
+        if not _is_roofline_memory_record(rec):
             continue
         level = rec.get("cache_level")
         if not level:
@@ -438,100 +445,65 @@ def assemble_roofline_from_file(
 # ── Discovery helpers ─────────────────────────────────────────────────────────
 
 
+def _compute_valid_tuples(records: list[BenchmarkRecord]) -> frozenset[RooflineTuple]:
+    """Return frozenset of (machine, isa, num_threads, data_type, load_store_ratio) tuples where both arithmetic and
+    roofline-eligible memory records exist for the same (machine, isa, num_threads, data_type) 4-tuple key — the
+    precondition for assembling a complete roofline.
+    """
+    arith_4tuples = {
+        (r["machine"], r["isa"], r["num_threads"], r["data_type"])
+        for r in records
+        if r.get("type") == RecordType.ARITHMETIC
+        and r.get("machine")
+        and r.get("isa")
+        and r.get("num_threads")
+        and r.get("data_type")
+    }
+    return frozenset(
+        (r["machine"], r["isa"], r["num_threads"], r["data_type"], str(r["load_store_ratio"]))
+        for r in records
+        if _is_roofline_memory_record(r)
+        and "load_store_ratio" in r
+        and (r.get("machine"), r.get("isa"), r.get("num_threads"), r.get("data_type")) in arith_4tuples
+    )
+
+
 def discover_filter_options(
     records: list[BenchmarkRecord],
+    flt: RooflineFilter | None = None,
 ) -> FilterOptions:
-    """Extract sorted unique filter dimensions from benchmark records.
+    """Extract sorted unique filter dimension values from benchmark records.
 
-    Returns a ``FilterOptions`` dict with keys ``machine``, ``isa``,
-    ``threads``, ``load_store_ratio``, and ``data_type`` — each a sorted list
-    suitable for populating UI dropdowns.  ``threads`` values are sorted
-    numerically.
+    When *flt* is provided, each field's returned values are constrained to those appearing in valid roofline tuples
+    that match ALL OTHER (non-None) fields of the filter. A field's own lock never constrains its own options — this
+    lets every dropdown always show the full set of viable alternatives given the other selections.
+
+    Every returned value comes from a tuple that has both arithmetic and memory records, so every option can form a
+    complete roofline.
     """
-    machines = sorted({r["machine"] for r in records if "machine" in r})
-    isas = sorted({r["isa"] for r in records if "isa" in r})
-    threads = sorted({r["num_threads"] for r in records if "num_threads" in r})
-    load_store_ratios = sorted(
-        {
-            r["load_store_ratio"]
-            for r in records
-            if r.get("type") == RecordType.MEMORY and "load_store_ratio" in r and not _is_sweep_record(r)
-        }
+    valid = _compute_valid_tuples(records)
+    if flt is None:
+        flt = RooflineFilter()
+    sel = (flt.machine, flt.isa, flt.num_threads, flt.data_type, flt.load_store_ratio)
+    result: dict[str, list[Any]] = {}
+    for i, f in enumerate(ALL_TUPLE_FIELDS):
+        filtered = valid
+        for j, _ in enumerate(ALL_TUPLE_FIELDS):
+            if j != i and sel[j] is not None:
+                filtered = frozenset(t for t in filtered if t[j] == sel[j])
+        result[f] = sorted({t[i] for t in filtered})
+    debug(
+        f"Available options: {len(result['machine'])} machine(s), {len(result['isa'])} ISA(s), "
+        f"{len(result['num_threads'])} thread count(s), {len(result['load_store_ratio'])} ratio(s), "
+        f"{len(result['data_type'])} data type(s)"
     )
-    data_types = sorted({r["data_type"] for r in records if "data_type" in r})
-    result: FilterOptions = {
-        "machine": machines,
-        "isa": isas,
-        "threads": threads,
-        "load_store_ratio": load_store_ratios,
-        "data_type": data_types,
-    }
-    detail(
-        f"Available options: {len(machines)} machine(s), {len(isas)} ISA(s), "
-        f"{len(threads)} thread count(s), {len(load_store_ratios)} ratio(s), "
-        f"{len(data_types)} data type(s)"
+    return FilterOptions(
+        machine=result["machine"],
+        isa=result["isa"],
+        threads=result["num_threads"],
+        data_type=result["data_type"],
+        load_store_ratio=result["load_store_ratio"],
     )
-    return result
-
-
-def discover_filter_options_for_selection(
-    records: list[BenchmarkRecord],
-    *,
-    machine: str | None = None,
-    isa: str | None = None,
-    num_threads: int | None = None,
-    data_type: str | None = None,
-    load_store_ratio: str | None = None,
-) -> FilterOptions:
-    """For each filter field, return values present in records matching
-    the current selections in ALL OTHER (non-None) fields.
-
-    A None field means "don't filter on this field" — it widens the
-    matching record set.  For each field X, records are filtered by every
-    OTHER non-None field via ``_matches_filter``, then unique values of X
-    are extracted from the matching subset.  ``threads`` values are sorted
-    numerically; ``load_store_ratio`` values are extracted from memory
-    records only (arithmetic records lack this field).
-    Returns a ``FilterOptions`` dict.
-    """
-    # Machines: filter by isa, threads, data_type, load_store_ratio
-    flt = RooflineFilter(isa=isa, num_threads=num_threads, data_type=data_type, load_store_ratio=load_store_ratio)
-    machines = sorted({r["machine"] for r in records if "machine" in r and _matches_filter(r, flt)})
-
-    # ISAs: filter by machine, threads, data_type, load_store_ratio
-    flt = RooflineFilter(
-        machine=machine, num_threads=num_threads, data_type=data_type, load_store_ratio=load_store_ratio
-    )
-    isas = sorted({r["isa"] for r in records if "isa" in r and _matches_filter(r, flt)})
-
-    # Threads: filter by machine, isa, data_type, load_store_ratio
-    flt = RooflineFilter(machine=machine, isa=isa, data_type=data_type, load_store_ratio=load_store_ratio)
-    threads = sorted({r["num_threads"] for r in records if "num_threads" in r and _matches_filter(r, flt)})
-
-    # Data types: filter by machine, isa, threads, load_store_ratio
-    flt = RooflineFilter(machine=machine, isa=isa, num_threads=num_threads, load_store_ratio=load_store_ratio)
-    data_types = sorted({r["data_type"] for r in records if "data_type" in r and _matches_filter(r, flt)})
-
-    # Load-store ratios: filter by machine, isa, threads, data_type; only from memory records
-    flt = RooflineFilter(machine=machine, isa=isa, num_threads=num_threads, data_type=data_type)
-    ls_ratios = sorted(
-        {
-            r["load_store_ratio"]
-            for r in records
-            if r.get("type") == RecordType.MEMORY
-            and "load_store_ratio" in r
-            and _matches_filter(r, flt)
-            and not _is_sweep_record(r)
-        }
-    )
-
-    return {
-        "machine": machines,
-        "isa": isas,
-        "threads": threads,
-        "load_store_ratio": ls_ratios,
-        "data_type": data_types,
-    }
 
 
 __all__ = [
@@ -545,7 +517,6 @@ __all__ = [
     "assemble_roofline",
     "assemble_roofline_from_file",
     "discover_filter_options",
-    "discover_filter_options_for_selection",
     "load_all_applications",
     "load_all_benchmarks",
     "load_applications",
