@@ -263,13 +263,27 @@ def _register_callbacks(
                 debug(f"_resolve_roof_data[{roof.id}]: ratio '{roof.load_store_ratio}' not in options -> None")
                 roof.load_store_ratio = None
 
-            # Sequential auto-resolution: pick first valid for unset fields.
-            # `acc` accumulates pinned values; each discover call ignores the field
-            # being resolved (its own lock never constrains its own options, by
-            # design of discover_filter_options). This is the "modify filter, call
-            # again" pattern: rebuild acc one field at a time via replace().
+            # Build user-locks filter from stabilized (user-set) values only.
+            # Used for per-roof dropdown options so auto-resolved values dont't constrain dropdown menus.
+            user_locks = RooflineFilter(
+                machine=roof.machine,
+                isa=roof.isa,
+                num_threads=roof.threads,
+                data_type=roof.data_type,
+                load_store_ratio=roof.load_store_ratio,
+            )
+
+            # Auto-resolution: pick first valid for any field the user did not set.
+            # `acc` is seeded with ALL user locks so every discover_filter_options call
+            # respects every user constraint. Uses "modify filter, call again" pattern.
             # Note field-name split: roof.threads (GUI) ↔ flt.num_threads (RooflineFilter).
-            acc = RooflineFilter()
+            acc = RooflineFilter(
+                machine=roof.machine,
+                isa=roof.isa,
+                num_threads=roof.threads,
+                data_type=roof.data_type,
+                load_store_ratio=roof.load_store_ratio,
+            )
             cur_machine = (
                 roof.machine
                 if roof.machine is not None
@@ -310,7 +324,7 @@ def _register_callbacks(
                     app_ids=roof.app_ids,
                 )
             )
-            per_roof_opts.append(discover_filter_options(recs, acc))
+            per_roof_opts.append(discover_filter_options(recs, user_locks))
 
         return store, resolved_roofs, per_roof_opts
 
