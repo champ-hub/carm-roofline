@@ -225,7 +225,6 @@ def parse_available_events() -> frozenset[str]:
             [papi_xml],
             capture_output=True,
             text=True,
-            timeout=10,
             check=False,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
