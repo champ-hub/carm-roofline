@@ -104,7 +104,7 @@ def make_intel_byte_metric_defs(
         compute=compute_fn,
         priority=priority,
         priority_modifier=prio_mod,
-        description="DP bytes from FP_ARITH vector-width counters (assumes arithmetic/store width match)",
+        description="Bytes from FP_ARITH vector-width counters (assumes arithmetic/store width match)",
     )
 
 
@@ -261,9 +261,8 @@ def _make_fp_arith_flops_metric(
         compute=compute_fn,
         priority=200,
         description=(
-            f"Tailored FLOPS from FP_ARITH counters for "
+            f"Flops from FP_ARITH vector-width counters for "
             f"{', '.join(isa.__name__ for isa in isas)} ({data_type.name})"
-            f" -- no PAPI_DP_OPS"
         ),
     )
 
@@ -308,9 +307,9 @@ def _make_fp_arith_bytes_metric(
         compute=_fp_arith_byte_compute(weight_map),
         priority=200,
         description=(
-            f"Tailored BYTES from FP_ARITH counters for "
+            f"Bytes from FP_ARITH vector-width counters for "
             f"{', '.join(isa.__name__ for isa in isas)} ({data_type.name})"
-            f" -- needs PAPI_LST_INS"
+            f" (assumes arithmetic/store width match)"
         ),
     )
 

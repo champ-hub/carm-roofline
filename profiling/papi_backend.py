@@ -165,13 +165,6 @@ class PAPIHLBackend(ProfilerBackend):
             if impl.warning is not None:
                 detail(f"    Note: {impl.warning}")
 
-        # Log ISA-tailored resolution if active
-        if self._resolution_config.isas:
-            for mtype in (MetricType.FLOPS, MetricType.BYTES):
-                if mtype in self._resolved_metrics:
-                    impl = self._resolved_metrics[mtype]
-                    detail(f"  {mtype.name} -> priority {impl.priority}")
-
         # Pre-flight: validate the resolved event set will fit
         if self._resolved_metrics:
             all_events: set[str] = set()
