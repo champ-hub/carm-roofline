@@ -84,7 +84,7 @@ def profile_main(config: ProfileConfig) -> int:
         raise UserError("No command specified for profiling. Use 'carm profile -- <command>'.")
 
     # Build user-preference config for metric resolution
-    resolution_cfg = MetricResolutionConfig(data_type=config.data_type, isa=config.isa)
+    resolution_cfg = MetricResolutionConfig(data_type=config.data_type, isas=config.isas)
 
     with workspace_context(keep=config.keep_artifacts, prefix="carm-profile-") as workspace_dir:
         workspace = Path(workspace_dir)
@@ -96,7 +96,7 @@ def profile_main(config: ProfileConfig) -> int:
         backend = create_backend(config, workspace, resolution_cfg)
 
         any_non_ideal = backend.check_prerequisites()
-        if any_non_ideal and (config.isa is None or config.data_type is None):
+        if any_non_ideal and (not config.isas or config.data_type is None):
             warn(
                 "Some of the available metrics don't provide ops/bytes directly. To improve the accuracy of derived "
                 "metrics, specify the dominant ISA and data type of your application using --isa and --data-type."

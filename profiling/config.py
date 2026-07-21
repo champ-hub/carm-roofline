@@ -9,7 +9,7 @@ from pathlib import Path
 from architecture import MachineSignature, detect_machine_signature, generate_run_name
 from arguments import InsertsArguments, add_verbose_argument, enum_action
 from core import DataType
-from isa import ISA_NAME_TO_CLASS
+from isa import ISA_NAME_TO_CLASS, BaseISA
 from results_paths import default_results_root
 
 
@@ -60,7 +60,7 @@ class ProfileConfig(InsertsArguments):
         papi_events: Optional comma-separated PAPI event override.
         perf_events: Optional comma-separated perf event override.
         perf_interval: Sampling interval in ms for perf interval mode (None = full-run).
-        isa: Dominant ISA for metric calculation.
+        isas: ISA(s) the application exercises, as a tuple of BaseISA classes (empty when unspecified).
         data_type: Dominant data type for metric calculation.
     """
 
@@ -80,7 +80,11 @@ class ProfileConfig(InsertsArguments):
         self.papi_events: str | None = args.papi_events
         self.perf_events: str | None = args.perf_events
         self.perf_interval: int | None = args.perf_interval
-        self.isa = ISA_NAME_TO_CLASS.get(args.isa)
+        self.isas: tuple[type[BaseISA], ...]
+        if args.isa is not None:
+            self.isas = tuple(ISA_NAME_TO_CLASS[name] for name in args.isa if name in ISA_NAME_TO_CLASS)
+        else:
+            self.isas = ()
         self.data_type: DataType = args.data_type
 
     @staticmethod
@@ -147,9 +151,13 @@ class ProfileConfig(InsertsArguments):
         parser.add_argument(
             "--isa",
             default=None,
+            nargs="+",
             choices=list(ISA_NAME_TO_CLASS.keys()),
-            help="Dominant ISA to assume for metric calculation. If ideal counters are not present, this will be used "
-            "to estimate the number of ops/bytes per instruction.",
+            metavar="ISA",
+            help="ISA(s) the application exercises (e.g., x86_avx2 x86_sse x86_scalar). "
+            "Only the FP_ARITH counters matching these widths will be requested, "
+            "leaving counter budget for PAPI_LST_INS. "
+            "If ideal counters are not present, fall back to estimates.",
         )
         parser.add_argument(
             "--data-type",
