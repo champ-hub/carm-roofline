@@ -29,8 +29,11 @@ carm profile --backend perf -- mpirun -np 4 ./my_mpi_app
 # Custom PAPI events with cross-thread region-based aggregation
 carm profile --backend papi --aggregation region_merged -- ./my_app
 
-# Specify dominant ISA and data type for better metric estimation
+# Specify one or more ISA vector widths for custom PAPI FLOPS/BYTES metrics
 carm profile --isa x86_avx2 --data-type f64 -- ./my_app
+
+# Multiple ISAs — union of their FP_ARITH counters avoids counter budget overflow
+carm profile --isa x86_avx2 x86_sse x86_scalar --data-type f64 -- ./my_app
 ```
 
 ## Arguments by Category
@@ -62,6 +65,8 @@ Controls how multi-rank (MPI) or multi-thread results are combined:
 ### Hardware assumptions (`--isa`, `--data-type`)
 
 When hardware counters can't directly count FLOPs (e.g. on older Intel or AMD CPUs), the tool estimates operations from instruction counts. `--isa` and `--data-type` tell it how many FLOPs each instruction retired, so the estimate is more accurate for your code's actual vector ISA and precision.
+
+In Intel processors, specifying different `--isa` values (e.g. `--isa x86_avx2 x86_scalar`) allows the CARM Tool to use a minimal set of FP_ARITH counters, targeting only those ISAs. This help avoid exceeding the hardware counter budget, which leads to incorrect results. If you get a warning about the resolved events not fitting the available hardware counters, try specifying fewer ISAs, omitting those your application doesn't use.
 
 ### Output and naming (`--verbose`, `--machine-name`, `--app-name`, `--output-dir`, `--keep-artifacts`)
 
