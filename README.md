@@ -9,9 +9,6 @@ The package provides:
 - arithmetic, memory, and roofline benchmark modes
 - optional web GUI for interactive result visualization
 
-> [!WARNING]
-> The development branch and associated python package are still experimental, and do not include all features yet. For a stable release, please refer to the main branch.
-
 ## Documentation
 
 You can find the full documentation at [https://champ-hub.github.io/carm-roofline](https://champ-hub.github.io/carm-roofline/).
