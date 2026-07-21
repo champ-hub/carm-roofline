@@ -1,14 +1,30 @@
 __pycache__/
+.mypy_cache/
 .vscode/
-.clang-format
 *.pyc
 *.pyo
+dist/
+build/
 bin/test
 carm_results
+*.csv
+bin/
+Results
 cache
+legacy_bench_gen/bench_*
+GPU/Bench/Bench
 Bench/Bench
-config/auto_config/config.txt
-carm_dbi_build
-carm_dbi_output.txt
-carm_pmu_output
-Test/test_params.h
+venv/
+*.egg-info/
+
+# Generated code
+test_bench/microbenchmarks.h
+test_bench/test_bench.s
+
+# Binaries
+architecture/tests/**/*
+!architecture/tests/**/*.c
+!architecture/tests/**/*.h
+!architecture/tests/**/
+test_bench/benchmark
+demo/gemm_demos
