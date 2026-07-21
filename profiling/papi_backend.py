@@ -19,8 +19,9 @@ from .backends import ProfilerBackend
 from .model import RankMetrics
 from .papi_loader import load_all_ranks
 from .papi_metrics import (
+    PAPIMetricRegistry,
     parse_available_events,
-    resolve_metrics,
+    validate_event_set,
 )
 from .shared import (
     MetricDefinition,
@@ -153,14 +154,34 @@ class PAPIHLBackend(ProfilerBackend):
                     "nor the papi_hl_output_writer utility."
                 )
 
-        # Discover available events and resolve metrics
+        # Build registry with ISA tailoring baked in at construction time
         self._available_events = parse_available_events()
-        self._resolved_metrics = resolve_metrics(self._available_events, self._resolution_config)
+        self._registry = PAPIMetricRegistry(self._resolution_config)
+        self._resolved_metrics = self._registry.resolve(self._available_events)
+
         detail(f"Available PAPI events: {len(self._available_events)}")
         for metric_type, impl in self._resolved_metrics.items():
             detail(f"  {metric_type.name} -> {impl.description}")
             if impl.warning is not None:
                 detail(f"    Note: {impl.warning}")
+
+        # Log ISA-tailored resolution if active
+        if self._resolution_config.isas:
+            for mtype in (MetricType.FLOPS, MetricType.BYTES):
+                if mtype in self._resolved_metrics:
+                    impl = self._resolved_metrics[mtype]
+                    detail(f"  {mtype.name} -> priority {impl.priority}")
+
+        # Pre-flight: validate the resolved event set will fit
+        if self._resolved_metrics:
+            all_events: set[str] = set()
+            for impl in self._resolved_metrics.values():
+                all_events |= impl.required_events
+            if not validate_event_set(frozenset(all_events)):
+                warn(
+                    "The resolved PAPI event set may not fit in the available hardware counters. PAPI may collect only "
+                    "a subset. Try specifying fewer ISAs with --isa, or enable PAPI_MULTIPLEX=1."
+                )
 
         return any(impl.priority < 100 for impl in self._resolved_metrics.values())
 
@@ -227,4 +248,36 @@ class PAPIHLBackend(ProfilerBackend):
             raise UserError("No profiling result files found. Did the application run with PAPI HL instrumentation?")
 
         info(f"Loaded {len(ranks)} rank(s) from {papi_output_dir}")
+
+        # Post-hoc: check all requested events were collected
+        # Skip when the user supplied --events-override; resolved events are not what PAPI was told to collect.
+        if ranks and self._resolved_metrics and not self._events_override:
+            # Get requested event names from resolved metrics
+            requested: set[str] = set()
+            for impl in self._resolved_metrics.values():
+                requested |= impl.required_events
+
+            # Events collected by any region (union). Union—not intersection—because
+            # multiplexed runs give regions different counter subsets, and metadata-only
+            # regions have an empty counter set that would otherwise collapse the set.
+            collected: set[str] = set()
+            for rank in ranks:
+                for thread in rank.threads:
+                    for region in thread.regions:
+                        collected |= set(region.counters.keys())
+
+            missing = requested - collected
+            if missing:
+                warn(
+                    "The following requested PAPI events were NOT collected by PAPI HL: "
+                    f"{', '.join(sorted(missing))}. "
+                    "This usually means the event set exceeds available hardware counters. Bytes and/or FLOPs may be "
+                    "undercounted or zero. Try specifying fewer ISAs via --isa to reduce hardware counter pressure."
+                )
+                detail(
+                    f"Requested: {len(requested)} events, "
+                    f"Collected: {len(collected)} events, "
+                    f"Missing: {', '.join(sorted(missing))}"
+                )
+
         return ranks

@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from core import DataType
+
 from profiling.aggregation import (
     AggregatedPoint,
     aggregate,
@@ -27,6 +29,9 @@ from profiling.papi_loader import (
 from profiling.papi_metrics import (
     METRICS,
     _parse_papi_xml_output,
+    build_isa_custom_metrics,
+    fp_arith_counters_for_isas,
+    PAPIMetricRegistry,
     resolve_metrics,
 )
 from profiling.shared import (
@@ -798,3 +803,125 @@ def test_parse_papi_xml_output_empty() -> None:
 def test_parse_papi_xml_output_malformed() -> None:
     events = _parse_papi_xml_output("not xml at all")
     assert events == frozenset()
+
+
+# ---------------------------------------------------------------------------
+# ISA -> FP_ARITH counter mapping tests
+# ---------------------------------------------------------------------------
+
+
+def test_fp_arith_counters_for_isas_scalar() -> None:
+    from isa.x86 import X86Scalar
+
+    counters = fp_arith_counters_for_isas((X86Scalar,), DataType.f64)
+    assert counters == {"FP_ARITH_INST_RETIRED:SCALAR_DOUBLE"}
+
+    counters_f32 = fp_arith_counters_for_isas((X86Scalar,), DataType.f32)
+    assert counters_f32 == {"FP_ARITH_INST_RETIRED:SCALAR_SINGLE"}
+
+
+def test_fp_arith_counters_for_isas_sse() -> None:
+    from isa.x86 import X86SSE
+
+    counters = fp_arith_counters_for_isas((X86SSE,), DataType.f64)
+    assert counters == {"FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE"}
+
+
+def test_fp_arith_counters_for_isas_avx2() -> None:
+    from isa.x86 import X86AVX2
+
+    counters = fp_arith_counters_for_isas((X86AVX2,), DataType.f64)
+    assert counters == {"FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE"}
+
+
+def test_fp_arith_counters_for_isas_multiple() -> None:
+    from isa.x86 import X86AVX2, X86SSE, X86Scalar
+
+    counters = fp_arith_counters_for_isas(
+        (X86AVX2, X86SSE, X86Scalar), DataType.f64
+    )
+    assert counters == {
+        "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE",
+        "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE",
+        "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE",
+    }
+
+
+def test_fp_arith_counters_for_isas_non_x86_returns_empty() -> None:
+    from isa.arm import ArmNeon
+
+    counters = fp_arith_counters_for_isas((ArmNeon,), DataType.f64)
+    assert counters == set()
+
+
+# ---------------------------------------------------------------------------
+# Custom metric factory tests
+# ---------------------------------------------------------------------------
+
+
+def test_build_isa_custom_metrics_returns_correct_events() -> None:
+    from isa.x86 import X86AVX2, X86SSE
+
+    registry = build_isa_custom_metrics((X86AVX2, X86SSE), DataType.f64)
+    assert registry is not None
+
+    # FLOPS metric
+    assert MetricType.FLOPS in registry
+    flops_def = registry[MetricType.FLOPS][0]
+    assert flops_def.priority == 200
+    assert "PAPI_DP_OPS" not in flops_def.required_events  # NO derived preset!
+    assert "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE" in flops_def.required_events
+    assert "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE" in flops_def.required_events
+    assert "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE" not in flops_def.required_events  # not specified
+
+    # BYTES metric
+    assert MetricType.BYTES in registry
+    bytes_def = registry[MetricType.BYTES][0]
+    assert bytes_def.priority == 200
+    assert "PAPI_LST_INS" in bytes_def.required_events
+    assert "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE" in bytes_def.required_events
+    assert "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE" in bytes_def.required_events
+    assert "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE" not in bytes_def.required_events  # not specified
+
+
+def test_build_isa_custom_metrics_non_x86_returns_none() -> None:
+    from isa.arm import ArmNeon
+
+    result = build_isa_custom_metrics((ArmNeon,), DataType.f64)
+    assert result is None
+
+
+def test_build_isa_custom_metrics_empty_isas_returns_none() -> None:
+    result = build_isa_custom_metrics((), DataType.f64)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# End-to-end resolution with custom metrics
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_metrics_with_custom_isa_outranks_default() -> None:
+    from isa.x86 import X86AVX2
+
+    available = frozenset({
+        "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE",
+        "PAPI_LST_INS",
+    })
+
+    cfg = MetricResolutionConfig(data_type=DataType.f64, isas=(X86AVX2,))
+    registry = PAPIMetricRegistry(cfg)
+    resolved = registry.resolve(available)
+
+    # FLOPS: custom wins (priority 200), no PAPI_DP_OPS
+    assert MetricType.FLOPS in resolved
+    flops_impl = resolved[MetricType.FLOPS]
+    assert flops_impl.priority == 200
+    assert "PAPI_DP_OPS" not in flops_impl.required_events
+    assert "X86AVX2" in str(flops_impl.description)
+
+    # BYTES: custom wins (priority 200)
+    assert MetricType.BYTES in resolved
+    bytes_impl = resolved[MetricType.BYTES]
+    assert bytes_impl.priority == 200
+    assert "X86AVX2" in str(bytes_impl.description)

@@ -37,12 +37,13 @@ class MetricResolutionConfig:
         data_type: Dominant data type of the application. When set, the
             resolution logic boosts/downgrades priorities of metric
             implementations that match/conflict with this type.
-        isa: Dominant ISA of the application. Used to refine
-            bytes-per-instruction and ops-per-instruction estimates.
+        isas: ISAs the application exercises. Used to refine
+            bytes-per-instruction and ops-per-instruction estimates,
+            and to build tailored FP_ARITH-based metrics.
     """
 
     data_type: DataType | None = None
-    isa: type[BaseISA] | None = None
+    isas: tuple[type[BaseISA], ...] = ()
 
 
 class MetricContext:
@@ -50,16 +51,15 @@ class MetricContext:
 
     def __init__(self, config: MetricResolutionConfig):
         cfg = config
-        isa = cfg.isa
+        isa_classes = cfg.isas  # tuple; empty when user didn't specify --isa
         data_type = cfg.data_type
 
-        if isa is not None and data_type is not None:
-            isa_instance = isa()
+        if isa_classes and data_type is not None:
+            # Use the ISA with the most bytes per instruction for scaling
+            instances = [cls() for cls in isa_classes]
+            isa_instance = max(instances, key=lambda isa: isa.bytes_per_inst(data_type))
             self.bytes_per_instruction = isa_instance.bytes_per_inst(data_type)
-            self.ops_per_instruction = (
-                # TODO: For simplicity, assume single-op instruction for now
-                isa_instance.ops_per_inst(data_type, ArithmeticOperation.add) if data_type is not None else 1
-            )
+            self.ops_per_instruction = isa_instance.ops_per_inst(data_type, ArithmeticOperation.add)
         else:
             self.bytes_per_instruction = data_type.bytes() if data_type is not None else 8
             self.ops_per_instruction = 1
@@ -72,7 +72,8 @@ class MetricContext:
         self._config = cfg
 
         debug(
-            f"MetricContext initialized with ISA: {isa.__name__ if isa else 'None'}, "
+            f"MetricContext initialized with ISAs: "
+            f"{', '.join(c.__name__ for c in isa_classes) if isa_classes else 'None'}, "
             f"DataType: {data_type.name if data_type else 'None'}, "
             f"Bytes/inst: {self.bytes_per_instruction}, Ops/inst: {self.ops_per_instruction}"
         )

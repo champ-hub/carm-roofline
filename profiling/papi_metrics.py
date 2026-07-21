@@ -22,6 +22,8 @@ import xml.etree.ElementTree as ET
 from typing import Callable
 
 from core import DataType
+from isa import BaseISA
+from isa.x86 import X86AVX, X86AVX2, X86AVX512, X86SSE, X86Scalar
 from output_utils import warn
 
 from .shared import (
@@ -46,6 +48,37 @@ _FP128_SP = "FP_ARITH_INST_RETIRED:128B_PACKED_SINGLE"
 _FP256_SP = "FP_ARITH_INST_RETIRED:256B_PACKED_SINGLE"
 _FP512_SP = "FP_ARITH_INST_RETIRED:512B_PACKED_SINGLE"
 _FP_SCALAR_SP = "FP_ARITH_INST_RETIRED:SCALAR_SINGLE"
+
+# Direct ISA class -> FP_ARITH counter name mapping.
+# Each x86 vector ISA maps to exactly its width's packed counter;
+# X86Scalar maps to SCALAR. Non-x86 ISAs are absent — they have no FP_ARITH counters.
+_ISA_TO_COUNTER: dict[type, tuple[str, str]] = {
+    # class -> (dp_counter, sp_counter)
+    X86Scalar: ("FP_ARITH_INST_RETIRED:SCALAR_DOUBLE", "FP_ARITH_INST_RETIRED:SCALAR_SINGLE"),
+    X86SSE: ("FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE", "FP_ARITH_INST_RETIRED:128B_PACKED_SINGLE"),
+    X86AVX: ("FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE", "FP_ARITH_INST_RETIRED:256B_PACKED_SINGLE"),
+    X86AVX2: ("FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE", "FP_ARITH_INST_RETIRED:256B_PACKED_SINGLE"),
+    X86AVX512: ("FP_ARITH_INST_RETIRED:512B_PACKED_DOUBLE", "FP_ARITH_INST_RETIRED:512B_PACKED_SINGLE"),
+}
+
+
+def fp_arith_counters_for_isas(
+    isa_classes: tuple[type[BaseISA], ...],
+    data_type: DataType,
+) -> set[str]:
+    """Union of FP_ARITH counters directly needed by the given ISA classes.
+
+    Each ISA class maps directly to its counter via _ISA_TO_COUNTER.
+    Non-x86 ISAs not in the dict produce no counters (empty set).
+    """
+    suffix = "DP" if data_type is DataType.f64 else "SP"
+    idx = 0 if suffix == "DP" else 1
+    result: set[str] = set()
+    for cls in isa_classes:
+        entry = _ISA_TO_COUNTER.get(cls)
+        if entry is not None:
+            result.add(entry[idx])
+    return result
 
 
 def make_intel_byte_metric_defs(
@@ -197,6 +230,163 @@ def _build_metric_definitions() -> dict[MetricType, list[MetricDefinition]]:
 _METRICS = _build_metric_definitions()
 METRICS = _METRICS  # Public alias for tests and external access
 
+# ---------------------------------------------------------------------------
+# ISA-tailored custom metric factories
+# ---------------------------------------------------------------------------
+
+
+def _make_fp_arith_flops_metric(
+    counters: set[str],
+    data_type: DataType,
+    isas: tuple[type[BaseISA], ...],
+) -> MetricDefinition:
+    """FLOPS directly from FP_ARITH counters: element_count x counter_value.
+
+    Element counts: SCALAR=1, 128B=2, 256B=4, 512B=8.
+    No PAPI_DP/SP_OPS dependency, avoids pulling in unrequested native counters.
+    """
+    _OP_COEFF: dict[str, int] = {"SCALAR": 1, "128B": 2, "256B": 4, "512B": 8}
+
+    def compute_fn(e: dict[str, float], ctx: MetricContext) -> float:
+        total = 0.0
+        for c, coeff in _OP_COEFF.items():
+            for ec in e:
+                if c in ec:
+                    total += e[ec] * coeff
+        return total
+
+    return MetricDefinition(
+        type=MetricType.FLOPS,
+        required_events=frozenset(counters),
+        compute=compute_fn,
+        priority=200,
+        description=(
+            f"Tailored FLOPS from FP_ARITH counters for "
+            f"{', '.join(isa.__name__ for isa in isas)} ({data_type.name})"
+            f" -- no PAPI_DP_OPS"
+        ),
+    )
+
+
+def _fp_arith_byte_compute(
+    arith_counters: dict[str, float],
+) -> Callable[[dict[str, float], MetricContext], float]:
+    """Returns a compute closure: vector-width-weighted bytes x PAPI_LST_INS."""
+
+    def compute_fn(e: dict[str, float], ctx: MetricContext) -> float:
+        byte_weight = 0.0
+        total_arith = sum(e.get(ev, 0.0) for ev in arith_counters)
+        if total_arith == 0:
+            return 0.0
+        for ev, weight in arith_counters.items():
+            byte_weight += (e[ev] / total_arith) * weight
+        if "PAPI_LST_INS" not in e:
+            return 0.0
+        return byte_weight * e["PAPI_LST_INS"]
+
+    return compute_fn
+
+
+def _make_fp_arith_bytes_metric(
+    counters: set[str],
+    data_type: DataType,
+    isas: tuple[type[BaseISA], ...],
+) -> MetricDefinition:
+    """BYTES from narrowed FP_ARITH counters + PAPI_LST_INS."""
+    el_bytes = data_type.bytes()
+    weight_map: dict[str, float] = {}
+    _WIDTH_FACTOR = {"SCALAR": 1, "128B": 2, "256B": 4, "512B": 8}
+    for c in counters:
+        for prefix, factor in _WIDTH_FACTOR.items():
+            if prefix in c:
+                weight_map[c] = float(el_bytes * factor)
+                break
+
+    return MetricDefinition(
+        type=MetricType.BYTES,
+        required_events=frozenset(counters | {"PAPI_LST_INS"}),
+        compute=_fp_arith_byte_compute(weight_map),
+        priority=200,
+        description=(
+            f"Tailored BYTES from FP_ARITH counters for "
+            f"{', '.join(isa.__name__ for isa in isas)} ({data_type.name})"
+            f" -- needs PAPI_LST_INS"
+        ),
+    )
+
+
+def _build_isa_custom_metrics(
+    config: MetricResolutionConfig,
+) -> dict[MetricType, list[MetricDefinition]] | None:
+    """Return a registry fragment with custom FLOPS+BYTES for user-specified ISAs.
+
+    Returns None when ISAs are empty, data_type is unset, or no FP_ARITH counters
+    apply (ARM, RISC-V, etc.) -- caller can safely skip.
+    """
+    if not config.isas or config.data_type is None:
+        return None
+    counters = fp_arith_counters_for_isas(config.isas, config.data_type)
+    if not counters:
+        return None
+    return {
+        MetricType.FLOPS: [_make_fp_arith_flops_metric(counters, config.data_type, config.isas)],
+        MetricType.BYTES: [_make_fp_arith_bytes_metric(counters, config.data_type, config.isas)],
+    }
+
+
+def build_isa_custom_metrics(
+    isas: tuple[type[BaseISA], ...],
+    data_type: DataType,
+) -> dict[MetricType, list[MetricDefinition]] | None:
+    """Public wrapper: build ISA-tailored metric definitions.
+
+    Standalone entry point for tests and ad-hoc use (no registry needed).
+    Delegates to _build_isa_custom_metrics after constructing a config.
+    """
+    return _build_isa_custom_metrics(MetricResolutionConfig(data_type=data_type, isas=isas))
+
+
+# ---------------------------------------------------------------------------
+# PAPIMetricRegistry -- stateful metric definition registry
+# ---------------------------------------------------------------------------
+
+
+class PAPIMetricRegistry:
+    """Metric definition registry with configurable ISA-tailored metrics.
+
+    Builds the full set of metric definitions at construction time, optionally
+    including custom high-priority definitions for user-specified ISAs.
+    Resolution is a single method call -- no manual registry merging needed.
+    """
+
+    def __init__(self, config: MetricResolutionConfig | None = None) -> None:
+        self._config = config or MetricResolutionConfig()
+        self.definitions: dict[MetricType, list[MetricDefinition]] = self._build()
+
+    def _build(self) -> dict[MetricType, list[MetricDefinition]]:
+        """Start from prebuilt standard definitions, add ISA-tailored if configured."""
+        result = {mtype: list(defs) for mtype, defs in _METRICS.items()}
+        custom = _build_isa_custom_metrics(self._config)
+        if custom is not None:
+            for mtype, defs in custom.items():
+                result.setdefault(mtype, []).extend(defs)
+        return result
+
+    def resolve(
+        self,
+        available_events: frozenset[str],
+    ) -> dict[MetricType, MetricDefinition]:
+        """Resolve best available metrics for the given event set."""
+        return _resolve_metrics(
+            available_events,
+            self._config,
+            registry=self.definitions,
+        )
+
+
+# Default registry instance for backward-compat resolve_metrics wrapper
+_DEFAULT_REGISTRY = PAPIMetricRegistry()
+
 
 # ---------------------------------------------------------------------------
 # Available events discovery
@@ -281,8 +471,8 @@ def resolve_metrics(
 ) -> dict[MetricType, MetricDefinition]:
     """Pick the best available PAPI metric implementation for each roofline metric.
 
-    Wraps :func:`shared.resolve_metrics` with the PAPI metric definitions
-    registry as the default.
+    Wraps :func:`shared.resolve_metrics` with the PAPI metric definitions registry as the default. When config has ISAs,
+    builds tailored definitions.
 
     Args:
         available_events: Set of PAPI event names available on this system.
@@ -291,4 +481,49 @@ def resolve_metrics(
     Returns:
         Dict mapping metric type -> best ``MetricDefinition`` found.
     """
-    return _resolve_metrics(available_events, config, registry=_METRICS)
+    if config is None:
+        return _DEFAULT_REGISTRY.resolve(available_events)
+    return PAPIMetricRegistry(config).resolve(available_events)
+
+
+# ---------------------------------------------------------------------------
+# Pre-flight event set validation
+# ---------------------------------------------------------------------------
+
+
+def validate_event_set(events: frozenset[str]) -> bool:
+    """Run ``papi_event_chooser`` to validate *events* can coexist.
+
+    Returns True if ``papi_event_chooser`` reports the set is valid (events can be added simultaneously). Returns False
+    if the tool is unavailable, errors, or reports incompatibility.
+
+    ``papi_event_chooser`` accepts both PRESET and NATIVE events in the same invocation — PAPI resolves them internally
+    to native codes. The incompatibility message is emitted on stderr with exit code 1; a valid set has exit code 0 with
+    empty stderr.
+    """
+    if not events:
+        return True
+    papi_chooser = shutil.which("papi_event_chooser")
+    if papi_chooser is None:
+        warn("papi_event_chooser not found, cannot validate event set compatibility before profiling")
+        return True  # Can't validate, proceed optimistically
+
+    try:
+        # papi_event_chooser accepts mixed preset+native sets, first arg PRESET just controls display formatting
+        result = subprocess.run(
+            [papi_chooser, "PRESET", *sorted(events)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return True
+
+    # Non-zero exit code means incompatibility on this PAPI version
+    if result.returncode != 0:
+        return False
+
+    # Defensive: also check stderr for the error message (some PAPI builds
+    # may exit 0 but still report the conflict on stderr)
+    return "can't be counted" not in result.stderr
