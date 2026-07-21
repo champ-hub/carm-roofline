@@ -8,6 +8,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     name: Git Repo Sync
+    if: false
     steps:
     - uses: actions/checkout@v2
       with:

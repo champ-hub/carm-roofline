@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from arguments import InsertsArguments, add_verbose_argument
+from results_paths import default_results_root
+
+
+class GUIConfig(InsertsArguments):
+    """GUI launch configuration and argument parsing."""
+
+    def __init__(self, args: argparse.Namespace):
+        super().__init__()
+        self.verbose: int = args.verbose
+        self.results_dir: Path = args.results_dir
+        self.gui_host: str = args.gui_host
+        self.gui_port: int = args.gui_port
+        self.gui_debug: bool = args.gui_debug
+
+    @staticmethod
+    def insert_arguments(parser: argparse.ArgumentParser) -> None:
+        add_verbose_argument(parser)
+        parser.add_argument(
+            "--results-dir",
+            type=Path,
+            default=default_results_root(),
+            help="Results directory root (default: <user-data-directory>/carm)",
+        )
+        parser.add_argument("--gui-host", default="127.0.0.1", help="Host address for the Dash server")
+        parser.add_argument("--gui-port", type=int, default=8050, help="Port for the Dash server")
+        parser.add_argument("--gui-debug", action="store_true", help="Enable Dash debug mode")

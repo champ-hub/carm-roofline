@@ -1,0 +1,3 @@
+[submodule "examples/lulesh-papi"]
+	path = examples/lulesh-papi
+	url = git@github.com:Alexandre425/LULESH-PAPI.git
