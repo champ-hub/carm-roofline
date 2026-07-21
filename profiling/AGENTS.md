@@ -112,12 +112,12 @@ carm profile --help
 
 ```
 usage: carm profile [-h] [--backend {papi,perf}] [--papi-events PAPI_EVENTS]
-                    [--perf-events PERF_EVENTS] [--perf-interval PERF_INTERVAL]
-                    [--aggregation {global,rank,thread,region_merged,region_per_thread}]
-                    [--name NAME] [--output-dir OUTPUT_DIR] [--keep-artifacts]
-                    [--data-type {f32,f64}] [--isa ISA]
-                    [--verbose [{0,1,2,3,4}]]
-                    [command ...]
+  [--perf-events PERF_EVENTS] [--perf-interval PERF_INTERVAL]
+  [--aggregation {global,rank,thread,region_merged,region_per_thread}]
+  [--name NAME] [--output-dir OUTPUT_DIR] [--keep-artifacts]
+  [--data-type {f32,f64}] [--isa ISA [ISA ...]]
+  [--verbose [{0,1,2,3,4}]]
+  [command ...]
 
 Profile instrumented applications to compute roofline metrics (AI, GFLOP/s, bandwidth).
 Supports MPI, threaded, and hybrid applications.
@@ -146,10 +146,12 @@ carm profile --backend perf -- ./my_app
 carm profile --backend perf --perf-interval 100 -- ./my_app
 ```
 
-**Specify data type and ISA for better accuracy:**
+**Specify ISA vector widths for custom PAPI metrics:**
 ```bash
-carm profile --backend perf --data-type f64 --isa x86_avx2 -- ./my_app
+carm profile --data-type f64 --isa x86_avx2 x86_sse -- ./my_app
 ```
+
+When `--isa` is passed, CARM builds custom FLOPS/BYTES metric definitions using only the FP_ARITH counters matching those widths (PAPI backend). Omitting `--isa` falls back to default metric resolution.
 
 ## File Schema for Instrumented Applications (PAPI HL)
 
