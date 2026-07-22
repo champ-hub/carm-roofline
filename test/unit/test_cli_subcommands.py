@@ -32,6 +32,7 @@ def test_benchmark_mode_smoke_with_monkeypatch(monkeypatch: pytest.MonkeyPatch) 
 
     def fake_architecture_init(self: carm.Architecture, args: argparse.Namespace) -> None:
         calls["arch_args"] = args
+        self.set_frequency = False
 
     def fake_benchmarking_init(self: carm.Benchmarking, args: argparse.Namespace) -> None:
         calls["bench_args"] = args

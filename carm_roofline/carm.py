@@ -19,13 +19,14 @@ from carm_roofline.architecture import (
     signature_from_architecture,
     write_machine_json,
 )
+from carm_roofline.architecture.frequency import maybe_set_cpu_frequency
 from carm_roofline.arguments import InsertsArguments, TopLevelHelpFormatter
 from carm_roofline.benchmark.interface import run_full_benchmark
 from carm_roofline.benchmark.output import output_benchmark_results
 from carm_roofline.context import Architecture, Benchmarking, CARMContext, ExecutionInterface, RunConfig
 from carm_roofline.core import UserError
 from carm_roofline.gui.config import GUIConfig
-from carm_roofline.output_utils import configure_verbosity, debug, detail, error, info
+from carm_roofline.output_utils import configure_verbosity, debug, detail, error, info, warn
 from carm_roofline.profiling import ProfileConfig, profile_main
 
 RichHelpFormatter.styles.update(
@@ -55,6 +56,10 @@ def _handle_benchmark(args: argparse.Namespace) -> int:
         except OSError as e:
             raise OSError(f"Failed to write template config: {e}") from e
 
+    # --set-frequency requires --frequency; warn and disable when missing
+    if args.set_frequency and args.frequency is None:
+        warn("--set-frequency requires --frequency <value>; no frequency specified, skipping frequency set.")
+        args.set_frequency = False
     exec_iface = ExecutionInterface(args)
     # Make exec_iface globally available for architecture feature detection
     set_execution_interface(exec_iface)
@@ -68,8 +73,8 @@ def _handle_benchmark(args: argparse.Namespace) -> int:
     context = CARMContext(
         architecture=architecture, benchmarking=benchmarking, run_config=run_config, exec_interface=exec_iface
     )
-
-    benchmark_suites = run_full_benchmark(context)
+    with maybe_set_cpu_frequency(context):
+        benchmark_suites = run_full_benchmark(context)
 
     if run_config.dry_run:
         detail("Dry run finished: benchmark code generated successfully.")

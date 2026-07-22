@@ -179,6 +179,7 @@ class Architecture(InsertsArguments):
     arch: str | None
     vendor: str | None
     model_name: str | None
+    actual_frequency_hz: int | None
 
     isa: list[type[BaseISA]]
 
@@ -217,7 +218,7 @@ class Architecture(InsertsArguments):
         if args.frequency is not None:
             # args.frequency is already a Frequency wrapper from frequency_type()
             self.frequency = ISAFrequencies.from_base_frequency(args.frequency, self.isa)
-            if detected.isa_frequencies is not None or detected.frequency is not None:
+            if not args.set_frequency and (detected.isa_frequencies is not None or detected.frequency is not None):
                 d_freq = detected.frequency if detected.isa_frequencies is None else detected.isa_frequencies
                 _override_warn("frequency", args.frequency, d_freq)
         else:
@@ -230,6 +231,9 @@ class Architecture(InsertsArguments):
         self.arch = detected.arch
         self.vendor = detected.vendor
         self.model_name = detected.model_name
+        from carm_roofline.architecture.frequency import read_single_cpu_frequency_hz
+
+        self.actual_frequency_hz = read_single_cpu_frequency_hz()
 
     def __init__(self, args: argparse.Namespace):
         super().__init__()
@@ -323,5 +327,10 @@ class Architecture(InsertsArguments):
         parser.add_argument(
             "--set-frequency",
             action="store_true",
-            help="Set the processor frequency to the value specified by --frequency. x86 only, requires root.",
+            help=(
+                "Set the processor frequency to the value specified by --frequency "
+                "(or the detected frequency if --frequency is omitted). "
+                "Requires root/sudo for sysfs access. "
+                "Supported on Linux systems with cpufreq drivers (x86, ARM, RISC-V)."
+            ),
         )

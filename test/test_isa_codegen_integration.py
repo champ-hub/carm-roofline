@@ -31,7 +31,11 @@ from carm_roofline.isa import (
 )
 from carm_roofline.benchmark.generation import MemoryLayoutMode
 from carm_roofline.isa import BaseISA
-from carm_roofline.benchmark.generation.parameters import ArithmeticBenchmarkParams, BenchParamError, MemoryBenchmarkParams
+from carm_roofline.benchmark.generation.parameters import (
+    ArithmeticBenchmarkParams,
+    BenchParamError,
+    MemoryBenchmarkParams,
+)
 from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
 from carm_roofline.core import ArithmeticOperation, Operation
 from carm_roofline.core import Bytes, Operations

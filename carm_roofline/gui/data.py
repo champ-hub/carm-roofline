@@ -8,7 +8,7 @@ from typing import Any, TypedDict
 
 import plotly.graph_objects as go
 
-from carm_roofline.core.units import Seconds
+from carm_roofline.core.units import Frequency, Seconds
 from carm_roofline.output_utils import debug, warn
 from carm_roofline.roofline_assembly import (
     ApplicationRecord,
@@ -36,6 +36,7 @@ class ActivePanel(str, Enum):
 # Fallback static defaults so component builders always have something.
 DATA_TYPE_OPTIONS = ["f32", "f64", "i8", "i16", "i32", "i64"]
 COMPUTE_INST_OPTIONS = ["fma", "add", "mul", "div"]
+FREQUENCY_OPTIONS = [(str(Frequency(hz)), str(hz)) for hz in [2500000000, 3000000000, 3200000000, 4000000000]]
 
 
 # Data models
@@ -48,7 +49,7 @@ class RoofConfig:
     machine: str | None = "Machine A"
     isa: str | None = None
     num_threads: int | None = None
-    data_type: str | None = None
+    actual_frequency_hz: int | None = None
     compute_insts: list[str] = field(default_factory=lambda: ["fma", "add"])
     load_store_ratio: str | None = None
     collapsed: bool = False
@@ -63,6 +64,7 @@ class RoofConfig:
         num_threads: int | None = None,
         data_type: str | None = None,
         compute_insts: list[str] | None = None,
+        actual_frequency_hz: int | None = None,
         load_store_ratio: str | None = None,
         app_ids: list[str] | None = None,
         collapsed: bool = False,
@@ -73,6 +75,7 @@ class RoofConfig:
         self.machine = machine
         self.isa = isa
         self.num_threads = num_threads
+        self.actual_frequency_hz = actual_frequency_hz
         self.data_type = data_type
         self.compute_insts = compute_insts or ["fma", "add"]
         self.load_store_ratio = load_store_ratio
@@ -140,6 +143,7 @@ class RoofStore:
                     "machine": r.machine,
                     "isa": r.isa,
                     "num_threads": r.num_threads,
+                    "actual_frequency_hz": r.actual_frequency_hz,
                     "data_type": r.data_type,
                     "compute_insts": r.compute_insts,
                     "load_store_ratio": r.load_store_ratio,
@@ -163,6 +167,7 @@ class RoofStore:
                 machine=r["machine"],
                 isa=r["isa"],
                 num_threads=r.get("num_threads", r.get("threads")),
+                actual_frequency_hz=r.get("actual_frequency_hz"),
                 data_type=r.get("data_type", "f32"),
                 compute_insts=r.get("compute_insts", ["fma", "add"]),
                 load_store_ratio=r.get("load_store_ratio", "2:1"),
@@ -242,6 +247,7 @@ def build_roofline_figure(
             data_type=roof.data_type if roof.data_type else None,
             operations=frozenset(roof.compute_insts) if roof.compute_insts else None,
             load_store_ratio=roof.load_store_ratio if roof.load_store_ratio else None,
+            actual_frequency_hz=roof.actual_frequency_hz,
         )
         model = assemble_roofline(records, flt)
         models.append(model)

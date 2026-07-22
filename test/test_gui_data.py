@@ -22,6 +22,7 @@ def test_roofstore_round_trip_preserves_all_fields() -> None:
         data_type="f64",
         compute_insts=["mul", "div"],
         load_store_ratio="1:1",
+        actual_frequency_hz=2500000000,
     )
     store = RoofStore(roof_template=roof)
     data = store.to_dict()
@@ -36,6 +37,7 @@ def test_roofstore_round_trip_preserves_all_fields() -> None:
     assert r.data_type == "f64"
     assert r.compute_insts == ["mul", "div"]  # the field that was silently lost
     assert r.load_store_ratio == "1:1"
+    assert r.actual_frequency_hz == 2500000000
     assert r.app_ids == []
     assert restored.normalize_by_threads is False
 
@@ -57,6 +59,7 @@ def test_roofstore_round_trip_with_none_fields() -> None:
     assert r.isa is None
     assert r.num_threads is None
     assert r.data_type is None
+    assert r.actual_frequency_hz is None
     assert r.load_store_ratio is None
 
 

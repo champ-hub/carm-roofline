@@ -358,6 +358,10 @@ class Frequency(FloatUnit):
         """Return the frequency in GHz."""
         return self._value / 1e9
 
+    def as_kilohertz(self) -> float:
+        """Return the frequency in kHz."""
+        return self._value / 1000
+
 
 class Cycles(IntUnit):
     """Represents a number of CPU cycles."""
