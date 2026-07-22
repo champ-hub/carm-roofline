@@ -4,9 +4,24 @@
 
 CARM (Cache-Aware Roofline Model) is a micro-benchmarking toolkit that constructs roofline performance models across multiple CPU architectures (x86, ARM, RISC-V) and GPU platforms (ROCm, CUDA). It measures arithmetic performance and memory bandwidth at different cache levels to guide optimization.
 
-- **License**: LGPL-2.1
+- **License**: Apache-2.0
 - **Language**: Python ≥3.9 (primary), C (measurement harness), inline assembly (ISA-specific benchmarks)
 - **Outputs**: CSV, JSON, table, plots in platform user data dir for `carm`, or `--output-file`
+- **Entry point**: `carm` console script → `carm_roofline.carm:main`
+- **Install**: `pip install -e .` or `pip install -e ".[all]"`
+- **C compiler**: gcc ≥4.9
+
+## Commands
+
+The `carm` CLI has three subcommands:
+
+| Command | Purpose |
+|---------|---------|
+| `carm benchmark` | Run benchmarks (arithmetic, memory, roofline) to construct performance models |
+| `carm profile` | Profile instrumented applications (MPI, threaded, hybrid) for roofline metrics |
+| `carm gui` | Launch the interactive Dash+Plotly roofline dashboard |
+
+Run `carm <command> --help` for command-specific options. Configuration classes inject arguments modularly via `InsertsArguments`.
 
 ## Architecture & Data Flow
 
@@ -23,79 +38,61 @@ CLI args → CARMContext → generate → compile → execute → parse → outp
 5. **Execute**: `run_microbenchmarks()` runs with physics-based timeout, returns CSV-formatted stdout
 6. **Parse**: `parse_benchmark_output()` populates benchmark result fields
 
-### Key Modules
+## Repository Layout
 
-| Module | Role |
-|--------|------|
-| `carm.py` | Main entry point, CLI parser, subcommand dispatch |
-| `context.py` | `CARMContext` dataclass threading through pipeline |
-| `core/` | Domain primitives (DataType, Operation, UserError, type-safe units) |
-| `isa/` | ISA identity hierarchy (BaseISA, ALL_ISAS, ISA_NAME_TO_CLASS) |
-| `architecture/` | Hardware auto-detection (CPU, cache, ISA features, frequency) |
-| `benchmark/generation/` | ISA-specific code generation utilities (instructions, registers, parameters) |
-| `benchmark/suites/` | Benchmark suite orchestration (arithmetic, memory, roofline) |
-| `benchmark/output/` | Strategy-pattern output dispatch (table/plot/json/csv) |
-| `test_bench/` | C measurement harness (calibration, timing, threading) |
-| `profiling/` | PAPI/perf application profiling pipeline |
-| `gui/` | Dash+Plotly interactive roofline dashboard |
-| `arguments.py` | `InsertsArguments` base class for modular argument injection |
-| `exec_interface.py` | Native/simulated/cross-compiled command execution |
-| `run_config.py` | Run configuration (verbosity, output format, dry-run) |
-| `docs/` | GitHub Pages website (Jekyll): user-facing docs, quickstart, command reference |
-
-## Key Directories
-
-├── architecture/         Hardware detection (C probes, sysfs parsing, ISA feature discovery)
+```
+carm_roofline/            Main Python package
+├── architecture/         Hardware detection (CPU, cache, ISA features, frequency)
 │   ├── architecture.py   Architecture class, ISAFrequencies
-│   ├── detect.py         DetectedArchitecture, DetectionBuilder, native_detect/detect_for_isa
+│   ├── detect.py         DetectedArchitecture, native_detect/detect_for_isa
 │   ├── memory.py         MemoryTopology (sysfs), SimpleMemoryTopology (CLI/TOML)
 │   └── tests/            C probe source files per ISA family
-├── benchmark/            Benchmark system facade
-│   ├── generation/       ISA code generation (instruction/register/parameter utilities)
-│   ├── suites/           Benchmark suite classes (arithmetic, memory, roofline, sweep)
-│   ├── output/           Strategy-pattern output handlers per test type
+├── benchmark/            Benchmark system
+│   ├── generation/       ISA-specific code generation (instructions, registers, parameters)
+│   ├── suites/           Benchmark suites (arithmetic, memory, roofline, sweep)
+│   ├── output/           Strategy-pattern output dispatch (table/plot/json/csv)
 │   ├── interface.py      run_full_benchmark() orchestration
 │   └── benchmarking.py   Benchmarking config (TestType, CLI args)
-├── core/                 Domain primitives (DataType, Operation, UserError, units)
-├── isa/                  ISA identity hierarchy (BaseISA, ISA_NAME_TO_CLASS, ALL_ISAS)
+├── core/                 Domain primitives (DataType, Operation, UserError, type-safe units)
+├── isa/                  ISA identity hierarchy (BaseISA, ALL_ISAS, ISA_NAME_TO_CLASS)
 ├── test_bench/           C measurement harness (builder.py, test_bench.c/h, wrapper.inl)
-├── profiling/            Application profiling pipeline (PAPI/perf backends)
-├── gui/                  Dash+Plotly interactive dashboard
-├── test/                 Pytest test suite (unit/integration)
-├── docs/                 GitHub Pages website source (Jekyll): user docs, quickstart
-└── carm.py               Main entry point
+├── profiling/            PAPI/perf application profiling pipeline
+├── gui/                  Dash+Plotly interactive roofline dashboard
+├── carm.py               Entry point, CLI parser, subcommand dispatch
+├── context.py            CARMContext dataclass (architecture, benchmarking, exec_interface, run_config)
+├── arguments.py          InsertsArguments, validators, enum_action, TopLevelHelpFormatter
+├── exec_interface.py     Compile/run abstraction with simulator support
+├── run_config.py         RunConfig (verbose, dry-run, output format)
+├── output_utils.py       Verbosity-leveled Rich console output
+├── workspace.py          workspace_context() temp directory manager
+└── results_paths.py      default_results_root() via platformdirs
+test/                     Pytest test suite (unit + integration)
+docs/                     GitHub Pages website source (Jekyll): user docs, quickstart, command reference
+examples/                 Usage examples (e.g., LULESH profiling)
+pyproject.toml            Single source of truth: dependencies, ruff, mypy, pytest config
+.pre-commit-config.yaml   Pre-commit hooks (ruff, mypy, clang-format, trailing-whitespace)
 ```
 
 ## Development Commands
 
 ```bash
-# Run benchmarks (auto-detect ISA)
-./carm.py benchmark --test arithmetic --num-ops 1000 --test-time 1
+# Run benchmarks (auto-detects all ISAs)
+carm benchmark --test arithmetic --test-time 1
 
-# Specific ISA, memory test, CSV output
-./carm.py benchmark --isa x86_avx2 --test memory --mem-target L1 --output-format csv
-
-# Cross-compile for RISC-V with QEMU
-./carm.py benchmark --isa riscv_rvv --compiler riscv64-linux-gnu-gcc \
-    --sim-cmd "qemu-riscv64 {binary}" --test roofline --output-format json
+# Specific ISA, memory test
+carm benchmark --isa x86_avx2 --test memory --mem-target L1
 
 # Dry run (generate code only)
-./carm.py benchmark --test arithmetic --dry-run --verbose 4
+carm benchmark --test arithmetic --dry-run --verbose 4
 
-# Unit tests (fast)
-pytest -m unit test/
+# Tests
+pytest -m unit test/ # Fast unit tests
+pytest # All tests
 
-# All tests
-pytest -v
-
-# Lint & format
-ruff check --fix .
-ruff format .
-
-# Type check
+# Lint, format, type-check
+ruff check --fix
+ruff format
 mypy .
-
-# Full pre-commit
 pre-commit run --all-files
 ```
 
@@ -104,9 +101,9 @@ pre-commit run --all-files
 ### Formatting & Style
 
 - Ruff-managed: line-length 120, quote-style double, indent-style space, LF endings
-- Target Python 3.9 (no 3.10+ match statements in production code)
-- `from __future__ import annotations` in every file
-- Excluded from ruff/mypy: `legacy_bench_gen/`, `run.py`, `run_gpu.py`, `*AI_Calculator.py`, `output_utils.py`, `gui/dashboard.py`, `gui/gui_utils.py`, `test/`
+- Target Python 3.9
+- `from __future__ import annotations` in every file (`|` union types are allowed)
+- Ruff and mypy exclude `test`
 - C code: clang-format with style=file (`.clang-format` at root)
 
 ### Naming
@@ -117,7 +114,7 @@ pre-commit run --all-files
 - Private module internals: `_leading_underscore`
 - Type variables: short single uppercase (e.g. `T` for `Unit[T]`)
 
-### Modular Argument Injection Pattern
+### Modular Argument Injection
 
 All configuration classes inherit from `InsertsArguments` and define `insert_arguments()`:
 
@@ -138,14 +135,14 @@ Classes using this pattern: `Architecture`, `Benchmarking`, `RunConfig`, `Execut
 `ExecutionInterface` is shared via `contextvars` to avoid parameter threading through deep detection code:
 
 ```python
-from architecture import set_execution_interface, get_execution_interface
+from carm_roofline.architecture import set_execution_interface, get_execution_interface
 exec_iface = get_execution_interface()
 exec_iface.compile(...)
 ```
 
 ### ISA Registration
 
-ISAs register via explicit tuples in `isa/__init__.py`:
+ISAs register via explicit tuples in `carm_roofline/isa/__init__.py`:
 
 ```python
 ALL_ISAS = (ArmScalar, ArmNeon, ArmSVE, RISCVScalar, RISCV_RVV_071, RISCV_RVV, X86Scalar, ...)
@@ -155,90 +152,25 @@ INCOMPATIBLE_ISAS = {frozenset({RISCV_RVV_071, RISCV_RVV})}
 
 ### Error Handling
 
-- `UserError(Exception)` for expected user misconfiguration — caught in `carm.py main()`, exits 1 without traceback
+- `UserError(Exception)` for expected user misconfiguration — caught in `carm_roofline.carm:main()`, exits 1 without traceback
 - `ValueError` for bad CLI args (exit 1)
 - Generic exceptions exit 2
 - No silent failures — prefer exceptions over fallback values
 
-### Benchmark Pipeline Flow
-
-```python
-# In benchmark/interface.py run_full_benchmark():
-# 1. Generate suites per ISA
-suites = {isa: generate_microbenchmarks(context, isa) for isa in context.architecture.isa_names}
-# 2. Flatten all benchmarks
-flat = {name: b for s in suites.values() for name, b in s.benchmarks.items()}
-# 3. Create header → compile → run → parse
-create_microbenchmark_header(flat.values(), header_path)
-compile_test_bench(context, binary_path, include_dirs)
-output = run_microbenchmarks(context, binary_path, flat.values())
-parse_benchmark_output(flat, output)
-```
-
 ### Output Dispatch
 
-Strategy pattern via `OutputHandler` protocol (in `benchmark/output/`):
-
-```python
-class ArithmeticOutputHandler:
-    @staticmethod
-    def handle(context, isa_suites) -> None:
-        # Dispatches to print_table()/write_plot()/write_csv()/write_json()
-        # based on context.run_config.output_formats
-```
-
-Dispatch map keyed by `TestType` enum, built in `benchmark/output/__init__.py`.
+Strategy pattern via `OutputHandler` protocol (in `benchmark/output/`). Dispatch map keyed by `TestType` enum, built in `benchmark/output/__init__.py`.
 
 ### Type-Safe Units (`core/units.py`)
 
-```python
-class Unit[T](ABC):  # Generic arithmetic wrapper
-# Subclasses: Bytes, Operations, Frequency, Bandwidth, Performance, Seconds, Cycles, ArithmeticIntensity
-# Automatic prefix selection: str(b) → "8.00 MiB"
-# Factory methods: Performance.from_ops_per_second()
-```
-
-## Important Files
-
-| File | Purpose |
-|------|---------|
-| `carm.py` | Entry point, CLI parser, subcommand dispatch |
-| `context.py` | `CARMContext` dataclass (architecture, benchmarking, exec_interface, run_config) |
-| `arguments.py` | `InsertsArguments`, validators, `enum_action`, `TopLevelHelpFormatter` |
-| `core/` | Domain primitives package (DataType, Operation, UserError, type-safe units) |
-| `exec_interface.py` | Compile/run abstraction with simulator support |
-| `isa/` | ISA identity hierarchy (BaseISA, ALL_ISAS, ISA_NAME_TO_CLASS) |
-| `output_utils.py` | Verbosity-leveled Rich console output |
-| `run_config.py` | `RunConfig` with verbose/dry-run/output format settings |
-| `workspace.py` | `workspace_context()` temp directory manager |
-| `results_paths.py` | `default_results_root()` via platformdirs |
-| `pyproject.toml` | Single source of truth: dependencies, ruff, mypy, pytest config |
-| `.pre-commit-config.yaml` | Pre-commit hooks (ruff, mypy, clang-format, trailing-whitespace) |
-| `docs/` | GitHub Pages website source (Jekyll): user docs, quickstart, command reference |
-| `.github/copilot-instructions.md` | (Loaded as system context) Central developer guidance, module index |
-| `test/conftest.py` | Shared pytest fixtures (ISA instances, mock context) |
-
-
-## Runtime/Tooling Preferences
-
-- **Python**: ≥3.9, setuptools ≥64.0 + wheel build system
-- **Package manager**: pip (no poetry, no conda)
-- **Entry point**: `carm` console script → `carm:main`
-- **C compiler**: gcc ≥4.9 (AVX-512 requires ≥9.3)
-- **Optional deps**: [gui] Dash+Plotly, [dev] pytest, ruff, mypy, pre-commit
-- **Install**: `pip install -e .` or `pip install -e ".[dev,gui]"`
-- **VS Code**: `.vscode/settings.json`, `launch.json`, `c_cpp_properties.json` provided
+Generic arithmetic wrapper `Unit[T]` (ABC) with subclasses: `Bytes`, `Operations`, `Frequency`, `Bandwidth`, `Performance`, `Seconds`, `Cycles`, `ArithmeticIntensity`. Automatic prefix selection (`str(b) → "8.00 MiB"`). Factory methods like `Performance.from_ops_per_second()`.
 
 ## Testing & QA
 
-- **Framework**: pytest ≥7.0, configured in `pyproject.toml [tool.pytest.ini_options]`
-- **Root**: `test/` (testpaths), `test/unit/` for fast unit tests
-- **Markers** (6 defined, only `unit` actively used): `unit`, `integration`, `slow`, `golden`, `x86`, `arm`, `riscv`
+- **Framework**: pytest ≥7.0, configured in `pyproject.toml`
+- **Root**: `test/`, with `test/unit/` for fast unit tests
+- **Markers** (7 defined): `unit`, `integration`, `slow`, `golden`, `x86`, `arm`, `riscv` — only `unit` is actively used
 - **Fixtures**: 5 in `test/conftest.py` — `x86avx_isa`, `x86sse_isa`, `arm_neon_isa`, `riscv_scalar_isa`, `mock_context`
 - **Mocking**: lightweight — `unittest.mock.Mock` for context, `monkeypatch` for module-level intercepts
 - **Dominant pattern**: parametrized ISA cross-product tests via `@pytest.mark.parametrize`
-- **Test categories**:
-  - Unit (`test/unit/`, marked `@pytest.mark.unit`): profiling model, CLI smoke, register abstraction, ISA helpers
-  - Integration-ish (`test/` root, no markers): ISA codegen (11-ISA matrix), typed benchmarks, output handlers, memory suite generation
-- **Coverage**: 11 ISA classes tested across arithmetic/memory codegen, edge cases (single op, boundaries, thread scaling, underflow)
-- **Deprecated**: `refactor_tests/` directory no longer exists — all tests migrated to `test/`
+- **Categories**: Unit (`test/unit/`, marked `unit`) for profiling model, CLI smoke, register abstraction, ISA helpers. Integration-ish (`test/` root, no markers) for ISA codegen (11-ISA matrix), typed benchmarks, output handlers, memory suite generation.
