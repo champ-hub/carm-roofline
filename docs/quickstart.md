@@ -117,6 +117,11 @@ lulesh2.0_LagrangeNodal: AI=0.242 FLOP/Byte, 2.204 GFLOP/s, 9.118 GB/s, 0.806s
 lulesh2.0_UpdateVolumes: AI=0.117 FLOP/Byte, 2.930 GFLOP/s, 24.947 GB/s, 0.002s
 ```
 
+{: .tip-title }
+> Instrumenting your own application
+>
+> To add PAPI regions to your own application, read the [Instrumenting Your Application](profile#instrumenting-your-application) guide. The key rule: **every thread** that does parallel work must call `PAPI_hl_region_begin`/`end` from **inside** the `#pragma omp parallel` block.  Wrapping outside the parallel block captures only the master thread, producing misleading results.
+
 ---
 
 ## 5. Visualise in the GUI

@@ -72,6 +72,74 @@ In Intel processors, specifying different `--isa` values (e.g. `--isa x86_avx2 x
 
 Results go to `--output-dir` (default: platform user data dir) under a machine-specific subdirectory. `--machine-name` overrides the auto-detected CPU model name (note: you should use the same name as `carm benchmark --name`); `--app-name` overrides the name extracted from the command. `--keep-artifacts` preserves raw profiler output files for debugging. `--verbose` increases detail.
 
+## Instrumenting Your Application
+
+The PAPI backend captures per-region hardware-counter data by wrapping code regions with `PAPI_hl_region_begin` / `PAPI_hl_region_end`.  How you place these calls determines whether CARM sees the work done by **every thread** or only the master thread.
+
+### Canonical example
+
+The repository includes a [PAPI-instrumented fork of LULESH 2.0](https://github.com/LLNL/LULESH) under `examples/lulesh-papi/`.  Study its instrumentation pattern before annotating your own code.  Key annotations in that example:
+
+| Region | Instrumentation scope |
+|--------|----------------------|
+| `CalcKinematics`, `CalcMonotonicQGradients`, `CalcMonotonicQRegion`, `EvalEOS_setup`, `UpdateVolumes` | **Per-thread** — inside `#pragma omp parallel` |
+| `LagrangeNodal` | **Serial wrapper** — master thread only (noted explicitly in source) |
+
+### Required initialisation
+
+At process startup, before any region annotation:
+
+1. Call `PAPI_library_init(PAPI_VER_CURRENT)` once.
+2. For OpenMP applications, call `PAPI_thread_init` so PAPI can distinguish threads:
+
+```c
+PAPI_thread_init((unsigned long (*)(void)) omp_get_thread_num);
+```
+
+Without `PAPI_thread_init`, PAPI cannot associate counters with individual OpenMP threads, and multi-threaded results will be incorrect or missing.
+
+### Correct pattern: per-thread region annotation
+
+Place `PAPI_hl_region_begin` and `PAPI_hl_region_end` **inside** the `#pragma omp parallel` block so that every thread enters and exits the region:
+
+```c
+#pragma omp parallel
+{
+    PAPI_hl_region_begin("MyKernel");
+    #pragma omp for
+    for (int i = 0; i < N; ++i) {
+        /* kernel work */
+    }
+    PAPI_hl_region_end("MyKernel");
+}
+```
+
+Each thread accumulates its own hardware counters for the region.  CARM's `--aggregation` modes (e.g., `region_merged`, `thread`, `region_per_thread`) can then correctly combine or separate per-thread measurements.
+
+### Wrong pattern: wrapping outside the parallel region
+
+```c
+/* WRONG — only the master thread calls PAPI_hl_region_begin/end */
+PAPI_hl_region_begin("MyKernel");
+#pragma omp parallel for
+for (int i = 0; i < N; ++i) {
+    /* kernel work */
+}
+PAPI_hl_region_end("MyKernel");
+```
+
+**What happens**: Only the thread that called `PAPI_hl_region_begin` (the master thread) records counter data. Every other OpenMP thread executes the loop work but *never enters the PAPI region*. Their hardware-counter contributions are invisible to PAPI.
+
+### Checking your instrumentation
+
+Run a quick sanity check with `--aggregation thread`:
+
+```bash
+carm profile --backend papi --aggregation thread -- ./my_app
+```
+
+If you annotated correctly, you should see one line per thread. If only one thread appears for a parallel kernel, your region calls are outside the parallel block.
+
 ## Backend Selection Details
 
 | | PAPI | Perf |
