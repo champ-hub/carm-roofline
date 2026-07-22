@@ -88,8 +88,6 @@ target-version = "py39"
 # Exclude legacy and third-party code
 exclude = [
     "test",  # Test code with temporary workarounds
-    "venv",
-    ".venv*",
 ]
 
 [tool.ruff.lint]
