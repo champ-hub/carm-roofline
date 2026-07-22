@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from benchmark.benchmarking import LoadStoreRatio, TestType as BenchmarkTestType
-from benchmark.output import OutputKind
-from results_paths import default_results_root
-from core import Frequency, Operations, Performance, Seconds
+from carm_roofline.benchmark.benchmarking import LoadStoreRatio, TestType as BenchmarkTestType
+from carm_roofline.benchmark.output import OutputKind
+from carm_roofline.results_paths import default_results_root
+from carm_roofline.core import Frequency, Operations, Performance, Seconds
 
 
 def make_fake_matplotlib():
@@ -199,7 +199,7 @@ class _Suite:
 
     def get_arithmetic_benchmarks(self):
         """Return only arithmetic benchmarks from this suite."""
-        from benchmark.benchmark import ArithmeticBenchmark
+        from carm_roofline.benchmark.benchmark import ArithmeticBenchmark
 
         return {name: bench for name, bench in self.benchmarks.items() if isinstance(bench, ArithmeticBenchmark)}
 
@@ -235,7 +235,7 @@ def _make_fake_context(isa_names: list[str], freq_hz: float = 3.0e9, nominal_hz:
 
     class _FakeBenchmarking:
         def __init__(self):
-            from core import ArithmeticOperation
+            from carm_roofline.core import ArithmeticOperation
 
             self.test = BenchmarkTestType.ARITHMETIC
             self.threads = 1
@@ -260,10 +260,10 @@ def _make_fake_context(isa_names: list[str], freq_hz: float = 3.0e9, nominal_hz:
 
 def reload_handlers(monkeypatch):
     """Reload handler modules so they pick up any monkeypatched matplotlib/numpy."""
-    import benchmark.output.arithmetic as arithmetic
-    import benchmark.output.memory as memory
-    import benchmark.output.mixed as mixed
-    import benchmark.output.roofline as roofline
+    import carm_roofline.benchmark.output.arithmetic as arithmetic
+    import carm_roofline.benchmark.output.memory as memory
+    import carm_roofline.benchmark.output.mixed as mixed
+    import carm_roofline.benchmark.output.roofline as roofline
 
     importlib.reload(arithmetic)
     importlib.reload(memory)
@@ -274,8 +274,8 @@ def reload_handlers(monkeypatch):
 
 def test_factory_returns_registered_strategy_instance():
     """Factory returns strategy class for the requested test type."""
-    from benchmark.output import TestType, _get_handler_for_test_type
-    from benchmark.output.arithmetic import ArithmeticOutputHandler
+    from carm_roofline.benchmark.output import TestType, _get_handler_for_test_type
+    from carm_roofline.benchmark.output.arithmetic import ArithmeticOutputHandler
 
     strategy = _get_handler_for_test_type(TestType.ARITHMETIC)
     assert isinstance(strategy, ArithmeticOutputHandler)
@@ -291,11 +291,11 @@ _SUPPORTED_OUTPUT_TEST_TYPES = (
 
 
 _STRATEGY_REGISTRY = {
-    BenchmarkTestType.ARITHMETIC: ("benchmark.output.arithmetic", "ArithmeticOutputHandler"),
-    BenchmarkTestType.ROOFLINE: ("benchmark.output.roofline", "RooflineOutputHandler"),
-    BenchmarkTestType.MEMORY: ("benchmark.output.memory", "MemoryOutputHandler"),
-    BenchmarkTestType.MIXED: ("benchmark.output.mixed", "MixedOutputHandler"),
-    BenchmarkTestType.MEMORY_SWEEP: ("benchmark.output.memory_sweep", "MemorySweepOutputHandler"),
+    BenchmarkTestType.ARITHMETIC: ("carm_roofline.benchmark.output.arithmetic", "ArithmeticOutputHandler"),
+    BenchmarkTestType.ROOFLINE: ("carm_roofline.benchmark.output.roofline", "RooflineOutputHandler"),
+    BenchmarkTestType.MEMORY: ("carm_roofline.benchmark.output.memory", "MemoryOutputHandler"),
+    BenchmarkTestType.MIXED: ("carm_roofline.benchmark.output.mixed", "MixedOutputHandler"),
+    BenchmarkTestType.MEMORY_SWEEP: ("carm_roofline.benchmark.output.memory_sweep", "MemorySweepOutputHandler"),
 }
 
 
@@ -337,7 +337,7 @@ def test_roofline_strategy_exposes_file_output_methods():
 @pytest.mark.parametrize("test_type", _SUPPORTED_OUTPUT_TEST_TYPES)
 def test_table_output_dispatches_via_registered_strategy_path(monkeypatch, test_type):
     """Table output dispatches to the registered test-specific strategy path."""
-    from benchmark.output import output_benchmark_results
+    from carm_roofline.benchmark.output import output_benchmark_results
 
     context = _make_fake_context(["isa1"])
     context.benchmarking.test = test_type
@@ -368,7 +368,7 @@ def test_table_output_dispatches_via_registered_strategy_path(monkeypatch, test_
 @pytest.mark.parametrize("test_type", _SUPPORTED_OUTPUT_TEST_TYPES)
 def test_plot_output_dispatches_via_registered_strategy_path(monkeypatch, test_type):
     """Plot output dispatches to the registered test-specific strategy path."""
-    from benchmark.output import output_benchmark_results
+    from carm_roofline.benchmark.output import output_benchmark_results
 
     context = _make_fake_context(["isa1"])
     context.benchmarking.test = test_type
@@ -402,14 +402,14 @@ def test_plot_output_dispatches_via_registered_strategy_path(monkeypatch, test_t
 
 def test_arithmetic_cli_prints_gops(capsys):
     """CLI arithmetic output prints GOPS per ISA."""
-    from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
-    from core import DataType
-    from core import ArithmeticOperation
-    from benchmark.generation.parameters import ArithmeticBenchmarkParams
-    from benchmark.output import TestType, _get_handler_for_test_type
-    from benchmark.suites import ArithmeticBenchmarkSuite
-    from test_bench.builder import MicrobenchmarkFunctionSpec
-    from core import Bytes
+    from carm_roofline.benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
+    from carm_roofline.core import DataType
+    from carm_roofline.core import ArithmeticOperation
+    from carm_roofline.benchmark.generation.parameters import ArithmeticBenchmarkParams
+    from carm_roofline.benchmark.output import TestType, _get_handler_for_test_type
+    from carm_roofline.benchmark.suites import ArithmeticBenchmarkSuite
+    from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+    from carm_roofline.core import Bytes
 
     # Create proper ArithmeticBenchmarkResult objects
     r1 = ArithmeticBenchmarkResult(time_taken=Seconds(100.0), num_repetitions=1000, performance=Performance(5.0))
@@ -468,9 +468,9 @@ def test_arithmetic_cli_prints_gops(capsys):
 
 def test_arithmetic_plot_saves_file(monkeypatch, tmp_path, capsys):
     """Arithmetic plot saves image file when matplotlib is available."""
-    from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkParams, ArithmeticBenchmarkResult
-    from core import ArithmeticOperation
-    from core import Operations
+    from carm_roofline.benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkParams, ArithmeticBenchmarkResult
+    from carm_roofline.core import ArithmeticOperation
+    from carm_roofline.core import Operations
 
     # install fake matplotlib into sys.modules
     mpl, _pyplot = make_fake_matplotlib()
@@ -503,7 +503,7 @@ def test_arithmetic_plot_saves_file(monkeypatch, tmp_path, capsys):
 
 def test_roofline_plot_handles_missing_data(monkeypatch):
     """Roofline plot gracefully handles suites with no points and prints notice."""
-    from benchmark.suites import RooflineBenchmarkSuite
+    from carm_roofline.benchmark.suites import RooflineBenchmarkSuite
 
     # fake matplotlib and numpy
     mpl, _ = make_fake_matplotlib()
@@ -537,19 +537,19 @@ def _make_minimal_roofline_suite(
     bandwidth_bps: float = 40e9,
 ) -> "RooflineBenchmarkSuite":
     """Create a minimal roofline suite with one arith + one L1 mem benchmark."""
-    from benchmark.benchmark import (
+    from carm_roofline.benchmark.benchmark import (
         ArithmeticBenchmark,
         ArithmeticBenchmarkResult,
         MemoryBenchmark,
         MemoryBenchmarkResult,
     )
-    from benchmark.benchmarking import LoadStoreRatio
-    from core import DataType
-    from core import ArithmeticOperation
-    from benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
-    from benchmark.suites import RooflineBenchmarkSuite
-    from test_bench.builder import MicrobenchmarkFunctionSpec
-    from core import Bandwidth, Bytes, Operations, Performance, Seconds
+    from carm_roofline.benchmark.benchmarking import LoadStoreRatio
+    from carm_roofline.core import DataType
+    from carm_roofline.core import ArithmeticOperation
+    from carm_roofline.benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
+    from carm_roofline.benchmark.suites import RooflineBenchmarkSuite
+    from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+    from carm_roofline.core import Bandwidth, Bytes, Operations, Performance, Seconds
 
     arith_params = ArithmeticBenchmarkParams(
         data_type=DataType.f32,
@@ -598,7 +598,7 @@ def _make_minimal_roofline_suite(
 
 def test_roofline_cli_prints_summary():
     """Roofline CLI prints a merged summary table with unit-formatted values."""
-    from benchmark.output import TestType, _get_handler_for_test_type
+    from carm_roofline.benchmark.output import TestType, _get_handler_for_test_type
 
     context = _make_fake_context(["isa1"], freq_hz=3.0e9)
     context.benchmarking.test = TestType.ROOFLINE
@@ -635,20 +635,20 @@ def test_roofline_plot_saves_file(monkeypatch, tmp_path):
 
 def test_roofline_legacy_csv_compatibility(tmp_path):
     """Roofline CSV compatibility writes two headers and appends rows."""
-    from benchmark.benchmark import (
+    from carm_roofline.benchmark.benchmark import (
         ArithmeticBenchmark,
         ArithmeticBenchmarkResult,
         MemoryBenchmark,
         MemoryBenchmarkResult,
     )
-    from benchmark.benchmarking import LoadStoreRatio, TestType
-    from core import DataType
-    from core import ArithmeticOperation
-    from benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
-    from benchmark.output.roofline import _write_csv
-    from benchmark.suites import RooflineBenchmarkSuite
-    from test_bench.builder import MicrobenchmarkFunctionSpec
-    from core import Bandwidth, Bytes, Performance, Seconds
+    from carm_roofline.benchmark.benchmarking import LoadStoreRatio, TestType
+    from carm_roofline.core import DataType
+    from carm_roofline.core import ArithmeticOperation
+    from carm_roofline.benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
+    from carm_roofline.benchmark.output.roofline import _write_csv
+    from carm_roofline.benchmark.suites import RooflineBenchmarkSuite
+    from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+    from carm_roofline.core import Bandwidth, Bytes, Performance, Seconds
 
     context = _make_fake_context(["isa1"], freq_hz=3.0e9)
     context.benchmarking.test = TestType.ROOFLINE
@@ -772,20 +772,20 @@ def test_roofline_legacy_csv_compatibility(tmp_path):
 
 def test_roofline_csv_gates_by_format(tmp_path):
     """Roofline CSV output should only happen with output_format='csv'."""
-    from benchmark.benchmark import (
+    from carm_roofline.benchmark.benchmark import (
         ArithmeticBenchmark,
         ArithmeticBenchmarkResult,
         MemoryBenchmark,
         MemoryBenchmarkResult,
     )
-    from benchmark.benchmarking import LoadStoreRatio, TestType
-    from core import DataType
-    from core import ArithmeticOperation
-    from benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
-    from benchmark.output import output_benchmark_results
-    from benchmark.suites import RooflineBenchmarkSuite
-    from test_bench.builder import MicrobenchmarkFunctionSpec
-    from core import Bandwidth, Bytes, Performance, Seconds
+    from carm_roofline.benchmark.benchmarking import LoadStoreRatio, TestType
+    from carm_roofline.core import DataType
+    from carm_roofline.core import ArithmeticOperation
+    from carm_roofline.benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
+    from carm_roofline.benchmark.output import output_benchmark_results
+    from carm_roofline.benchmark.suites import RooflineBenchmarkSuite
+    from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+    from carm_roofline.core import Bandwidth, Bytes, Performance, Seconds
 
     context = _make_fake_context(["isa1"], freq_hz=3.0e9)
     context.benchmarking.test = TestType.ROOFLINE
@@ -853,13 +853,13 @@ def test_roofline_csv_gates_by_format(tmp_path):
 
 def test_memory_cli_and_plot(monkeypatch, tmp_path, capsys):
     """Memory CLI prints bandwidth and plotting saves image when matplotlib available."""
-    from benchmark.benchmark import MemoryBenchmark, MemoryBenchmarkResult
-    from core import DataType
-    from benchmark.generation.parameters import MemoryBenchmarkParams
-    from benchmark.output.memory import MemoryOutputHandler
-    from benchmark.suites import MemoryBenchmarkSuite
-    from test_bench.builder import MicrobenchmarkFunctionSpec
-    from core import Bandwidth, Bytes
+    from carm_roofline.benchmark.benchmark import MemoryBenchmark, MemoryBenchmarkResult
+    from carm_roofline.core import DataType
+    from carm_roofline.benchmark.generation.parameters import MemoryBenchmarkParams
+    from carm_roofline.benchmark.output.memory import MemoryOutputHandler
+    from carm_roofline.benchmark.suites import MemoryBenchmarkSuite
+    from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+    from carm_roofline.core import Bandwidth, Bytes
 
     # Create proper MemoryBenchmarkResult (12.34 GB/s → Bandwidth(12.34e9) so output shows "GB/s")
     r1 = MemoryBenchmarkResult(
@@ -902,7 +902,7 @@ def test_memory_cli_and_plot(monkeypatch, tmp_path, capsys):
 
     buf = io.StringIO()
     fake_console = Console(file=buf, force_terminal=True, width=80)
-    monkeypatch.setattr("output_utils.get_console", lambda: fake_console)
+    monkeypatch.setattr("carm_roofline.output_utils.get_console", lambda: fake_console)
 
     strategy = MemoryOutputHandler()
     strategy.print_table(context, isa_suites)
@@ -919,7 +919,7 @@ def test_memory_cli_and_plot(monkeypatch, tmp_path, capsys):
     mpl, _ = make_fake_matplotlib()
     monkeypatch.setitem(sys.modules, "matplotlib", mpl)
     monkeypatch.setitem(sys.modules, "matplotlib.pyplot", mpl.pyplot)
-    memory_mod = importlib.import_module("benchmark.output.memory")
+    memory_mod = importlib.import_module("carm_roofline.benchmark.output.memory")
     importlib.reload(memory_mod)
 
     memory_mod._write_plot(isa_suites, tmp_path)
@@ -929,18 +929,18 @@ def test_memory_cli_and_plot(monkeypatch, tmp_path, capsys):
 
 def test_mixed_combines_handlers(monkeypatch, tmp_path, capsys):
     """Mixed handler prints both arithmetic and memory summaries and saves combined plot."""
-    from benchmark.benchmark import (
+    from carm_roofline.benchmark.benchmark import (
         ArithmeticBenchmark,
         ArithmeticBenchmarkResult,
         MemoryBenchmark,
         MemoryBenchmarkResult,
     )
-    from core import DataType
-    from core import ArithmeticOperation
-    from benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
-    from benchmark.suites import ArithmeticBenchmarkSuite, MemoryBenchmarkSuite
-    from test_bench.builder import MicrobenchmarkFunctionSpec
-    from core import Bandwidth, Bytes, Performance, Seconds
+    from carm_roofline.core import DataType
+    from carm_roofline.core import ArithmeticOperation
+    from carm_roofline.benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
+    from carm_roofline.benchmark.suites import ArithmeticBenchmarkSuite, MemoryBenchmarkSuite
+    from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+    from carm_roofline.core import Bandwidth, Bytes, Performance, Seconds
 
     context = _make_fake_context(["isaA", "isaB"], freq_hz=3.0e9)
 
@@ -998,7 +998,7 @@ def test_mixed_combines_handlers(monkeypatch, tmp_path, capsys):
     isa_suites = {"isaA": s_arith, "isaB": s_mem}
 
     # CLI: should call handlers without error (no mixed benchmarks, so falls back to arithmetic + memory)
-    from benchmark.output import mixed as mixed_mod
+    from carm_roofline.benchmark.output import mixed as mixed_mod
 
     # simply invoke the handler; it currently only logs a short message and
     # the bulk of the work is done by the individual sub-handlers, so there is
@@ -1010,9 +1010,9 @@ def test_mixed_combines_handlers(monkeypatch, tmp_path, capsys):
     monkeypatch.setitem(sys.modules, "matplotlib", mpl)
     monkeypatch.setitem(sys.modules, "matplotlib.pyplot", mpl.pyplot)
     # reload involved modules
-    importlib.reload(importlib.import_module("benchmark.output.arithmetic"))
-    importlib.reload(importlib.import_module("benchmark.output.memory"))
-    mixed_mod = importlib.reload(importlib.import_module("benchmark.output.mixed"))
+    importlib.reload(importlib.import_module("carm_roofline.benchmark.output.arithmetic"))
+    importlib.reload(importlib.import_module("carm_roofline.benchmark.output.memory"))
+    mixed_mod = importlib.reload(importlib.import_module("carm_roofline.benchmark.output.mixed"))
 
     mixed_mod._write_plot(isa_suites, tmp_path)
     saved = [str(p) for p in mpl.pyplot._saved]
@@ -1024,20 +1024,20 @@ class TestJsonlOutput:
 
     def test_jsonl_writes_one_line_per_benchmark(self, tmp_path):
         """Each benchmark with results produces one JSONL line."""
-        from benchmark.benchmark import (
+        from carm_roofline.benchmark.benchmark import (
             ArithmeticBenchmark,
             ArithmeticBenchmarkResult,
             MemoryBenchmark,
             MemoryBenchmarkResult,
         )
-        from benchmark.benchmarking import LoadStoreRatio
-        from core import DataType
-        from core import ArithmeticOperation
-        from benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
-        from benchmark.output.jsonl import write_jsonl_benchmarks
-        from benchmark.suites import ArithmeticBenchmarkSuite, MemoryBenchmarkSuite
-        from test_bench.builder import MicrobenchmarkFunctionSpec
-        from core import Bandwidth, Bytes, Operations, Performance, Seconds
+        from carm_roofline.benchmark.benchmarking import LoadStoreRatio
+        from carm_roofline.core import DataType
+        from carm_roofline.core import ArithmeticOperation
+        from carm_roofline.benchmark.generation.parameters import ArithmeticBenchmarkParams, MemoryBenchmarkParams
+        from carm_roofline.benchmark.output.jsonl import write_jsonl_benchmarks
+        from carm_roofline.benchmark.suites import ArithmeticBenchmarkSuite, MemoryBenchmarkSuite
+        from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+        from carm_roofline.core import Bandwidth, Bytes, Operations, Performance, Seconds
 
         context = _make_fake_context(["isa1"], freq_hz=2.0e9)
 
@@ -1098,14 +1098,14 @@ class TestJsonlOutput:
         """Arithmetic JSONL entry has all expected fields with correct types."""
         import json
 
-        from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
-        from core import DataType
-        from core import ArithmeticOperation
-        from benchmark.generation.parameters import ArithmeticBenchmarkParams
-        from benchmark.output.jsonl import write_jsonl_benchmarks
-        from benchmark.suites import ArithmeticBenchmarkSuite
-        from test_bench.builder import MicrobenchmarkFunctionSpec
-        from core import Bytes, Operations, Performance, Seconds
+        from carm_roofline.benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
+        from carm_roofline.core import DataType
+        from carm_roofline.core import ArithmeticOperation
+        from carm_roofline.benchmark.generation.parameters import ArithmeticBenchmarkParams
+        from carm_roofline.benchmark.output.jsonl import write_jsonl_benchmarks
+        from carm_roofline.benchmark.suites import ArithmeticBenchmarkSuite
+        from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+        from carm_roofline.core import Bytes, Operations, Performance, Seconds
 
         context = _make_fake_context(["isa1"], freq_hz=2.0e9)
 
@@ -1162,14 +1162,14 @@ class TestJsonlOutput:
         """Memory JSONL entry has all expected fields with correct types."""
         import json
 
-        from benchmark.benchmark import MemoryBenchmark, MemoryBenchmarkResult
-        from benchmark.benchmarking import LoadStoreRatio
-        from core import DataType
-        from benchmark.generation.parameters import MemoryBenchmarkParams
-        from benchmark.output.jsonl import write_jsonl_benchmarks
-        from benchmark.suites import MemoryBenchmarkSuite
-        from test_bench.builder import MicrobenchmarkFunctionSpec
-        from core import Bandwidth, Bytes, Seconds
+        from carm_roofline.benchmark.benchmark import MemoryBenchmark, MemoryBenchmarkResult
+        from carm_roofline.benchmark.benchmarking import LoadStoreRatio
+        from carm_roofline.core import DataType
+        from carm_roofline.benchmark.generation.parameters import MemoryBenchmarkParams
+        from carm_roofline.benchmark.output.jsonl import write_jsonl_benchmarks
+        from carm_roofline.benchmark.suites import MemoryBenchmarkSuite
+        from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+        from carm_roofline.core import Bandwidth, Bytes, Seconds
 
         context = _make_fake_context(["isa1"], freq_hz=2.0e9)
 
@@ -1228,14 +1228,14 @@ class TestJsonlOutput:
 
     def test_jsonl_skips_null_results(self, tmp_path):
         """Benchmarks with null results do not produce JSONL lines."""
-        from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
-        from core import DataType
-        from core import ArithmeticOperation
-        from benchmark.generation.parameters import ArithmeticBenchmarkParams
-        from benchmark.output.jsonl import write_jsonl_benchmarks
-        from benchmark.suites import ArithmeticBenchmarkSuite
-        from test_bench.builder import MicrobenchmarkFunctionSpec
-        from core import Bytes, Operations, Performance, Seconds
+        from carm_roofline.benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
+        from carm_roofline.core import DataType
+        from carm_roofline.core import ArithmeticOperation
+        from carm_roofline.benchmark.generation.parameters import ArithmeticBenchmarkParams
+        from carm_roofline.benchmark.output.jsonl import write_jsonl_benchmarks
+        from carm_roofline.benchmark.suites import ArithmeticBenchmarkSuite
+        from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+        from carm_roofline.core import Bytes, Operations, Performance, Seconds
 
         context = _make_fake_context(["isa1"], freq_hz=2.0e9)
 
@@ -1287,14 +1287,14 @@ class TestJsonlOutput:
         """Two writes to the same path produce cumulative lines."""
         import json
 
-        from benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
-        from core import DataType
-        from core import ArithmeticOperation
-        from benchmark.generation.parameters import ArithmeticBenchmarkParams
-        from benchmark.output.jsonl import write_jsonl_benchmarks
-        from benchmark.suites import ArithmeticBenchmarkSuite
-        from test_bench.builder import MicrobenchmarkFunctionSpec
-        from core import Bytes, Operations, Performance, Seconds
+        from carm_roofline.benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkResult
+        from carm_roofline.core import DataType
+        from carm_roofline.core import ArithmeticOperation
+        from carm_roofline.benchmark.generation.parameters import ArithmeticBenchmarkParams
+        from carm_roofline.benchmark.output.jsonl import write_jsonl_benchmarks
+        from carm_roofline.benchmark.suites import ArithmeticBenchmarkSuite
+        from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+        from carm_roofline.core import Bytes, Operations, Performance, Seconds
 
         context = _make_fake_context(["isa1"], freq_hz=2.0e9)
 
@@ -1349,14 +1349,14 @@ class TestJsonlOutput:
 
     def test_jsonl_default_in_output_kinds(self):
         """JSONL is available in OutputKind and is used by default."""
-        from benchmark.output import OutputKind
+        from carm_roofline.benchmark.output import OutputKind
 
         assert hasattr(OutputKind, "JSONL")
         assert OutputKind.JSONL.value == "jsonl"
 
         import argparse
 
-        from run_config import RunConfig
+        from carm_roofline.run_config import RunConfig
 
         parser = argparse.ArgumentParser()
         RunConfig.insert_arguments(parser)

@@ -1,0 +1,222 @@
+"""Benchmark configuration and argument parsing. For data structures representing benchmark results, see
+
+benchmark/benchmark.py."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+from enum import Enum
+from typing import TypeVar
+
+from carm_roofline.arguments import InsertsArguments, enum_action, positive_float, positive_int
+from carm_roofline.core import ArithmeticOperation, Bytes, DataType, Operations
+from carm_roofline.output_utils import warn
+
+
+class TestType(Enum):
+    """Benchmark test types."""
+
+    ARITHMETIC = "arithmetic"
+    MEMORY = "memory"
+    ROOFLINE = "roofline"
+    MIXED = "mixed"
+    MEMORY_SWEEP = "memory_sweep"
+
+
+@dataclass
+class LoadStoreRatio:
+    loads: int
+    stores: int
+
+
+def ld_st_ratio_type(arg: str) -> LoadStoreRatio:
+    """Parse a load-store ratio specifier.
+
+    Supported forms:
+      - "ld"    -> (ld, 1) meaning ld loads per store
+      - "ld:st" -> (ld, st) explicit loads:stores
+
+    Returns a tuple (loads, stores) where loads and/or stores may be 0.
+    Raises argparse.ArgumentTypeError on invalid input.
+    """
+    s = str(arg).strip().lower()
+
+    # Parse two intergers ("N:M" form)
+    if ":" in s:
+        parts = s.split(":")
+        if len(parts) != 2:
+            raise argparse.ArgumentTypeError(f"invalid ld-st ratio: {arg!r}")
+        try:
+            ld = int(parts[0])
+            st = int(parts[1])
+            if ld < 0 or st < 0:
+                raise argparse.ArgumentTypeError(f"invalid ld-st ratio, values must be non-negative: {arg!r}")
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"invalid ld-st ratio, could not parse integers: {arg!r}") from None
+    else:
+        try:
+            ld = positive_int(s)
+            st = 1
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"invalid ld-st ratio: {arg!r}") from None
+
+    return LoadStoreRatio(ld, st)
+
+
+def mem_test_size_type(arg: str) -> Bytes | None:
+    """Parse a memory test size specifier.
+
+    Accepts either:
+      - A quantity with a binary unit (e.g. "16 KiB", "2 MiB", "8 GiB")
+      - The string "auto" (case-insensitive) for automatic sizing
+
+    Returns:
+        Bytes or None (for "auto")
+
+    Raises:
+        argparse.ArgumentTypeError on invalid input.
+    """
+    s = str(arg).strip().lower()
+    if s == "auto":
+        return None
+    try:
+        return Bytes.from_argparse(arg)
+    except argparse.ArgumentTypeError:
+        raise
+    except Exception as e:
+        raise argparse.ArgumentTypeError(
+            f"invalid memory test size: {arg!r}. Expected a binary unit string like '16 KiB', '2 MiB', or 'auto'. ({e})"
+        ) from e
+
+
+_T = TypeVar("_T")
+
+
+def _dedupe(items: list[_T]) -> list[_T]:
+    """Remove duplicates while preserving order."""
+    result: list[_T] = []
+    for item in items:
+        if item not in result:
+            result.append(item)
+    return result
+
+
+class Benchmarking(InsertsArguments):
+    """Benchmark configuration and argument parsing."""
+
+    num_ops: Operations
+
+    def __init__(self, args: argparse.Namespace):
+        """Initialize benchmarking configuration from parsed CLI arguments.
+
+        Converts parsed arguments to typed fields. Multi-value parameters
+        (data_type, threads, ld_st_ratio, mem_target) are stored as lists
+        and deduplicated while preserving order. ``mem_target`` is pre-resolved:
+        ``"all"`` expands to ``["L1", "L2", "L3", "DRAM"]``; concrete values
+        are deduplicated.
+        """
+        super().__init__()
+        self.test: TestType = args.test
+        self.mem_target: list[str] = (
+            ["L1", "L2", "L3", "DRAM"] if "all" in args.mem_target else _dedupe(args.mem_target)
+        )
+        self.data_type: list[DataType] = _dedupe(args.data_type)
+        self.threads: list[int] = _dedupe(args.threads)
+        self.interleaved: bool = args.interleaved
+        self.instructions: set[ArithmeticOperation] = set(args.instruction)
+        self.num_ops: Operations = Operations(args.num_ops)
+        self.ld_st_ratio: list[LoadStoreRatio] = _dedupe(args.ld_st_ratio)
+        self.arith_mem_ratio: int = args.arith_mem_ratio
+        self.mem_test_sizes: list[Bytes | None] | None = args.mem_test_sizes
+        self.verbose: int = args.verbose
+        self.test_time: float = args.test_time
+        if self.test_time < 10.0:
+            warn(
+                f"Target test time {self.test_time:.1f}s may be too low for accurate measurements. Consider using a "
+                f"higher value (e.g. 25s) for more reliable results."
+            )
+
+    @staticmethod
+    def insert_arguments(parser: argparse.ArgumentParser) -> None:
+        # The specific memory level target has been moved to --mem-target
+        parser.add_argument(
+            "-t",
+            "--test",
+            default=TestType.ROOFLINE,
+            action=enum_action(TestType),
+            help="Type of the test. 'arithmetic' measures the performance of arithmetic operations, 'memory' "
+            "measures the bandwidth of various memory sizes, 'roofline' combines both tests to construct the "
+            "roofline model, 'mixed' measures bandwidth and FP performance for a combination of "
+            "memory accesses.",
+        )
+        parser.add_argument(
+            "-m",
+            "--mem-target",
+            nargs="+",
+            default=["all"],
+            choices=["L1", "L2", "L3", "DRAM", "all"],
+            help="Target memory level(s) or 'all' (Default: all)",
+        )
+        parser.add_argument(
+            "-o",
+            "--num-ops",
+            default=32 * 1024,
+            type=positive_int,
+            help="Number of arithmetic operations to perform in the arithmetic test (Default: 32768)",
+        )
+        parser.add_argument(
+            "-d",
+            "--data-type",
+            nargs="+",
+            default=[DataType.f32],
+            action=enum_action(DataType),
+            help="Data type(s) for benchmark operations (Default: f32)",
+        )
+        parser.add_argument(
+            "--threads", nargs="+", default=[1], type=positive_int, help="Number of threads to benchmark (Default: 1)"
+        )
+        parser.add_argument(
+            "--interleaved",
+            action="store_true",
+            help="Optimize thread affinity for NUMA systems "
+            "where the core domain is interleaved (e.g. node 0 has cores 0, 2, 4, ...)",
+        )
+        parser.add_argument(
+            "--instruction",
+            default=[ArithmeticOperation.add, ArithmeticOperation.fma],
+            nargs="+",
+            action=enum_action(ArithmeticOperation),
+            help="Arithmetic instruction(s) to benchmark (Default: add fma)",
+        )
+        parser.add_argument(
+            "--ld-st-ratio",
+            nargs="+",
+            default=[LoadStoreRatio(2, 1)],
+            type=ld_st_ratio_type,
+            help="Load-to-store ratio(s) for memory access patterns. Format: 'LD:ST' (e.g., '2:1') or a single "
+            "integer for 'N:1' ratio. Use '1:0' for load-only or '0:1' for store-only tests. (Default: 2:1)",
+        )
+        parser.add_argument(
+            "--arith-mem-ratio",
+            default=2,
+            type=positive_int,
+            help="Ratio between arithmetic and memory operations for 'mixed' test (Default: 2)",
+        )
+        parser.add_argument(
+            "--mem-test-sizes",
+            nargs="+",
+            type=mem_test_size_type,
+            help="Size of the test arrays for each memory level. Accepts binary unit strings like '16KiB', '2MiB', "
+            "'8GiB', or 'auto' to automatically size based on detected caches. "
+            "e.g. '--mem-test-sizes 16KiB 256KiB 2MiB 64GiB' / "
+            "'--mem-test-sizes auto auto 2MiB auto' for L1, L2, L3, DRAM respectively. "
+            "(Default: auto for all levels)",
+        )
+        parser.add_argument(
+            "--test-time",
+            default=25.0,
+            type=positive_float,
+            help="Target runtime for each individual microbenchmark, in seconds. Low runtime may lead to inaccurate "
+            "results. (Default: 25.0)",
+        )

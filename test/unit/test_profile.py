@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from core import DataType
+from carm_roofline.core import DataType
 
-from profiling.aggregation import (
+from carm_roofline.profiling.aggregation import (
     AggregatedPoint,
     aggregate,
     aggregate_global,
@@ -18,15 +18,15 @@ from profiling.aggregation import (
     aggregate_per_region_per_thread,
     aggregate_per_thread,
 )
-from profiling.config import AggregationMode
-from profiling.model import RegionMetrics, RunMetadata, RunResults, ThreadMetrics
-from profiling.papi_loader import (
+from carm_roofline.profiling.config import AggregationMode
+from carm_roofline.profiling.model import RegionMetrics, RunMetadata, RunResults, ThreadMetrics
+from carm_roofline.profiling.papi_loader import (
     RankMetrics,
     discover_rank_files,
     load_all_ranks,
     parse_rank_file,
 )
-from profiling.papi_metrics import (
+from carm_roofline.profiling.papi_metrics import (
     METRICS,
     _parse_papi_xml_output,
     build_isa_custom_metrics,
@@ -34,7 +34,7 @@ from profiling.papi_metrics import (
     PAPIMetricRegistry,
     resolve_metrics,
 )
-from profiling.shared import (
+from carm_roofline.profiling.shared import (
     MetricContext,
     MetricDefinition,
     MetricResolutionConfig,
@@ -511,7 +511,7 @@ def test_load_all_ranks_empty_dir(tmp_path: Path) -> None:
 
 
 def test_default_app_name() -> None:
-    from profiling.config import _default_app_name
+    from carm_roofline.profiling.config import _default_app_name
 
     assert _default_app_name(["./build/myapp", "arg1"]) == "myapp"
     assert _default_app_name(["mpirun", "-np", "4", "./myapp"]) == "myapp"
@@ -530,7 +530,7 @@ def test_default_app_name() -> None:
 def test_write_applications_csv(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
 
-    from profiling.output import write_applications_csv
+    from carm_roofline.profiling.output import write_applications_csv
 
     cfg = MagicMock(machine_name="test_run", output_dir=tmp_path)
     run = _make_sample_run()
@@ -547,7 +547,7 @@ def test_write_applications_csv(tmp_path: Path) -> None:
 def test_write_applications_csv_per_rank(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
 
-    from profiling.output import write_applications_csv
+    from carm_roofline.profiling.output import write_applications_csv
 
     cfg = MagicMock(machine_name="test_run", output_dir=tmp_path)
     run = _make_sample_run()
@@ -563,7 +563,7 @@ def test_write_applications_csv_per_rank(tmp_path: Path) -> None:
 def test_write_profile_jsonl(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
 
-    from profiling.output import write_profile_jsonl
+    from carm_roofline.profiling.output import write_profile_jsonl
 
     cfg = MagicMock(machine_name="test_run", output_dir=tmp_path, aggregation=AggregationMode.GLOBAL)
     run = _make_sample_run()
@@ -602,7 +602,7 @@ def test_write_profile_jsonl(tmp_path: Path) -> None:
 def test_write_profile_jsonl_per_rank(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
 
-    from profiling.output import write_profile_jsonl
+    from carm_roofline.profiling.output import write_profile_jsonl
 
     cfg = MagicMock(machine_name="test_run", output_dir=tmp_path, aggregation=AggregationMode.RANK)
     run = _make_sample_run()
@@ -627,7 +627,7 @@ def test_write_profile_jsonl_per_rank(tmp_path: Path) -> None:
 def test_write_profile_jsonl_per_region_merged(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
 
-    from profiling.output import write_profile_jsonl
+    from carm_roofline.profiling.output import write_profile_jsonl
 
     reg_a = RegionMetrics(
         name="daxpy",
@@ -811,7 +811,7 @@ def test_parse_papi_xml_output_malformed() -> None:
 
 
 def test_fp_arith_counters_for_isas_scalar() -> None:
-    from isa.x86 import X86Scalar
+    from carm_roofline.isa.x86 import X86Scalar
 
     counters = fp_arith_counters_for_isas((X86Scalar,), DataType.f64)
     assert counters == {"FP_ARITH_INST_RETIRED:SCALAR_DOUBLE"}
@@ -821,21 +821,21 @@ def test_fp_arith_counters_for_isas_scalar() -> None:
 
 
 def test_fp_arith_counters_for_isas_sse() -> None:
-    from isa.x86 import X86SSE
+    from carm_roofline.isa.x86 import X86SSE
 
     counters = fp_arith_counters_for_isas((X86SSE,), DataType.f64)
     assert counters == {"FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE"}
 
 
 def test_fp_arith_counters_for_isas_avx2() -> None:
-    from isa.x86 import X86AVX2
+    from carm_roofline.isa.x86 import X86AVX2
 
     counters = fp_arith_counters_for_isas((X86AVX2,), DataType.f64)
     assert counters == {"FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE"}
 
 
 def test_fp_arith_counters_for_isas_multiple() -> None:
-    from isa.x86 import X86AVX2, X86SSE, X86Scalar
+    from carm_roofline.isa.x86 import X86AVX2, X86SSE, X86Scalar
 
     counters = fp_arith_counters_for_isas(
         (X86AVX2, X86SSE, X86Scalar), DataType.f64
@@ -848,7 +848,7 @@ def test_fp_arith_counters_for_isas_multiple() -> None:
 
 
 def test_fp_arith_counters_for_isas_non_x86_returns_empty() -> None:
-    from isa.arm import ArmNeon
+    from carm_roofline.isa.arm import ArmNeon
 
     counters = fp_arith_counters_for_isas((ArmNeon,), DataType.f64)
     assert counters == set()
@@ -860,7 +860,7 @@ def test_fp_arith_counters_for_isas_non_x86_returns_empty() -> None:
 
 
 def test_build_isa_custom_metrics_returns_correct_events() -> None:
-    from isa.x86 import X86AVX2, X86SSE
+    from carm_roofline.isa.x86 import X86AVX2, X86SSE
 
     registry = build_isa_custom_metrics((X86AVX2, X86SSE), DataType.f64)
     assert registry is not None
@@ -885,7 +885,7 @@ def test_build_isa_custom_metrics_returns_correct_events() -> None:
 
 
 def test_build_isa_custom_metrics_non_x86_returns_none() -> None:
-    from isa.arm import ArmNeon
+    from carm_roofline.isa.arm import ArmNeon
 
     result = build_isa_custom_metrics((ArmNeon,), DataType.f64)
     assert result is None
@@ -902,7 +902,7 @@ def test_build_isa_custom_metrics_empty_isas_returns_none() -> None:
 
 
 def test_resolve_metrics_with_custom_isa_outranks_default() -> None:
-    from isa.x86 import X86AVX2
+    from carm_roofline.isa.x86 import X86AVX2
 
     available = frozenset({
         "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE",

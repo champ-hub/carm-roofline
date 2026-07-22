@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from architecture.identity import (
+from carm_roofline.architecture.identity import (
     CpuInfo,
     MachineSignature,
     MemoryLevelSignature,
@@ -18,8 +18,8 @@ from architecture.identity import (
     signature_from_architecture,
     write_machine_json,
 )
-from architecture.memory import MemoryLevelInfo
-from core import Bytes
+from carm_roofline.architecture.memory import MemoryLevelInfo
+from carm_roofline.core import Bytes
 
 pytestmark = pytest.mark.unit
 
@@ -120,7 +120,7 @@ class _FakeTopology:
 
 
 def test_detect_machine_signature(monkeypatch: pytest.MonkeyPatch) -> None:
-    import architecture.identity as identity
+    import carm_roofline.architecture.identity as identity
 
     monkeypatch.setattr(
         identity,
@@ -196,7 +196,7 @@ def _make_cache_info(name: str, size: int, instances: int, sharing: int) -> Memo
 
 def test_levels_from_topology_rounds_dram_size(monkeypatch: pytest.MonkeyPatch) -> None:
     """DRAM size is rounded to the nearest GiB when zoneinfo is unavailable."""
-    import architecture.identity as identity
+    import carm_roofline.architecture.identity as identity
 
     monkeypatch.setattr(identity, "_get_physical_ram_bytes", lambda: None)
     topo = _FakeTopo([_make_dram_info(15_966_246_912)])  # 14.87 GiB
@@ -214,7 +214,7 @@ def test_levels_from_topology_zeroes_dram_sharing() -> None:
 
 def test_levels_from_topology_preserves_cache_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     """Cache levels retain their exact fields."""
-    import architecture.identity as identity
+    import carm_roofline.architecture.identity as identity
 
     monkeypatch.setattr(identity, "_get_physical_ram_bytes", lambda: None)
     topo = _FakeTopo([
@@ -248,7 +248,7 @@ def test_levels_from_topology_preserves_cache_fields(monkeypatch: pytest.MonkeyP
 
 def test_dram_size_rounding_produces_stable_hash(monkeypatch: pytest.MonkeyPatch) -> None:
     """Two signatures with DRAM sizes 10 MiB apart produce same hash (same GiB bucket)."""
-    import architecture.identity as identity
+    import carm_roofline.architecture.identity as identity
 
     monkeypatch.setattr(identity, "_get_physical_ram_bytes", lambda: None)
     sig1 = MachineSignature(

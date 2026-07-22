@@ -6,8 +6,8 @@ import math
 
 import pytest
 
-from gui.data import RoofConfig, RoofStore, build_roofline_figure
-from roofline_assembly import ApplicationPoint, ApplicationRecord, BenchmarkRecord
+from carm_roofline.gui.data import RoofConfig, RoofStore, build_roofline_figure
+from carm_roofline.roofline_assembly import ApplicationPoint, ApplicationRecord, BenchmarkRecord
 
 pytestmark = pytest.mark.unit
 

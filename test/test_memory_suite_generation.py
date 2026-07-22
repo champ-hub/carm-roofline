@@ -5,13 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 
-from architecture.memory import CacheAwareThreadAffinity, MemoryLevelInfo
-from benchmark.benchmarking import LoadStoreRatio
-from benchmark.generation import MemoryLayoutMode
-from core import DataType
-from benchmark.suites.memory import MemoryBenchmarkSuite
-from test_bench.builder import MicrobenchmarkFunctionSpec
-from core import Bytes, Frequency
+from carm_roofline.architecture.memory import CacheAwareThreadAffinity, MemoryLevelInfo
+from carm_roofline.benchmark.benchmarking import LoadStoreRatio
+from carm_roofline.benchmark.generation import MemoryLayoutMode
+from carm_roofline.core import DataType
+from carm_roofline.benchmark.suites.memory import MemoryBenchmarkSuite
+from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+from carm_roofline.core import Bytes, Frequency
 
 
 @dataclass
@@ -104,7 +104,7 @@ def test_memory_suite_final_level_uses_geq_16x_previous_size(monkeypatch):
     def _capture_warn(message: str) -> None:
         warnings.append(message)
 
-    monkeypatch.setattr("benchmark.suites.memory.warn", _capture_warn)
+    monkeypatch.setattr("carm_roofline.benchmark.suites.memory.warn", _capture_warn)
 
     suite = MemoryBenchmarkSuite.generate(context, "dummy_isa")
     by_level = {bench.cache_level: bench for bench in suite.get_memory_benchmarks().values()}
@@ -155,7 +155,7 @@ def test_memory_suite_warns_if_dataset_fits_in_lower_cache(monkeypatch):
     context.architecture.memory_topology = _TopologyWithLowerFit()
 
     warnings: list[str] = []
-    monkeypatch.setattr("benchmark.suites.memory.warn", lambda msg: warnings.append(msg))
+    monkeypatch.setattr("carm_roofline.benchmark.suites.memory.warn", lambda msg: warnings.append(msg))
 
     _suite = MemoryBenchmarkSuite.generate(context, "dummy_isa")
 
