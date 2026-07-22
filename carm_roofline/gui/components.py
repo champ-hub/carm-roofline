@@ -5,9 +5,11 @@ from typing import Any
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
+from carm_roofline.core.units import Frequency
 from carm_roofline.gui.data import (
     COMPUTE_INST_OPTIONS,
     DATA_TYPE_OPTIONS,
+    FREQUENCY_OPTIONS,
     ActivePanel,
     DropdownOption,
     RoofConfig,
@@ -146,6 +148,13 @@ def build_roof_card(
         if roof.machine is None and resolved_roof is not None and resolved_roof.machine is not None
         else None
     )
+    ph_frequency = (
+        f"{Frequency(resolved_roof.actual_frequency_hz)} (auto)"
+        if roof.actual_frequency_hz is None
+        and resolved_roof is not None
+        and resolved_roof.actual_frequency_hz is not None
+        else None
+    )
     ph_isa = (
         f"{resolved_roof.isa} (auto)"
         if roof.isa is None and resolved_roof is not None and resolved_roof.isa is not None
@@ -201,6 +210,17 @@ def build_roof_card(
                                 options["machine"] if options else MACHINE_OPTIONS,
                                 roof.machine,
                                 placeholder=ph_machine,
+                            ),
+                        ),
+                        _field_row(
+                            "Frequency",
+                            dcc_dropdown(
+                                _make_id(RoofCardID.DROPDOWN_FREQUENCY, index=index),
+                                [(str(Frequency(hz)), str(hz)) for hz in options["actual_frequency_hz"]]
+                                if options
+                                else FREQUENCY_OPTIONS,
+                                str(roof.actual_frequency_hz) if roof.actual_frequency_hz is not None else None,
+                                placeholder=ph_frequency,
                             ),
                         ),
                         _field_row_pair(
@@ -360,13 +380,22 @@ def build_layout(
     )
 
 
-def dcc_dropdown(id_: Any, options: list[str], value: str | None, placeholder: str | None = None) -> html.Div:
-    """A searchable single-select dcc.Dropdown."""
-
+def dcc_dropdown(
+    id_: Any,
+    options: list[str] | list[tuple[str, str]],
+    value: str | None,
+    placeholder: str | None = None,
+) -> html.Div:
+    dd_options: list[dict[str, str]] = []
+    for o in options or []:
+        if isinstance(o, tuple):
+            dd_options.append({"label": o[0], "value": o[1]})
+        else:
+            dd_options.append({"label": o, "value": o})
     return html.Div(
         dcc.Dropdown(
             id=id_,
-            options=[{"label": o, "value": o} for o in options],
+            options=dd_options,
             value=value,
             placeholder=placeholder,
             searchable=True,

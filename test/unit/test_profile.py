@@ -837,9 +837,7 @@ def test_fp_arith_counters_for_isas_avx2() -> None:
 def test_fp_arith_counters_for_isas_multiple() -> None:
     from carm_roofline.isa.x86 import X86AVX2, X86SSE, X86Scalar
 
-    counters = fp_arith_counters_for_isas(
-        (X86AVX2, X86SSE, X86Scalar), DataType.f64
-    )
+    counters = fp_arith_counters_for_isas((X86AVX2, X86SSE, X86Scalar), DataType.f64)
     assert counters == {
         "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE",
         "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE",
@@ -904,10 +902,12 @@ def test_build_isa_custom_metrics_empty_isas_returns_none() -> None:
 def test_resolve_metrics_with_custom_isa_outranks_default() -> None:
     from carm_roofline.isa.x86 import X86AVX2
 
-    available = frozenset({
-        "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE",
-        "PAPI_LST_INS",
-    })
+    available = frozenset(
+        {
+            "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE",
+            "PAPI_LST_INS",
+        }
+    )
 
     cfg = MetricResolutionConfig(data_type=DataType.f64, isas=(X86AVX2,))
     registry = PAPIMetricRegistry(cfg)

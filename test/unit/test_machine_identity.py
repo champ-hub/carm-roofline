@@ -163,12 +163,9 @@ def test_signature_from_architecture() -> None:
 
 def test_signature_from_architecture_falls_back_model_name() -> None:
     # When arch.model_name is None, the signature falls back to arch then "unknown".
-    arch_with_arch = SimpleNamespace(
-        model_name=None, arch="aarch64", vendor="", memory_topology=None
-    )
+    arch_with_arch = SimpleNamespace(model_name=None, arch="aarch64", vendor="", memory_topology=None)
     sig = signature_from_architecture(arch_with_arch)  # type: ignore[arg-type]
     assert sig.model_name == "aarch64"
-
 
 
 # ---------------------------------------------------------------------------
@@ -217,12 +214,14 @@ def test_levels_from_topology_preserves_cache_fields(monkeypatch: pytest.MonkeyP
     import carm_roofline.architecture.identity as identity
 
     monkeypatch.setattr(identity, "_get_physical_ram_bytes", lambda: None)
-    topo = _FakeTopo([
-        _make_cache_info("L1", 32768, 8, 1),
-        _make_cache_info("L2", 1048576, 8, 1),
-        _make_cache_info("L3", 33554432, 1, 16),
-        _make_dram_info(17_179_869_184),
-    ])
+    topo = _FakeTopo(
+        [
+            _make_cache_info("L1", 32768, 8, 1),
+            _make_cache_info("L2", 1048576, 8, 1),
+            _make_cache_info("L3", 33554432, 1, 16),
+            _make_dram_info(17_179_869_184),
+        ]
+    )
     result = _levels_from_topology(topo)
     assert len(result) == 4
     # L1

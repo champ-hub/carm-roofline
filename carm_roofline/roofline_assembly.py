@@ -51,6 +51,8 @@ class BenchmarkRecord(TypedDict, total=False):
     cache_level: str
     memory_level_name: str
     bandwidth_gbps: float
+    actual_frequency_hz: int
+    frequency_overridden: bool
 
 
 class FilterOptions(TypedDict):
@@ -61,11 +63,11 @@ class FilterOptions(TypedDict):
     num_threads: list[int]
     load_store_ratio: list[str]
     data_type: list[str]
+    actual_frequency_hz: list[int]
 
 
-RooflineTuple = tuple[str, str, int, str, str]
-ALL_TUPLE_FIELDS = ("machine", "isa", "num_threads", "data_type", "load_store_ratio")
-
+RooflineTuple = tuple[str, str, int, str, str, int]
+ALL_TUPLE_FIELDS = ("machine", "isa", "num_threads", "data_type", "load_store_ratio", "actual_frequency_hz")
 
 # ── Filter & model data structures ────────────────────────────────────────────
 
@@ -85,6 +87,7 @@ class RooflineFilter:
     data_type: str | None = None
     operations: frozenset[str] | None = None
     load_store_ratio: str | None = None
+    actual_frequency_hz: int | None = None
 
 
 @dataclass(frozen=True)
@@ -339,6 +342,8 @@ def _matches_filter(record: BenchmarkRecord, flt: RooflineFilter) -> bool:
         return False
     if flt.data_type is not None and record.get("data_type") != flt.data_type:
         return False
+    if flt.actual_frequency_hz is not None and record.get("actual_frequency_hz") != flt.actual_frequency_hz:
+        return False
 
     # load_store_ratio only applies to memory records
     if (
@@ -442,16 +447,14 @@ def assemble_roofline_from_file(
     return assemble_roofline(records, flt)
 
 
-# ── Discovery helpers ─────────────────────────────────────────────────────────
-
-
 def _compute_valid_tuples(records: list[BenchmarkRecord]) -> frozenset[RooflineTuple]:
-    """Return frozenset of (machine, isa, num_threads, data_type, load_store_ratio) tuples where both arithmetic and
-    roofline-eligible memory records exist for the same (machine, isa, num_threads, data_type) 4-tuple key — the
-    precondition for assembling a complete roofline.
+    """Return frozenset of (machine, isa, num_threads, data_type, load_store_ratio, actual_frequency_hz) tuples where
+    both arithmetic and roofline-eligible memory records exist for the same
+    (machine, isa, num_threads, data_type, actual_frequency_hz) 5-tuple key — the precondition for assembling a
+    complete roofline.  Records without ``actual_frequency_hz`` get frequency ``0`` so they pair up with each other.
     """
-    arith_4tuples = {
-        (r["machine"], r["isa"], r["num_threads"], r["data_type"])
+    arith_5tuples = {
+        (r["machine"], r["isa"], r["num_threads"], r["data_type"], r.get("actual_frequency_hz", 0))
         for r in records
         if r.get("type") == RecordType.ARITHMETIC
         and r.get("machine")
@@ -460,11 +463,19 @@ def _compute_valid_tuples(records: list[BenchmarkRecord]) -> frozenset[RooflineT
         and r.get("data_type")
     }
     return frozenset(
-        (r["machine"], r["isa"], r["num_threads"], r["data_type"], str(r["load_store_ratio"]))
+        (
+            r["machine"],
+            r["isa"],
+            r["num_threads"],
+            r["data_type"],
+            str(r["load_store_ratio"]),
+            r.get("actual_frequency_hz", 0),
+        )
         for r in records
         if _is_roofline_memory_record(r)
         and "load_store_ratio" in r
-        and (r.get("machine"), r.get("isa"), r.get("num_threads"), r.get("data_type")) in arith_4tuples
+        and (r.get("machine"), r.get("isa"), r.get("num_threads"), r.get("data_type"), r.get("actual_frequency_hz", 0))
+        in arith_5tuples
     )
 
 
@@ -484,7 +495,7 @@ def discover_filter_options(
     valid = _compute_valid_tuples(records)
     if flt is None:
         flt = RooflineFilter()
-    sel = (flt.machine, flt.isa, flt.num_threads, flt.data_type, flt.load_store_ratio)
+    sel = (flt.machine, flt.isa, flt.num_threads, flt.data_type, flt.load_store_ratio, flt.actual_frequency_hz)
     result: dict[str, list[Any]] = {}
     for i, f in enumerate(ALL_TUPLE_FIELDS):
         filtered = valid
@@ -495,7 +506,8 @@ def discover_filter_options(
     debug(
         f"Available options: {len(result['machine'])} machine(s), {len(result['isa'])} ISA(s), "
         f"{len(result['num_threads'])} thread count(s), {len(result['load_store_ratio'])} ratio(s), "
-        f"{len(result['data_type'])} data type(s)"
+        f"{len(result['data_type'])} data type(s), "
+        f"{len(result['actual_frequency_hz'])} frequency(ies)"
     )
     return FilterOptions(
         machine=result["machine"],
@@ -503,6 +515,7 @@ def discover_filter_options(
         num_threads=result["num_threads"],
         data_type=result["data_type"],
         load_store_ratio=result["load_store_ratio"],
+        actual_frequency_hz=result["actual_frequency_hz"],
     )
 
 

@@ -207,6 +207,7 @@ def _register_callbacks(
         compute_vals: list[list[str] | None],
         data_type_vals: list[str | None],
         ls_ratio_vals: list[str | None],
+        freq_vals: list[str | None],
         app_ids_vals: list[list[str] | None],
         active_panel: str | None = None,
     ) -> tuple[RoofStore, list[RoofConfig], list[FilterOptions | None]]:
@@ -232,6 +233,12 @@ def _register_callbacks(
                 roof.data_type = data_type_vals[i]
             if i < len(ls_ratio_vals):
                 roof.load_store_ratio = ls_ratio_vals[i]
+            if i < len(freq_vals):
+                fv = freq_vals[i]
+                if fv is not None:
+                    roof.actual_frequency_hz = int(fv)
+                else:
+                    roof.actual_frequency_hz = None
             if i < len(app_ids_vals):
                 roof.app_ids = list(app_ids_vals[i] or [])
         debug(f"_resolve_roof_data: {len(store.roofs)} roof(s), panel={store.active_panel}")
@@ -251,6 +258,7 @@ def _register_callbacks(
                 isa=roof.isa,
                 num_threads=roof.num_threads,
                 data_type=roof.data_type,
+                actual_frequency_hz=roof.actual_frequency_hz,
                 load_store_ratio=roof.load_store_ratio,
             )
             fo = discover_filter_options(recs, base)
@@ -269,6 +277,9 @@ def _register_callbacks(
             if roof.load_store_ratio is not None and roof.load_store_ratio not in fo["load_store_ratio"]:
                 debug(f"_resolve_roof_data[{roof.id}]: ratio '{roof.load_store_ratio}' not in options -> None")
                 roof.load_store_ratio = None
+            if roof.actual_frequency_hz is not None and roof.actual_frequency_hz not in fo["actual_frequency_hz"]:
+                debug(f"_resolve_roof_data[{roof.id}]: freq {roof.actual_frequency_hz} not in options -> None")
+                roof.actual_frequency_hz = None
 
             # Build user-locks filter from stabilized (user-set) values only.
             # Used for per-roof dropdown options so auto-resolved values dont't constrain dropdown menus.
@@ -278,6 +289,7 @@ def _register_callbacks(
                 num_threads=roof.num_threads,
                 data_type=roof.data_type,
                 load_store_ratio=roof.load_store_ratio,
+                actual_frequency_hz=roof.actual_frequency_hz,
             )
 
             # Auto-resolution: pick first valid for any field the user did not set.
@@ -289,6 +301,7 @@ def _register_callbacks(
                 num_threads=roof.num_threads,
                 data_type=roof.data_type,
                 load_store_ratio=roof.load_store_ratio,
+                actual_frequency_hz=roof.actual_frequency_hz,
             )
             cur_machine = (
                 roof.machine
@@ -316,7 +329,12 @@ def _register_callbacks(
                 else _first_or_none(discover_filter_options(recs, acc)["load_store_ratio"])
             )
             acc = replace(acc, load_store_ratio=cur_ls_ratio)
-
+            cur_freq = (
+                roof.actual_frequency_hz
+                if roof.actual_frequency_hz is not None
+                else _first_int_or_none(discover_filter_options(recs, acc)["actual_frequency_hz"])
+            )
+            acc = replace(acc, actual_frequency_hz=cur_freq)
             resolved_roofs.append(
                 RoofConfig(
                     roof_id=roof.id,
@@ -327,6 +345,7 @@ def _register_callbacks(
                     data_type=cur_data_type,
                     compute_insts=roof.compute_insts,
                     load_store_ratio=cur_ls_ratio,
+                    actual_frequency_hz=cur_freq,
                     app_ids=roof.app_ids,
                 )
             )
@@ -344,6 +363,7 @@ def _register_callbacks(
         Input({"type": RoofCardID.DROPDOWN_COMPUTE, "index": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_DATA_TYPE, "index": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_LS_RATIO, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_FREQUENCY, "index": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_APPS, "index": ALL}, "value"),
     )
     def _update_plot(
@@ -354,6 +374,7 @@ def _register_callbacks(
         compute_vals: list[list[str] | None],
         data_type_vals: list[str | None],
         ls_ratio_vals: list[str | None],
+        freq_vals: list[str | None],
         app_ids_vals: list[list[str] | None],
     ) -> dict[str, Any]:
         _tr("_update_plot enter")
@@ -365,6 +386,7 @@ def _register_callbacks(
             compute_vals,
             data_type_vals,
             ls_ratio_vals,
+            freq_vals,
             app_ids_vals,
         )
         figure = build_roofline_figure(
@@ -389,6 +411,7 @@ def _register_callbacks(
         Input({"type": RoofCardID.DROPDOWN_COMPUTE, "index": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_DATA_TYPE, "index": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_LS_RATIO, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_FREQUENCY, "index": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_APPS, "index": ALL}, "value"),
     )
     def _update_sidebar(
@@ -400,6 +423,7 @@ def _register_callbacks(
         compute_vals: list[list[str] | None],
         data_type_vals: list[str | None],
         ls_ratio_vals: list[str | None],
+        freq_vals: list[str | None],
         app_ids_vals: list[list[str] | None],
     ) -> list[html.Div]:
         _tr("_update_sidebar enter")
@@ -411,6 +435,7 @@ def _register_callbacks(
             compute_vals,
             data_type_vals,
             ls_ratio_vals,
+            freq_vals,
             app_ids_vals,
             active_panel=active_panel,
         )

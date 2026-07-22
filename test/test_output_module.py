@@ -229,6 +229,8 @@ def _make_fake_context(isa_names: list[str], freq_hz: float = 3.0e9, nominal_hz:
             self.isa = [_make_isa_class(n) for n in isa_names]
             self._freqs = {n: Frequency(freq_hz) for n in isa_names}
             self.nominal_frequency = Frequency(nominal_hz) if nominal_hz is not None else None
+            self.set_frequency = False
+            self.actual_frequency_hz = None
 
         def get_frequency_for_isa(self, isa_name: str):
             return self._freqs[isa_name]
@@ -468,7 +470,11 @@ def test_arithmetic_cli_prints_gops(capsys):
 
 def test_arithmetic_plot_saves_file(monkeypatch, tmp_path, capsys):
     """Arithmetic plot saves image file when matplotlib is available."""
-    from carm_roofline.benchmark.benchmark import ArithmeticBenchmark, ArithmeticBenchmarkParams, ArithmeticBenchmarkResult
+    from carm_roofline.benchmark.benchmark import (
+        ArithmeticBenchmark,
+        ArithmeticBenchmarkParams,
+        ArithmeticBenchmarkResult,
+    )
     from carm_roofline.core import ArithmeticOperation
     from carm_roofline.core import Operations
 

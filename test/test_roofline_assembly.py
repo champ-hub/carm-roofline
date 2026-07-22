@@ -43,6 +43,7 @@ def jsonl_fixture(tmp_path: Path) -> Path:
             "operation": "fma",
             "performance_gops": 100.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
         {
             "type": "arithmetic",
@@ -54,6 +55,7 @@ def jsonl_fixture(tmp_path: Path) -> Path:
             "operation": "add",
             "performance_gops": 50.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
         {
             "type": "memory",
@@ -66,6 +68,7 @@ def jsonl_fixture(tmp_path: Path) -> Path:
             "cache_level": "L1",
             "bandwidth_gbps": 400.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
         {
             "type": "memory",
@@ -78,6 +81,7 @@ def jsonl_fixture(tmp_path: Path) -> Path:
             "cache_level": "L2",
             "bandwidth_gbps": 100.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
         {
             "type": "memory",
@@ -90,6 +94,7 @@ def jsonl_fixture(tmp_path: Path) -> Path:
             "cache_level": "DRAM",
             "bandwidth_gbps": 30.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
         # ── Timestamp B (newer): arithmetic only, fma updated ──
         {
@@ -102,6 +107,7 @@ def jsonl_fixture(tmp_path: Path) -> Path:
             "operation": "fma",
             "performance_gops": 120.0,  # Updated (higher = newer)
             "timestamp": "2026-01-02T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
         {
             "type": "arithmetic",
@@ -113,6 +119,7 @@ def jsonl_fixture(tmp_path: Path) -> Path:
             "operation": "add",
             "performance_gops": 55.0,  # Updated (higher = newer)
             "timestamp": "2026-01-02T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
         # ── Different ISA (should not match default filter) ──
         {
@@ -125,6 +132,7 @@ def jsonl_fixture(tmp_path: Path) -> Path:
             "operation": "fma",
             "performance_gops": 200.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
     ]
 
@@ -214,7 +222,6 @@ def test_discover_filter_options_cross_field(jsonl_fixture: Path) -> None:
     assert "other_isa" not in result3["isa"]
 
 
-
 def test_discover_filter_options_excludes_ratios_without_arithmetic(tmp_path: Path) -> None:
     """Load-store ratio values without matching arithmetic records are excluded."""
     records: list[dict[str, object]] = [
@@ -228,6 +235,7 @@ def test_discover_filter_options_excludes_ratios_without_arithmetic(tmp_path: Pa
             "operation": "fma",
             "performance_gops": 100.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
         {
             "type": "memory",
@@ -239,6 +247,7 @@ def test_discover_filter_options_excludes_ratios_without_arithmetic(tmp_path: Pa
             "cache_level": "L1",
             "bandwidth_gbps": 400.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
         # Memory record with "1:0" on a different machine (m2) — no arithmetic on m2
         {
@@ -251,6 +260,7 @@ def test_discover_filter_options_excludes_ratios_without_arithmetic(tmp_path: Pa
             "cache_level": "L1",
             "bandwidth_gbps": 400.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
     ]
     path = tmp_path / "benchmarks.jsonl"
@@ -278,6 +288,7 @@ def test_discover_filter_options_excludes_ratios_no_arithmetic_at_all(tmp_path: 
             "cache_level": "L1",
             "bandwidth_gbps": 400.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
     ]
     path = tmp_path / "benchmarks.jsonl"
@@ -301,6 +312,7 @@ def test_discover_filter_options_includes_ratios_when_arithmetic_present(tmp_pat
             "operation": "fma",
             "performance_gops": 100.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
         # Two ratios, both with matching arithmetic for same (m1, x86, f32, 1)
         {
@@ -313,6 +325,7 @@ def test_discover_filter_options_includes_ratios_when_arithmetic_present(tmp_pat
             "cache_level": "L1",
             "bandwidth_gbps": 400.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
         {
             "type": "memory",
@@ -324,6 +337,7 @@ def test_discover_filter_options_includes_ratios_when_arithmetic_present(tmp_pat
             "cache_level": "L1",
             "bandwidth_gbps": 300.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
     ]
     path = tmp_path / "benchmarks.jsonl"
@@ -351,6 +365,7 @@ def test_discover_filter_options_cross_machine_not_paired(tmp_path: Path) -> Non
             "operation": "fma",
             "performance_gops": 100.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
         {
             "type": "memory",
@@ -362,6 +377,7 @@ def test_discover_filter_options_cross_machine_not_paired(tmp_path: Path) -> Non
             "cache_level": "L1",
             "bandwidth_gbps": 400.0,
             "timestamp": "2026-01-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
     ]
     path = tmp_path / "benchmarks.jsonl"
@@ -395,10 +411,7 @@ def test_discover_filter_options_excludes_ratios_without_arithmetic_on_selection
         records,
         RooflineFilter(machine="test_machine", isa="nonexistent_isa"),
     )
-    assert result2["load_store_ratio"] == [], (
-        "arithmetic for nonexistent_isa doesn't exist, so ratios should be empty"
-    )
-
+    assert result2["load_store_ratio"] == [], "arithmetic for nonexistent_isa doesn't exist, so ratios should be empty"
 
 
 def test_discover_filter_options_excludes_ratio_when_arithmetic_mismatches_tuple(tmp_path: Path) -> None:
@@ -425,6 +438,7 @@ def test_discover_filter_options_excludes_ratio_when_arithmetic_mismatches_tuple
             "memory_level_name": "L1",
             "bandwidth_gbps": 400.0,
             "timestamp": "2026-06-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
         # Arithmetic EXISTS but with (m1, x86, 4, f64) — DIFFERENT threads AND data_type
         {
@@ -436,6 +450,7 @@ def test_discover_filter_options_excludes_ratio_when_arithmetic_mismatches_tuple
             "operation": "fma",
             "performance_gops": 200.0,
             "timestamp": "2026-06-01T00:00:00",
+            "actual_frequency_hz": 3000000000,
         },
     ]
     path = tmp_path / "benchmarks.jsonl"

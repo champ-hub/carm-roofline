@@ -1,4 +1,3 @@
-
 """Tests for typed benchmark hierarchy and ISA grouping.
 
 Tests cover:
@@ -7,6 +6,7 @@ Tests cover:
 - ISABenchmarkSuite grouping and filtering methods
 - Result processing logic for each benchmark type
 """
+
 from __future__ import annotations
 
 import pytest

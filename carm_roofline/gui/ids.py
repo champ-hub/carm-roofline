@@ -57,6 +57,7 @@ class RoofCardID(ID):
     DROPDOWN_THREADS = "dropdown-threads"
     DROPDOWN_DATA_TYPE = "dropdown-data-type"
     DROPDOWN_COMPUTE = "dropdown-compute"
+    DROPDOWN_FREQUENCY = "dropdown-frequency"
     DROPDOWN_LS_RATIO = "dropdown-ls-ratio"
     DROPDOWN_APPS = "dropdown-apps"
     BTN_COLLAPSE_ROOF = "btn-collapse-roof"
