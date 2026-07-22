@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from core import DataType
-from benchmark.generation.code_gen.register import (
+from carm_roofline.core import DataType
+from carm_roofline.benchmark.generation.code_gen.register import (
     CyclicRegisterSet,
     HelperRegisterSet,
     RegisterCollection,

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from benchmark import (
+from carm_roofline.benchmark import (
     ArithmeticBenchmark,
     ArithmeticBenchmarkResult,
     ArithmeticBenchmarkSuite,
@@ -21,12 +21,12 @@ from benchmark import (
     MemoryBenchmarkResult,
     MixedBenchmark,
 )
-from benchmark.benchmarking import LoadStoreRatio
-from benchmark.generation import ArithmeticBenchmarkParams, MemoryBenchmarkParams
-from core import DataType
-from core import ArithmeticOperation
-from test_bench.builder import MicrobenchmarkFunctionSpec
-from core import Bytes, Frequency, Operations, Seconds
+from carm_roofline.benchmark.benchmarking import LoadStoreRatio
+from carm_roofline.benchmark.generation import ArithmeticBenchmarkParams, MemoryBenchmarkParams
+from carm_roofline.core import DataType
+from carm_roofline.core import ArithmeticOperation
+from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+from carm_roofline.core import Bytes, Frequency, Operations, Seconds
 
 
 def make_spec(
@@ -200,7 +200,7 @@ class TestMixedBenchmark:
 
     def test_creation(self):
         """Test creating a mixed benchmark."""
-        from benchmark.generation import BenchmarkParams
+        from carm_roofline.benchmark.generation import BenchmarkParams
 
         params = BenchmarkParams(data_type=DataType.f32, thread_affinity=[0])
 
@@ -212,7 +212,7 @@ class TestMixedBenchmark:
 
     def test_process_results_not_implemented(self):
         """Test that processing mixed results raises NotImplementedError."""
-        from benchmark.generation import BenchmarkParams
+        from carm_roofline.benchmark.generation import BenchmarkParams
 
         params = BenchmarkParams(data_type=DataType.f32, thread_affinity=[0])
         bench = MixedBenchmark(params=params, spec=make_spec())
@@ -349,7 +349,7 @@ class TestISABenchmarkSuite:
 
     def test_get_mixed_benchmarks(self):
         """Test filtering mixed benchmarks."""
-        from benchmark.generation import BenchmarkParams
+        from carm_roofline.benchmark.generation import BenchmarkParams
 
         suite = ArithmeticBenchmarkSuite(isa_name="avx2")
 

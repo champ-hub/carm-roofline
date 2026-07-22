@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-import carm
+import carm_roofline.carm as carm
 
 pytestmark = pytest.mark.unit
 

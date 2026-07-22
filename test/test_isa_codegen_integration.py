@@ -15,8 +15,8 @@ import pytest
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
 
-from benchmark.benchmarking import LoadStoreRatio
-from isa import (
+from carm_roofline.benchmark.benchmarking import LoadStoreRatio
+from carm_roofline.isa import (
     RISCV_RVV,
     RISCV_RVV_071,
     X86AVX,
@@ -29,13 +29,13 @@ from isa import (
     RISCVScalar,
     X86Scalar,
 )
-from benchmark.generation import MemoryLayoutMode
-from isa import BaseISA
-from benchmark.generation.parameters import ArithmeticBenchmarkParams, BenchParamError, MemoryBenchmarkParams
-from test_bench.builder import MicrobenchmarkFunctionSpec
-from core import ArithmeticOperation, Operation
-from core import Bytes, Operations
-from core import DataType
+from carm_roofline.benchmark.generation import MemoryLayoutMode
+from carm_roofline.isa import BaseISA
+from carm_roofline.benchmark.generation.parameters import ArithmeticBenchmarkParams, BenchParamError, MemoryBenchmarkParams
+from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+from carm_roofline.core import ArithmeticOperation, Operation
+from carm_roofline.core import Bytes, Operations
+from carm_roofline.core import DataType
 
 
 class TestISACodegen:

@@ -4,13 +4,13 @@ from typing import Any
 
 import pytest
 
-from benchmark.benchmarking import LoadStoreRatio
-from core import DataType
-from benchmark.generation.code_gen import instruction as inst
-from benchmark.generation.code_gen.register import RegisterCollection
-from isa.base import BaseISA, InlineASM
-from benchmark.generation.parameters import BenchParamError, MemoryBenchmarkParams
-from core import Bytes
+from carm_roofline.benchmark.benchmarking import LoadStoreRatio
+from carm_roofline.core import DataType
+from carm_roofline.benchmark.generation.code_gen import instruction as inst
+from carm_roofline.benchmark.generation.code_gen.register import RegisterCollection
+from carm_roofline.isa.base import BaseISA, InlineASM
+from carm_roofline.benchmark.generation.parameters import BenchParamError, MemoryBenchmarkParams
+from carm_roofline.core import Bytes
 
 
 class DummyISA(BaseISA):

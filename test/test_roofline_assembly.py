@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from roofline_assembly import (
+from carm_roofline.roofline_assembly import (
     RooflineFilter,
     assemble_roofline,
     assemble_roofline_from_file,
@@ -16,7 +16,7 @@ from roofline_assembly import (
     load_benchmarks,
 )
 
-from core import ArithmeticIntensity, Bandwidth, Performance
+from carm_roofline.core import ArithmeticIntensity, Bandwidth, Performance
 
 pytestmark = pytest.mark.unit
 

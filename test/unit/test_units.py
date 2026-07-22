@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from core import (
+from carm_roofline.core import (
     ArithmeticIntensity,
     Bandwidth,
     Bytes,

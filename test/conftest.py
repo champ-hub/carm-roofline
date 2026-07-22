@@ -10,9 +10,9 @@ import pytest
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
 
-from architecture import SimpleMemoryTopology
-from isa import X86AVX, X86SSE, ArmNeon, RISCVScalar
-from core import Bytes, Frequency
+from carm_roofline.architecture import SimpleMemoryTopology
+from carm_roofline.isa import X86AVX, X86SSE, ArmNeon, RISCVScalar
+from carm_roofline.core import Bytes, Frequency
 
 
 @pytest.fixture
