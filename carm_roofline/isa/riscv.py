@@ -45,7 +45,7 @@ class BaseRISCV(BaseISA):
         return f"%({var.asm_name})"
 
 
-class RISCVScalar(BaseRISCV):
+class RISCVScalar(BaseRISCV, register=True):
     # Instructions associated with each data type and operation
     # Instructions are immutable, so we can define them directly here
     bench_instructions = TypedInstructions(
@@ -100,7 +100,7 @@ def _make_float_instructions_rvv() -> dict[Operation, str | _Instruction]:
     }
 
 
-class RISCV_RVV_071(RISCVScalar):
+class RISCV_RVV_071(RISCVScalar, register=True):
     name = "riscv_rvv_0_7_1"
 
     TYPE_TO_VSETVL: Mapping[DataType, str] = {
@@ -172,7 +172,7 @@ class RISCV_RVV_071(RISCVScalar):
         return op.ops() * elements
 
 
-class RISCV_RVV(RISCV_RVV_071):
+class RISCV_RVV(RISCV_RVV_071, register=True):
     name = "riscv_rvv"
 
     # Instructions associated with each data type and operation

@@ -1,6 +1,6 @@
 [project]
 name = "carm-roofline"
-version = "1.0.4"
+version = "1.0.5"
 description = "CARM: Cache-Aware Roofline Model benchmarking and visualization toolkit"
 readme = "README.md"
 requires-python = ">=3.9"

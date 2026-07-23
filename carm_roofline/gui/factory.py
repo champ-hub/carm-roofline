@@ -11,10 +11,11 @@ from dash import ALL, Input, Output, State, callback_context, html
 from dash.exceptions import PreventUpdate
 
 from carm_roofline.gui.components import build_carm_view_panel, build_layout, build_settings_panel
-from carm_roofline.gui.config import GUIConfig
+from carm_roofline.gui.config import GUIConfig, gui_settings_path, load_gui_settings, save_gui_settings
 from carm_roofline.gui.data import (
     ActivePanel,
     DropdownOption,
+    GUISettings,
     RoofConfig,
     RoofStore,
     build_roofline_figure,
@@ -116,6 +117,11 @@ def create_app(config: GUIConfig) -> dash.Dash:
     initial_roof = make_default_roof(opts)
     initial_store = RoofStore(roof_template=initial_roof)
     initial_store.roofs = [initial_roof]
+    # Override defaults with persisted settings
+    saved = load_gui_settings(gui_settings_path())
+    initial_store.normalize_by_threads = saved.normalize_by_threads
+    initial_store.marker_scale_factor = saved.marker_scale_factor
+    debug(f"Loaded GUI settings: {saved}")
 
     app.layout = build_layout(initial_store, opts, app_dropdown_options)
 
@@ -457,6 +463,13 @@ def _register_callbacks(
     ) -> dict[str, Any]:
         store = RoofStore.from_dict(store_data or {})
         store.normalize_by_threads = bool(normalize)
+        save_gui_settings(
+            gui_settings_path(),
+            GUISettings(
+                normalize_by_threads=store.normalize_by_threads,
+                marker_scale_factor=store.marker_scale_factor,
+            ),
+        )
         return store.to_dict()
 
     # 10. Marker scale slider
@@ -472,6 +485,13 @@ def _register_callbacks(
     ) -> dict[str, Any]:
         store = RoofStore.from_dict(store_data or {})
         store.marker_scale_factor = float(scale if scale is not None else 50.0)
+        save_gui_settings(
+            gui_settings_path(),
+            GUISettings(
+                normalize_by_threads=store.normalize_by_threads,
+                marker_scale_factor=store.marker_scale_factor,
+            ),
+        )
         return store.to_dict()
 
     # 12. Sync button styles with active panel

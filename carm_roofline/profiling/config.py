@@ -9,7 +9,7 @@ from pathlib import Path
 from carm_roofline.architecture import MachineSignature, detect_machine_signature, generate_run_name
 from carm_roofline.arguments import InsertsArguments, add_verbose_argument, enum_action
 from carm_roofline.core import DataType
-from carm_roofline.isa import ISA_NAME_TO_CLASS, BaseISA
+from carm_roofline.isa import BaseISA
 from carm_roofline.results_paths import default_results_root
 
 
@@ -82,7 +82,7 @@ class ProfileConfig(InsertsArguments):
         self.perf_interval: int | None = args.perf_interval
         self.isas: tuple[type[BaseISA], ...]
         if args.isa is not None:
-            self.isas = tuple(ISA_NAME_TO_CLASS[name] for name in args.isa if name in ISA_NAME_TO_CLASS)
+            self.isas = tuple(BaseISA.from_name(name) for name in args.isa if BaseISA.exists(name))
         else:
             self.isas = ()
         self.data_type: DataType = args.data_type
@@ -152,7 +152,7 @@ class ProfileConfig(InsertsArguments):
             "--isa",
             default=None,
             nargs="+",
-            choices=list(ISA_NAME_TO_CLASS.keys()),
+            choices=BaseISA.names(),
             metavar="ISA",
             help="ISA(s) the application exercises (e.g., x86_avx2 x86_sse x86_scalar). "
             "Only the FP_ARITH counters matching these widths will be requested, "

@@ -54,7 +54,7 @@ carm_roofline/            Main Python package
 │   ├── interface.py      run_full_benchmark() orchestration
 │   └── benchmarking.py   Benchmarking config (TestType, CLI args)
 ├── core/                 Domain primitives (DataType, Operation, UserError, type-safe units)
-├── isa/                  ISA identity hierarchy (BaseISA, ALL_ISAS, ISA_NAME_TO_CLASS)
+├── isa/                  ISA identity hierarchy (BaseISA, from_name, all)
 ├── test_bench/           C measurement harness (builder.py, test_bench.c/h, wrapper.inl)
 ├── profiling/            PAPI/perf application profiling pipeline
 ├── gui/                  Dash+Plotly interactive roofline dashboard
@@ -73,7 +73,7 @@ pyproject.toml            Single source of truth: dependencies, ruff, mypy, pyte
 .pre-commit-config.yaml   Pre-commit hooks (ruff, mypy, clang-format, trailing-whitespace)
 ```
 
-## Development Commands
+## Development Commands (QA gate)
 
 ```bash
 # Run benchmarks (auto-detects all ISAs)
@@ -142,11 +142,15 @@ exec_iface.compile(...)
 
 ### ISA Registration
 
-ISAs register via explicit tuples in `carm_roofline/isa/__init__.py`:
+ISAs register themselves via `register=True` on the class statement. The registry is accessible through `BaseISA`:
 
 ```python
-ALL_ISAS = (ArmScalar, ArmNeon, ArmSVE, RISCVScalar, RISCV_RVV_071, RISCV_RVV, X86Scalar, ...)
-ISA_NAME_TO_CLASS = {"x86_avx2": X86AVX2, ...}
+class MyISA(BaseISA, register=True):
+    name = "my_isa"
+
+BaseISA.names()        # ["my_isa", ...]
+BaseISA.from_name("my_isa")  # MyISA
+BaseISA.all()          # (MyISA, ...)
 INCOMPATIBLE_ISAS = {frozenset({RISCV_RVV_071, RISCV_RVV})}
 ```
 
@@ -174,3 +178,4 @@ Generic arithmetic wrapper `Unit[T]` (ABC) with subclasses: `Bytes`, `Operations
 - **Mocking**: lightweight — `unittest.mock.Mock` for context, `monkeypatch` for module-level intercepts
 - **Dominant pattern**: parametrized ISA cross-product tests via `@pytest.mark.parametrize`
 - **Categories**: Unit (`test/unit/`, marked `unit`) for profiling model, CLI smoke, register abstraction, ISA helpers. Integration-ish (`test/` root, no markers) for ISA codegen (11-ISA matrix), typed benchmarks, output handlers, memory suite generation.
+Static analysis (`mypy .` and `ruff check`) is a hard gate: no plan should consider code changes done until both pass on changed code. See `RULES.md` for the full tooling-expectations policy.

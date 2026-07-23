@@ -484,25 +484,13 @@ raise BenchParamError("num_ops must be positive")
 
 ### ISA Registry
 
-**ALL_ISAS:**
-Tuple of all ISA classes for iteration:
-```python
-ALL_ISAS = (ArmScalar, ArmNeon, ArmSVE,
-            RISCVScalar, RISCV_RVV_071, RISCV_RVV,
-            X86Scalar, X86SSE, X86AVX, X86AVX2, X86AVX512)
-```
+**ISA Registry:**
 
-**ISA_NAME_TO_CLASS:**
-Dict mapping ISA names to classes:
-```python
-ISA_NAME_TO_CLASS = {
-    "x86_scalar": X86Scalar,
-    "x86_avx2": X86AVX2,
-    "arm_neon": ArmNeon,
-    "riscv_rvv": RISCV_RVV,
-    ...
-}
-```
+ISAs register themselves via `register=True` on the class statement. The registry is accessible through `BaseISA`:
+
+- `BaseISA.from_name(name)` → Look up an ISA class by its name string
+- `BaseISA.names()` → List all registered ISA names
+- `BaseISA.all()` → Tuple of all registered ISA classes
 
 **INCOMPATIBLE_ISAS:**
 Set of ISA pairs that cannot be used together:
@@ -590,18 +578,17 @@ INCOMPATIBLE_ISAS = {
        return base * self.lmul  # Example for RVV LMUL
    ```
 
-8. **Register in __init__.py**:
+8. **Register the ISA**: Add `register=True` to the class definition:
    ```python
-   # Add to ALL_ISAS tuple
-   ALL_ISAS = (..., X86AVX10)
+   class X86AVX10(BaseX86, register=True):
+       name = "x86_avx10"
+       BITS = 512
+   ```
 
-   # Add to ISA_NAME_TO_CLASS dict
-   ISA_NAME_TO_CLASS = {
-       ...,
-       "x86_avx10": X86AVX10,
-   }
+   No changes to `__init__.py` are needed — registration is automatic.
 
-   # Add to INCOMPATIBLE_ISAS if needed
+   Add to `INCOMPATIBLE_ISAS` if needed:
+   ```python
    INCOMPATIBLE_ISAS = {
        ...,
        frozenset({"x86_avx512", "x86_avx10"}),  # Example

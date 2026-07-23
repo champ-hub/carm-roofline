@@ -155,9 +155,9 @@ Based on its position relative to the roofline, a region's performance character
 
 | Position | Meaning | What to do |
 |---|---|---|
-| **On or near the compute ceiling** | Compute-bound — the kernel achieves peak FLOP/s for the available threads/ISA. | Vectorize the code and/or increase thread count. |
-| **Below a memory-bandwidth ceiling** | Memory-bound — performance is likely limited by data movement from that memory level. | Improve data locality, use a cache-friendly data layout, or restructure the loop to reduce traffic. Increased thread count can help if that memory level isn't saturated yet. |
-| **Far below either ceiling** | Latency-bound or serialisation overhead — the kernel is not exploiting the hardware's throughput capacity. | Inspect the generated code for pipeline stalls, long-latency instructions, or insufficient ILP. |
+| **Left of the L1 ridge-point** | Memory-bound — the kernel cannot reach the compute ceiling. | Improve data locality, use a cache-friendly data layout, or restructure the loop to reduce traffic. Increased thread count or vectorization can help if that memory level isn't saturated yet. |
+| **Right of the DRAM ridge-point** | Compute-bound — the kernel is limited by the available compute resources. | Vectorize the code and/or increase thread count. |
+| **Between the L1 and DRAM ridge-points** | Mixed — may be bottlenecked by either memory or compute resources. | Use the techniques from both of the previous categories. |
 
 The **arithmetic intensity** (x-axis, FLOP/Byte) is a key metric: higher is usually better, making memory bottlenecks less likely.
 
