@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from carm_roofline.core.data_type import DataType
 from carm_roofline.core.error import UserError
-from carm_roofline.core.operation import ArithmeticOperation, MemoryOperation, Operation
+from carm_roofline.core.operation import (
+    ArithmeticOperation,
+    MemoryOperation,
+    Operation,
+    TensorCoreOperation,
+    TensorOperation,
+)
 from carm_roofline.core.units import (
     ArithmeticIntensity,
     Bandwidth,
@@ -28,6 +34,8 @@ __all__ = [
     "Operations",
     "Performance",
     "Seconds",
+    "TensorCoreOperation",
+    "TensorOperation",
     "Unit",
     "UserError",
 ]

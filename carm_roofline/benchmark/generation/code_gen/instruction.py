@@ -4,6 +4,7 @@ from enum import Enum, auto
 from typing import Union, overload
 
 from carm_roofline.core import ArithmeticOperation, DataType, MemoryOperation, Operation
+from carm_roofline.core.operation import TensorCoreOperation
 
 from .register import CyclicRegisterSet
 
@@ -315,10 +316,10 @@ class TypedInstructions:
         mem_mode_tracker = MemoryModeTracker()
 
         for op, format_spec in inst_formats.items():
-            if not isinstance(op, (MemoryOperation, ArithmeticOperation)):
+            if not isinstance(op, (MemoryOperation, ArithmeticOperation, TensorCoreOperation)):
                 raise TypeError(
                     f"Object of type '{type(op).__name__}' is not a valid operation. "
-                    f"Must be a variant of ArithmeticOperation or MemoryOperation"
+                    f"Must be a variant of ArithmeticOperation, MemoryOperation, or TensorCoreOperation"
                 )
             instruction = self._convert_to_instruction(op, format_spec)
             operation_to_format[op] = instruction
@@ -347,6 +348,11 @@ class TypedInstructions:
             return Arithmetic(format_string)
         elif isinstance(op, MemoryOperation):
             return Memory(format_string)
+        elif isinstance(op, TensorCoreOperation):
+            raise NotImplementedError(
+                f"Tensor core operations are handled by the GPU benchmark pipeline, "
+                f"not the CPU ISA code generator: {op}"
+            )
         else:
             # Should be unreachable as long as there is no issue with the Operation enum
             raise ValueError(f"Unknown operation category for operation: {op}")
