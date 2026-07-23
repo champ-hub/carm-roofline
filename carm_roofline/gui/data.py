@@ -212,6 +212,24 @@ _BW_FILL_OPACITIES: dict[str, float] = {
 }
 
 
+# Distinct marker symbols assigned to each application under the same roof
+_APP_MARKER_SYMBOLS: tuple[str, ...] = (
+    "circle",
+    "diamond",
+    "square",
+    "cross",
+    "x",
+    "star",
+    "pentagon",
+    "hexagram",
+    "triangle-up",
+    "triangle-down",
+    "hourglass",
+    "bowtie",
+    "asterisk",
+    "hash",
+)
+
 MIN_MARKER_SIZE: float = 50.0
 
 
@@ -298,6 +316,14 @@ def build_roofline_figure(
         runtime_min = runtime_max = 0.0
     runtime_range = runtime_max - runtime_min
 
+    # Assign a distinct marker symbol per application, consistent across roofs.
+    app_symbol: dict[str, str] = {}
+    if applications_by_id:
+        for roof in roofs:
+            for app_id in roof.app_ids:
+                if app_id not in app_symbol:
+                    app_symbol[app_id] = _APP_MARKER_SYMBOLS[len(app_symbol) % len(_APP_MARKER_SYMBOLS)]
+
     for idx, (roof, model) in enumerate(zip(roofs, models)):
         color = _COLORS[idx % len(_COLORS)]
         roof_divisor = roof.num_threads if (normalize_by_threads and roof.num_threads and roof.num_threads > 0) else 1
@@ -334,7 +360,7 @@ def build_roofline_figure(
                         showlegend=True,
                         marker={
                             "color": color,
-                            "symbol": "circle",
+                            "symbol": app_symbol[app_id],
                             "size": marker_sizes,
                             "sizemode": "area",
                             "opacity": 0.6,
