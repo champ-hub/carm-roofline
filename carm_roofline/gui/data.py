@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
 from typing import Any, TypedDict
 
@@ -180,6 +180,22 @@ class RoofStore:
         store.normalize_by_threads = data.get("normalize_by_threads", False)
         store.marker_scale_factor = data.get("marker_scale_factor", 50.0)
         return store
+
+
+@dataclass
+class GUISettings:
+    """Persistent user preferences for the GUI."""
+
+    normalize_by_threads: bool = False
+    marker_scale_factor: float = 50.0
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> GUISettings:
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
 
 
 # Plot data builder
