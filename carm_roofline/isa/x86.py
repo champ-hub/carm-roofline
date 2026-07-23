@@ -37,7 +37,7 @@ class BaseX86(BaseISA):
         super().__init__(**kwargs)
 
 
-class X86Scalar(BaseX86):
+class X86Scalar(BaseX86, register=True):
     __registers_float = CyclicRegisterSet("%xmm{}", [(0, 15)])
 
     bench_instructions = TypedInstructions(
@@ -72,7 +72,7 @@ class X86Scalar(BaseX86):
         )
 
 
-class X86SSE(X86Scalar):
+class X86SSE(X86Scalar, register=True):
     name = "x86_sse"
     BITS = 128
 
@@ -107,7 +107,7 @@ class X86SSE(X86Scalar):
         return op.ops() * self.BITS // data_type.bits()
 
 
-class X86AVX(X86SSE):
+class X86AVX(X86SSE, register=True):
     name = "x86_avx"
     BITS = 256
 
@@ -143,7 +143,7 @@ class X86AVX(X86SSE):
         )
 
 
-class X86AVX2(X86AVX):
+class X86AVX2(X86AVX, register=True):
     name = "x86_avx2"
     BITS = 256
 
@@ -172,7 +172,7 @@ class X86AVX2(X86AVX):
         super().__init__(**kwargs)
 
 
-class X86AVX512(X86SSE):
+class X86AVX512(X86SSE, register=True):
     name = "x86_avx512"
     BITS = 512
 

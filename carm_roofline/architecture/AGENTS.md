@@ -38,7 +38,7 @@ def __init__(args):
          → Call native_detect(num_threads) to auto-detect
     4. Else:
          → Call detect_for_isa(first_isa, num_threads)
-    5. Import ISA_NAME_TO_CLASS from isa
+    5. Use BaseISA.from_name() for name-to-class lookup
     6. Call _replace_and_warn() to merge detected + user args
     7. If --isa is explicitly provided, validate compatibility via check_isa_compatibility()
     8. Build ISA class list and ISAFrequencies object
@@ -115,7 +115,7 @@ Validates ISA selection using family-based approach:
 ### Command-Line Arguments
 
 Via `insert_arguments()` static method:
-- `-i/--isa` - ISA names (nargs="*", zero or more, choices from ISA_NAME_TO_CLASS)
+- `-i/--isa` - ISA names (nargs="*", zero or more, choices from BaseISA.names())
 - `--topology-config` - Path to TOML topology file (`total_cpus`/`smt_degree`/`cpu_offset` + `[[cache_levels]]`)
     - If omitted: auto-detected from hardware topology when available
     - Example: `--topology-config cpu-topology.toml`

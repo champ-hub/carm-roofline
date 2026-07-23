@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from carm_roofline.benchmark.generation.code_gen import ControlInstructions, TypedInstructions, instruction as inst
 from carm_roofline.benchmark.generation.code_gen.register import CyclicRegisterSet, HelperRegisterSet, TypedRegisterSets
@@ -119,6 +119,36 @@ class BaseISA:
     # Fits in a Gracemont uop cache (512 entries)
     instruction_limit: int = 512
     "Maximum number of instructions in a benchmark (inner + outer loops combined)"
+
+    # Registry of concrete ISA implementations, populated via __init_subclass__
+
+    _registry: ClassVar[dict[str, type[BaseISA]]] = {}
+
+    def __init_subclass__(cls, register: bool = False, **kwargs: Any) -> None:
+        """Auto-register concrete ISA subclasses when they pass register=True."""
+        super().__init_subclass__(**kwargs)
+        if register:
+            cls._registry[cls.name] = cls
+
+    @classmethod
+    def from_name(cls, name: str) -> type[BaseISA]:
+        """Look up an ISA class by its name string (e.g., "x86_avx2" -> X86AVX2)."""
+        return cls._registry[name]
+
+    @classmethod
+    def names(cls) -> list[str]:
+        """Return sorted list of all registered ISA name strings."""
+        return sorted(cls._registry)
+
+    @classmethod
+    def all(cls) -> tuple[type[BaseISA], ...]:
+        """Return tuple of all registered ISA classes."""
+        return tuple(cls._registry.values())
+
+    @classmethod
+    def exists(cls, name: str) -> bool:
+        """Check if an ISA name is registered."""
+        return name in cls._registry
 
     bench_instructions: TypedInstructions
     control_instructions: ControlInstructions
