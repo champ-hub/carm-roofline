@@ -73,7 +73,7 @@ pyproject.toml            Single source of truth: dependencies, ruff, mypy, pyte
 .pre-commit-config.yaml   Pre-commit hooks (ruff, mypy, clang-format, trailing-whitespace)
 ```
 
-## Development Commands
+## Development Commands (QA gate)
 
 ```bash
 # Run benchmarks (auto-detects all ISAs)
@@ -178,3 +178,4 @@ Generic arithmetic wrapper `Unit[T]` (ABC) with subclasses: `Bytes`, `Operations
 - **Mocking**: lightweight — `unittest.mock.Mock` for context, `monkeypatch` for module-level intercepts
 - **Dominant pattern**: parametrized ISA cross-product tests via `@pytest.mark.parametrize`
 - **Categories**: Unit (`test/unit/`, marked `unit`) for profiling model, CLI smoke, register abstraction, ISA helpers. Integration-ish (`test/` root, no markers) for ISA codegen (11-ISA matrix), typed benchmarks, output handlers, memory suite generation.
+Static analysis (`mypy .` and `ruff check`) is a hard gate: no plan should consider code changes done until both pass on changed code. See `RULES.md` for the full tooling-expectations policy.
