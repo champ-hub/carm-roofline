@@ -346,7 +346,7 @@ def build_plot_area() -> html.Div:
             dcc_graph(
                 PlotAreaID.ROOFLINE_PLOT,
                 figure=build_roofline_figure([], []),
-                config={"responsive": True},
+                config={"responsive": True, "toImageButtonOptions": {"format": "svg", "filename": "roofline"}},
             ),
         ],
     )
