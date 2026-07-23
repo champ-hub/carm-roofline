@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from carm_roofline.arguments import InsertsArguments, positive_int
 from carm_roofline.core import Frequency, UserError
-from carm_roofline.isa import INCOMPATIBLE_ISAS, ISA_NAME_TO_CLASS
+from carm_roofline.isa import INCOMPATIBLE_ISAS, BaseISA
 from carm_roofline.output_utils import configure_verbosity, debug, detail, format_if_container, warn
 
 if TYPE_CHECKING:
@@ -248,9 +248,9 @@ class Architecture(InsertsArguments):
             detected = native_detect(threads=num_threads)
             isa_strs = detected.isa or []
 
-            self.isa: list[type[BaseISA]] = [ISA_NAME_TO_CLASS[isa_str] for isa_str in isa_strs]
+            self.isa: list[type[BaseISA]] = [BaseISA.from_name(isa_str) for isa_str in isa_strs]
         else:
-            self.isa = [ISA_NAME_TO_CLASS[isa_name] for isa_name in args.isa]
+            self.isa = [BaseISA.from_name(isa_name) for isa_name in args.isa]
             # Verify that the selected ISAs are compatible
             check_isa_compatibility(self.isa)
             # Detect additional ISA info (VLEN, etc.) for the first ISA
@@ -280,13 +280,13 @@ class Architecture(InsertsArguments):
 
     @staticmethod
     def insert_arguments(parser: argparse.ArgumentParser) -> None:
-        from carm_roofline.isa import ISA_NAME_TO_CLASS
+        from carm_roofline.isa import BaseISA
 
         parser.add_argument(
             "-i",
             "--isa",
             nargs="+",
-            choices=list(ISA_NAME_TO_CLASS.keys()),
+            choices=BaseISA.names(),
             help="Set of ISAs to test. (Default: automatically detects all available ISAs)",
         )
         parser.add_argument(

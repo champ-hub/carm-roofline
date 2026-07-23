@@ -54,7 +54,7 @@ carm_roofline/            Main Python package
 │   ├── interface.py      run_full_benchmark() orchestration
 │   └── benchmarking.py   Benchmarking config (TestType, CLI args)
 ├── core/                 Domain primitives (DataType, Operation, UserError, type-safe units)
-├── isa/                  ISA identity hierarchy (BaseISA, ALL_ISAS, ISA_NAME_TO_CLASS)
+├── isa/                  ISA identity hierarchy (BaseISA, from_name, all)
 ├── test_bench/           C measurement harness (builder.py, test_bench.c/h, wrapper.inl)
 ├── profiling/            PAPI/perf application profiling pipeline
 ├── gui/                  Dash+Plotly interactive roofline dashboard
@@ -142,11 +142,15 @@ exec_iface.compile(...)
 
 ### ISA Registration
 
-ISAs register via explicit tuples in `carm_roofline/isa/__init__.py`:
+ISAs register themselves via `register=True` on the class statement. The registry is accessible through `BaseISA`:
 
 ```python
-ALL_ISAS = (ArmScalar, ArmNeon, ArmSVE, RISCVScalar, RISCV_RVV_071, RISCV_RVV, X86Scalar, ...)
-ISA_NAME_TO_CLASS = {"x86_avx2": X86AVX2, ...}
+class MyISA(BaseISA, register=True):
+    name = "my_isa"
+
+BaseISA.names()        # ["my_isa", ...]
+BaseISA.from_name("my_isa")  # MyISA
+BaseISA.all()          # (MyISA, ...)
 INCOMPATIBLE_ISAS = {frozenset({RISCV_RVV_071, RISCV_RVV})}
 ```
 

@@ -42,7 +42,7 @@ def _make_float_instructions_scalar() -> dict[Operation, str | _Instruction]:
     }
 
 
-class ArmScalar(BaseArm):
+class ArmScalar(BaseArm, register=True):
     name = "arm"
 
     bench_instructions = TypedInstructions(
@@ -76,7 +76,7 @@ def _make_float_instructions_neon(suf: str) -> dict[Operation, str | _Instructio
     }
 
 
-class ArmNeon(BaseArm):
+class ArmNeon(BaseArm, register=True):
     name = "arm_neon"
 
     bench_instructions = TypedInstructions(
@@ -113,7 +113,7 @@ def _make_float_instructions_sve(suf: str) -> dict[Operation, str | _Instruction
     }
 
 
-class ArmSVE(BaseArm):
+class ArmSVE(BaseArm, register=True):
     name = "arm_sve"
 
     bench_instructions = TypedInstructions(
