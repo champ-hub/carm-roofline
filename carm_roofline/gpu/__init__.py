@@ -1,6 +1,15 @@
 from __future__ import annotations
 
 from carm_roofline.gpu.compute_capability import ComputeCapability
+from carm_roofline.gpu.detect import (
+    detect_compute_capability,
+    detect_gpu,
+    detect_gpu_vendor,
+    lock_gpu_frequencies,
+    read_gpu_frequencies,
+    reset_gpu_clocks,
+)
+from carm_roofline.gpu.frequency import GPUFrequencyManager
 from carm_roofline.gpu.precision import (
     AMD_TENSOR_PRECISIONS,
     NVIDIA_TENSOR_PRECISIONS,
@@ -13,9 +22,16 @@ __all__ = [
     "AMD_TENSOR_PRECISIONS",
     "NVIDIA_TENSOR_PRECISIONS",
     "ComputeCapability",
+    "GPUFrequencyManager",
     "GPULaunchConfig",
     "GPUVendor",
     "TensorPrecision",
+    "detect_compute_capability",
+    "detect_gpu",
+    "detect_gpu_vendor",
+    "lock_gpu_frequencies",
+    "read_gpu_frequencies",
+    "reset_gpu_clocks",
     "supported_tensor_precisions",
     "supported_vector_precisions",
 ]

@@ -39,9 +39,34 @@ class TestComputeCapability:
         cc = ComputeCapability(major=8, minor=9, vendor=GPUVendor.NVIDIA)
         assert cc.as_int == 89
 
-    def test_from_string_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError):
-            ComputeCapability.from_string("8.9", GPUVendor.NVIDIA)
+    @pytest.mark.parametrize(
+        "s,vendor,expected_major,expected_minor,expected_gfx",
+        [
+            ("8.9", GPUVendor.NVIDIA, 8, 9, None),
+            ("89", GPUVendor.NVIDIA, 8, 9, None),
+            ("70", GPUVendor.NVIDIA, 7, 0, None),
+            ("gfx942", GPUVendor.AMD, 9, 0, "gfx942"),
+            ("9.4.2", GPUVendor.AMD, 9, 0, "gfx942"),
+        ],
+    )
+    def test_from_string(self, s, vendor, expected_major, expected_minor, expected_gfx):
+        cc = ComputeCapability.from_string(s, vendor)
+        assert cc.major == expected_major
+        assert cc.minor == expected_minor
+        assert cc.vendor == vendor
+        assert cc.gfx_arch == expected_gfx
+
+    def test_from_string_nvidia_compact_as_int(self):
+        cc = ComputeCapability.from_string("89", GPUVendor.NVIDIA)
+        assert cc.as_int == 89
+
+    def test_from_string_amd_as_int(self):
+        cc = ComputeCapability.from_string("gfx942", GPUVendor.AMD)
+        assert cc.as_int == 9
+
+    def test_gfx_arch_default_none(self):
+        cc = ComputeCapability(major=8, minor=9, vendor=GPUVendor.NVIDIA)
+        assert cc.gfx_arch is None
 
 
 class TestTensorPrecision:
@@ -106,3 +131,99 @@ class TestDataTypeGPU:
     def test_to_c_type(self):
         assert DataType.f16.to_c_type() == "f16"
         assert DataType.bf16.to_c_type() == "bf16"
+
+
+class TestPrecisionCascade:
+    """Test supported_tensor_precisions and supported_vector_precisions cascade logic."""
+
+    # -- NVIDIA tensor precision tiers --
+
+    def test_nvidia_cc70(self):
+        cc = ComputeCapability(major=7, minor=0, vendor=GPUVendor.NVIDIA)
+        precisions = cc.supported_tensor_precisions()
+        assert set(precisions.keys()) == {"fp16_32"}
+
+    def test_nvidia_cc75(self):
+        cc = ComputeCapability(major=7, minor=5, vendor=GPUVendor.NVIDIA)
+        precisions = cc.supported_tensor_precisions()
+        assert set(precisions.keys()) == {"fp16_32", "fp16_16", "int8", "int4"}
+
+    def test_nvidia_cc80(self):
+        cc = ComputeCapability(major=8, minor=0, vendor=GPUVendor.NVIDIA)
+        precisions = cc.supported_tensor_precisions()
+        assert set(precisions.keys()) == {"fp16_32", "fp16_16", "int8", "int4", "fp64", "bf16", "tf32", "int1"}
+
+    def test_nvidia_cc89(self):
+        cc = ComputeCapability(major=8, minor=9, vendor=GPUVendor.NVIDIA)
+        precisions = cc.supported_tensor_precisions()
+        assert set(precisions.keys()) == {"fp16_32", "fp16_16", "int8", "int4", "fp64", "bf16", "tf32", "int1", "fp8"}
+
+    def test_nvidia_cc100(self):
+        """Future CC 10.0 — should at least match CC >=89 tier."""
+        cc = ComputeCapability(major=10, minor=0, vendor=GPUVendor.NVIDIA)
+        precisions = cc.supported_tensor_precisions()
+        assert "fp8" in precisions
+
+    # -- GTX filter --
+
+    def test_gtx_filter_empty(self):
+        """GTX cards with CC >=70 should return empty tensor precisions."""
+        cc = ComputeCapability(major=7, minor=5, vendor=GPUVendor.NVIDIA)
+        precisions = cc.supported_tensor_precisions(model_name="GTX 1650")
+        assert precisions == {}
+
+    def test_rtx_not_filtered(self):
+        """RTX cards with CC >=70 should return non-empty tensor precisions."""
+        cc = ComputeCapability(major=7, minor=5, vendor=GPUVendor.NVIDIA)
+        precisions = cc.supported_tensor_precisions(model_name="RTX 2060")
+        assert len(precisions) > 0
+
+    def test_gtx_below_70_not_filtered(self):
+        """GTX cards with CC <70 are not filtered (no tensor cores at all)."""
+        cc = ComputeCapability(major=6, minor=1, vendor=GPUVendor.NVIDIA)
+        precisions = cc.supported_tensor_precisions(model_name="GTX 1080")
+        assert precisions == {}
+
+    # -- AMD matrix precision tiers --
+
+    def test_amd_gfx908(self):
+        cc = ComputeCapability.from_string("gfx908", GPUVendor.AMD)
+        precisions = cc.supported_tensor_precisions()
+        assert set(precisions.keys()) == {"fp32", "int8"}
+
+    def test_amd_gfx90a(self):
+        cc = ComputeCapability.from_string("gfx90a", GPUVendor.AMD)
+        precisions = cc.supported_tensor_precisions()
+        assert set(precisions.keys()) == {"fp32", "int8", "fp64"}
+
+    def test_amd_gfx942(self):
+        cc = ComputeCapability.from_string("gfx942", GPUVendor.AMD)
+        precisions = cc.supported_tensor_precisions()
+        assert set(precisions.keys()) == {"fp32", "int8", "fp64", "tf32", "fp8"}
+
+    # -- Vector precisions --
+
+    def test_vector_precisions_nvidia_baseline(self):
+        cc = ComputeCapability(major=5, minor=0, vendor=GPUVendor.NVIDIA)
+        vec = cc.supported_vector_precisions()
+        assert DataType.f32 in vec
+        assert DataType.f16 not in vec
+
+    def test_vector_precisions_nvidia_cc60(self):
+        cc = ComputeCapability(major=6, minor=0, vendor=GPUVendor.NVIDIA)
+        vec = cc.supported_vector_precisions()
+        assert DataType.f16 in vec
+        assert DataType.bf16 not in vec
+
+    def test_vector_precisions_nvidia_cc80(self):
+        cc = ComputeCapability(major=8, minor=0, vendor=GPUVendor.NVIDIA)
+        vec = cc.supported_vector_precisions()
+        assert DataType.f16 in vec
+        assert DataType.bf16 in vec
+        assert DataType.tf32 in vec
+
+    def test_vector_precisions_amd_has_f16(self):
+        cc = ComputeCapability(major=9, minor=0, vendor=GPUVendor.AMD)
+        vec = cc.supported_vector_precisions()
+        assert DataType.f16 in vec
+        assert DataType.f32 in vec

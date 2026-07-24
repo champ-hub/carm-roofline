@@ -12,6 +12,8 @@ from carm_roofline.output_utils import configure_verbosity, debug, detail, forma
 if TYPE_CHECKING:
     from carm_roofline.isa import BaseISA
 
+from carm_roofline.gpu.compute_capability import ComputeCapability
+
 from .config import load_memory_topology_from_toml
 from .detect import DetectedArchitecture, detect_for_isa, native_detect
 from .memory import MemoryTopologyLike
@@ -180,6 +182,7 @@ class Architecture(InsertsArguments):
     vendor: str | None
     model_name: str | None
     actual_frequency_hz: int | None
+    gpu_compute_capability: ComputeCapability | None = None
 
     isa: list[type[BaseISA]]
 
@@ -267,6 +270,22 @@ class Architecture(InsertsArguments):
         detail(f"Auto-detected architecture parameters:\t{detected_str}")
         self._replace_and_warn(args, detected)
 
+        # GPU detection (opt-in via --gpu-device)
+        self.gpu_compute_capability = None
+        gpu_device = getattr(args, "gpu_device", None)
+        if gpu_device is not None:
+            try:
+                from carm_roofline.gpu.detect import detect_gpu
+
+                vendor, cc, model_name = detect_gpu(device=gpu_device)
+                self.gpu_compute_capability = cc
+                detail(f"Detected {vendor.value} GPU: {model_name} (CC {cc.as_int})")
+            except FileNotFoundError:
+                raise UserError(
+                    "GPU device specified (--gpu-device) but no GPU detected. "
+                    "Install NVIDIA drivers (nvidia-smi) or AMD ROCm (amd-smi)."
+                ) from None
+
     def get_frequency_for_isa(self, isa_name: str) -> Frequency:
         """Get the frequency wrapper for a specific ISA.
 
@@ -333,4 +352,11 @@ class Architecture(InsertsArguments):
                 "Requires root/sudo for sysfs access. "
                 "Supported on Linux systems with cpufreq drivers (x86, ARM, RISC-V)."
             ),
+        )
+        parser.add_argument(
+            "--gpu-device",
+            type=int,
+            default=None,
+            metavar="INDEX",
+            help="GPU device index to use. (Default: None, GPU not detected)",
         )
