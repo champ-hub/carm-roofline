@@ -61,6 +61,7 @@ class RoofCardID(ID):
     DROPDOWN_LS_RATIO = "dropdown-ls-ratio"
     DROPDOWN_APPS = "dropdown-apps"
     BTN_COLLAPSE_ROOF = "btn-collapse-roof"
+    BTN_ADVANCED_COLLAPSE = "btn-advanced-collapse"
 
 
 class SettingsPanelID(ID):
