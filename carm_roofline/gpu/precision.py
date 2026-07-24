@@ -86,11 +86,11 @@ AMD_TENSOR_PRECISIONS: dict[str, TensorPrecision] = {
         tile_mnk=(16, 16, 4),
         flops_per_mma=2 * 16 * 16 * 4,
     ),
-    "tf32": TensorPrecision(
-        name="tf32",
-        precision_triple=(DataType.tf32, DataType.tf32, DataType.f32),
-        tile_mnk=(16, 16, 8),
-        flops_per_mma=2 * 16 * 16 * 8,
+    "fp16": TensorPrecision(
+        name="fp16",
+        precision_triple=(DataType.f16, DataType.f16, DataType.f32),
+        tile_mnk=(16, 16, 16),
+        flops_per_mma=2 * 16 * 16 * 16,
     ),
     "fp8": TensorPrecision(
         name="fp8",
@@ -115,10 +115,11 @@ def _nvidia_precision_cascade(as_int: int, model_name: str) -> dict[str, TensorP
         precisions["int8"] = NVIDIA_TENSOR_PRECISIONS["int8"]
         precisions["int4"] = NVIDIA_TENSOR_PRECISIONS["int4"]
     if as_int >= 80:
-        precisions["fp64"] = NVIDIA_TENSOR_PRECISIONS["fp64"]
         precisions["bf16"] = NVIDIA_TENSOR_PRECISIONS["bf16"]
         precisions["tf32"] = NVIDIA_TENSOR_PRECISIONS["tf32"]
         precisions["int1"] = NVIDIA_TENSOR_PRECISIONS["int1"]
+    if as_int in (80, 90) or as_int >= 100:
+        precisions["fp64"] = NVIDIA_TENSOR_PRECISIONS["fp64"]
     if as_int >= 89:
         precisions["fp8"] = NVIDIA_TENSOR_PRECISIONS["fp8"]
     return precisions
@@ -130,10 +131,10 @@ def _amd_precision_cascade(gfx_arch: str) -> dict[str, TensorPrecision]:
     if gfx_arch in ("gfx908", "gfx90a", "gfx942"):
         precisions["fp32"] = AMD_TENSOR_PRECISIONS["fp32"]
         precisions["int8"] = AMD_TENSOR_PRECISIONS["int8"]
+        precisions["fp16"] = AMD_TENSOR_PRECISIONS["fp16"]
     if gfx_arch in ("gfx90a", "gfx942"):
         precisions["fp64"] = AMD_TENSOR_PRECISIONS["fp64"]
     if gfx_arch == "gfx942":
-        precisions["tf32"] = AMD_TENSOR_PRECISIONS["tf32"]
         precisions["fp8"] = AMD_TENSOR_PRECISIONS["fp8"]
     return precisions
 
