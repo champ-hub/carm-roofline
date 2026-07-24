@@ -479,6 +479,18 @@ def _compute_valid_tuples(records: list[BenchmarkRecord]) -> frozenset[RooflineT
     )
 
 
+def _sort_field(values: set[Any], field: str) -> list[Any]:
+    """Sort unique values for a filter dimension."""
+    if field == "actual_frequency_hz":
+        return sorted(values, reverse=True)
+    if field == "load_store_ratio":
+        priority = ["2:1"]
+        known = [v for v in priority if v in values]
+        rest = sorted(v for v in values if v not in known)
+        return known + rest
+    return sorted(values)
+
+
 def discover_filter_options(
     records: list[BenchmarkRecord],
     flt: RooflineFilter | None = None,
@@ -502,7 +514,7 @@ def discover_filter_options(
         for j, _ in enumerate(ALL_TUPLE_FIELDS):
             if j != i and sel[j] is not None:
                 filtered = frozenset(t for t in filtered if t[j] == sel[j])
-        result[f] = sorted({t[i] for t in filtered})
+        result[f] = _sort_field({t[i] for t in filtered}, f)
     debug(
         f"Available options: {len(result['machine'])} machine(s), {len(result['isa'])} ISA(s), "
         f"{len(result['num_threads'])} thread count(s), {len(result['load_store_ratio'])} ratio(s), "
