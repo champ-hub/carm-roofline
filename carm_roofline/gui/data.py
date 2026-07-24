@@ -53,6 +53,7 @@ class RoofConfig:
     compute_insts: list[str] = field(default_factory=lambda: ["fma", "add"])
     load_store_ratio: str | None = None
     collapsed: bool = False
+    advanced_collapsed: bool = True
     app_ids: list[str] = field(default_factory=list)
 
     def __init__(
@@ -68,10 +69,12 @@ class RoofConfig:
         load_store_ratio: str | None = None,
         app_ids: list[str] | None = None,
         collapsed: bool = False,
+        advanced_collapsed: bool = True,
     ) -> None:
         self.id = roof_id or uuid.uuid4().hex
         self.label = label or f"Roof {self.id[:6]}"
         self.collapsed = collapsed
+        self.advanced_collapsed = advanced_collapsed
         self.machine = machine
         self.isa = isa
         self.num_threads = num_threads
@@ -148,6 +151,7 @@ class RoofStore:
                     "compute_insts": r.compute_insts,
                     "load_store_ratio": r.load_store_ratio,
                     "collapsed": r.collapsed,
+                    "advanced_collapsed": r.advanced_collapsed,
                     "app_ids": r.app_ids,
                 }
                 for r in self.roofs
@@ -171,6 +175,7 @@ class RoofStore:
                 data_type=r.get("data_type", "f32"),
                 compute_insts=r.get("compute_insts", ["fma", "add"]),
                 load_store_ratio=r.get("load_store_ratio", "2:1"),
+                advanced_collapsed=r.get("advanced_collapsed", True),
                 collapsed=r.get("collapsed", False),
                 app_ids=r.get("app_ids", []),
             )
