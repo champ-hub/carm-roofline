@@ -407,28 +407,10 @@ class TestDetectGPU:
         mock_enumerate.return_value = [(GPUVendor.AMD, 0)]
         assert detect_gpu_vendor() == GPUVendor.AMD
 
-    @patch("carm_roofline.gpu.detect.shutil.which")
     @patch("carm_roofline.gpu.detect._enumerate_gpus")
-    def test_detect_gpu_vendor_fallback_nvidia(self, mock_enumerate, mock_which):
-        """Fallback: no sysfs, nvidia-smi on PATH."""
+    def test_detect_gpu_vendor_empty_sysfs(self, mock_enumerate):
+        """No sysfs enumeration — returns None (no tool-based fallback)."""
         mock_enumerate.return_value = []
-        mock_which.side_effect = lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None
-        assert detect_gpu_vendor() == GPUVendor.NVIDIA
-
-    @patch("carm_roofline.gpu.detect.shutil.which")
-    @patch("carm_roofline.gpu.detect._enumerate_gpus")
-    def test_detect_gpu_vendor_fallback_amd(self, mock_enumerate, mock_which):
-        """Fallback: no sysfs, only amd-smi on PATH."""
-        mock_enumerate.return_value = []
-        mock_which.side_effect = lambda name: "/usr/bin/amd-smi" if name == "amd-smi" else None
-        assert detect_gpu_vendor() == GPUVendor.AMD
-
-    @patch("carm_roofline.gpu.detect.shutil.which")
-    @patch("carm_roofline.gpu.detect._enumerate_gpus")
-    def test_detect_gpu_vendor_fallback_none(self, mock_enumerate, mock_which):
-        """Fallback: no sysfs, no SMI tools."""
-        mock_enumerate.return_value = []
-        mock_which.return_value = None
         assert detect_gpu_vendor() is None
 
     # --- detect_compute_capability ---

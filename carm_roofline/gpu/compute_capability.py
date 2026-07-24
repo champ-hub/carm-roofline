@@ -16,10 +16,10 @@ class ComputeCapability:
 
     For NVIDIA: ``major`` and ``minor`` from CC string (e.g. CC 8.9 → major=8, minor=9,
     as_int=89). ``as_int`` is ``major * 10 + minor``.
-    For AMD: ``major`` is the gfx major version (e.g. gfx942 → major=9), ``minor`` is 0,
+    For AMD: ``major`` is the gfx major version (e.g. gfx1035 → major=10, minor=35),
     ``as_int = major``.
 
-    ``gfx_arch`` stores the raw AMD gfx architecture string (e.g. ``"gfx942"``) for
+    ``gfx_arch`` stores the raw AMD gfx architecture string (e.g. ``"gfx1035"``) for
     AMD cascade tiering, or ``None`` for NVIDIA.
     """
 
@@ -65,8 +65,19 @@ class ComputeCapability:
             else:
                 gfx_arch = "gfx" + s
                 digits = s
-            major = int(digits[0]) if digits else 9
-            return ComputeCapability(major=major, minor=0, vendor=vendor, gfx_arch=gfx_arch)
+            # Extract major version: AMD gfx arch uses 1-digit for 6-9,
+            # 2-digit for 10+ (e.g. "10" for RDNA 1/2, "11" for RDNA 3).
+            if digits and len(digits) > 1 and digits[0] == "1":
+                major = int(digits[:2])
+                minor_str = digits[2:]
+            elif digits:
+                major = int(digits[0])
+                minor_str = digits[1:]
+            else:
+                major = 9
+                minor_str = ""
+            minor = int(minor_str) if minor_str and minor_str.isdigit() else 0
+            return ComputeCapability(major=major, minor=minor, vendor=vendor, gfx_arch=gfx_arch)
         else:
             raise ValueError(f"Unsupported GPU vendor: {vendor}")
 

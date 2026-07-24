@@ -242,22 +242,11 @@ def detect_gpu_vendor() -> GPUVendor | None:
     """Detect the vendor of the first available GPU.
 
     Uses sysfs enumeration to identify the first GPU in PCI bus order.
-    Falls back to ``shutil.which`` checks for nvidia-smi/amd-smi when
-    sysfs is unavailable.
-
-    Returns:
-        ``GPUVendor.NVIDIA``, ``GPUVendor.AMD``, or ``None`` if no
-        GPU or detection tool is found.
+    Returns ``None`` when sysfs is unavailable (containers, chroots, etc.)
+    — the caller should fall back to probing both SMI tools directly.
     """
     gpu_list = _enumerate_gpus()
-    if gpu_list:
-        return gpu_list[0][0]
-
-    if shutil.which("nvidia-smi") is not None:
-        return GPUVendor.NVIDIA
-    if shutil.which("amd-smi") is not None:
-        return GPUVendor.AMD
-    return None
+    return gpu_list[0][0] if gpu_list else None
 
 
 def detect_compute_capability(device: int = 0) -> ComputeCapability | None:
@@ -369,4 +358,4 @@ def reset_gpu_clocks(device: int = 0) -> None:
                 check=True,
             )
         except subprocess.CalledProcessError:
-            warn(f"nvidia-smi {flag} failed for device {device}", stacklevel=2)
+            warn(f"nvidia-smi {flag} failed for device {device}")

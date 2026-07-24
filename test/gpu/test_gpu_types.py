@@ -45,8 +45,8 @@ class TestComputeCapability:
             ("8.9", GPUVendor.NVIDIA, 8, 9, None),
             ("89", GPUVendor.NVIDIA, 8, 9, None),
             ("70", GPUVendor.NVIDIA, 7, 0, None),
-            ("gfx942", GPUVendor.AMD, 9, 0, "gfx942"),
-            ("9.4.2", GPUVendor.AMD, 9, 0, "gfx942"),
+            ("gfx942", GPUVendor.AMD, 9, 42, "gfx942"),
+            ("9.4.2", GPUVendor.AMD, 9, 42, "gfx942"),
         ],
     )
     def test_from_string(self, s, vendor, expected_major, expected_minor, expected_gfx):
