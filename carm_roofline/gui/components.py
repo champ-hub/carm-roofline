@@ -323,7 +323,7 @@ def build_roof_card(
 
 
 def build_settings_panel(store: RoofStore, options: FilterOptions | None = None) -> html.Div:
-    """Settings panel with the normalize-by-threads toggle."""
+    """Settings panel with various plotting and appearance options."""
     return html.Div(
         className="settings-panel",
         style={"display": "block"} if store.active_panel == ActivePanel.SETTINGS else {"display": "none"},
@@ -336,6 +336,17 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
                     dbc.Switch(
                         id=SettingsPanelID.SWITCH_NORMALIZE,
                         value=store.normalize_by_threads,
+                        className="normalize-toggle",
+                    ),
+                ],
+            ),
+            html.Div(
+                className="settings-toggle-row",
+                children=[
+                    html.Span("2^N axis tick labels", className="settings-toggle-label"),
+                    dbc.Switch(
+                        id=SettingsPanelID.SWITCH_POWER2_TICKS,
+                        value=store.power2_ticks,
                         className="normalize-toggle",
                     ),
                 ],

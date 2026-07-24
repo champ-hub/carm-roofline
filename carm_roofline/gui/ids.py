@@ -69,6 +69,7 @@ class SettingsPanelID(ID):
 
     SWITCH_NORMALIZE = "switch-normalize"
     SLIDER_MARKER_SIZE = "slider-marker-size"
+    SWITCH_POWER2_TICKS = "switch-power2-ticks"
 
 
 class PlotAreaID(ID):
