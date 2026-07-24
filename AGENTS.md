@@ -179,3 +179,14 @@ Generic arithmetic wrapper `Unit[T]` (ABC) with subclasses: `Bytes`, `Operations
 - **Dominant pattern**: parametrized ISA cross-product tests via `@pytest.mark.parametrize`
 - **Categories**: Unit (`test/unit/`, marked `unit`) for profiling model, CLI smoke, register abstraction, ISA helpers. Integration-ish (`test/` root, no markers) for ISA codegen (11-ISA matrix), typed benchmarks, output handlers, memory suite generation.
 Static analysis (`mypy .` and `ruff check`) is a hard gate: no plan should consider code changes done until both pass on changed code. See `RULES.md` for the full tooling-expectations policy.
+
+### GUI Smoke Tests
+
+After making a change to the Dash GUI (`carm_roofline/gui/`), validate it with the headless browser tool if you are running under the omp harness:
+
+1. Start the GUI via `hub {op: "start", name: "carm-gui", application: "carm", args: ["gui"]}` and wait for `"Dash is running"` in logs.
+2. Open the browser: `write xd://browser {action: "open", url: "http://127.0.0.1:8050/"}`
+3. Interact and inspect with `tab.ariaSnapshot()`, `tab.click()`, etc. via `write xd://browser {action: "run", code: <js>}`.
+4. Stop the GUI: `hub {op: "stop", name: "carm-gui"}`
+
+Use this approach for any UI change — layout restructure, new components, callback behavior. It catches DOM/state issues test mocks miss.
