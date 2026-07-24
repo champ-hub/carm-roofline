@@ -111,6 +111,7 @@ class RoofStore:
         self.active_panel: ActivePanel = ActivePanel.CARM_VIEW
         self.normalize_by_threads: bool = False
         self.marker_scale_factor: float = 50.0
+        self.power2_ticks: bool = False
 
     # Roof CRUD
     def add_roof(self, roof_template: RoofConfig | None = None) -> RoofConfig:
@@ -159,6 +160,7 @@ class RoofStore:
             "active_panel": self.active_panel,
             "normalize_by_threads": self.normalize_by_threads,
             "marker_scale_factor": self.marker_scale_factor,
+            "power2_ticks": self.power2_ticks,
         }
 
     @classmethod
@@ -182,6 +184,7 @@ class RoofStore:
             for r in data.get("roofs", [])
         ]
         store.active_panel = ActivePanel(data.get("active_panel", "carm_view"))
+        store.power2_ticks = data.get("power2_ticks", False)
         store.normalize_by_threads = data.get("normalize_by_threads", False)
         store.marker_scale_factor = data.get("marker_scale_factor", 50.0)
         return store
@@ -193,6 +196,7 @@ class GUISettings:
 
     normalize_by_threads: bool = False
     marker_scale_factor: float = 50.0
+    power2_ticks: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -260,6 +264,7 @@ def build_roofline_figure(
     applications_by_id: dict[str, ApplicationRecord] | None = None,
     normalize_by_threads: bool = False,
     marker_scale_factor: float = 50.0,
+    power2_ticks: bool = False,
 ) -> go.Figure:
     """Build a Plotly roofline figure from real benchmark records.
 
@@ -270,6 +275,24 @@ def build_roofline_figure(
     """
     fig = go.Figure()
     LOG10_2 = math.log10(2)
+
+    def _power2_tick_config(
+        log10_range: list[float],
+    ) -> dict[str, object] | None:
+        """Build array tick config for 2^N formatting, or None if the range is empty."""
+        lo, hi = log10_range
+        min_exp = math.ceil(lo / LOG10_2)
+        max_exp = math.floor(hi / LOG10_2)
+        if min_exp > max_exp:
+            return None
+        exponents = list(range(min_exp, max_exp + 1))
+        tickvals = [10.0 ** (e * LOG10_2) for e in exponents]
+        ticktext = [f"2<sup>{e}</sup>" for e in exponents]
+        return {
+            "tickmode": "array",
+            "tickvals": tickvals,
+            "ticktext": ticktext,
+        }
 
     # Pre-pass: assemble every roofline model once and collect the data
     # extents that define the axis ranges.
@@ -568,26 +591,37 @@ def build_roofline_figure(
                             showlegend=False,
                         )
                     )
+    # Apply 2^N tick formatting when enabled
+    xaxis: dict[str, object] = {
+        "title": "Arithmetic Intensity (OPS/Byte)",
+        "type": "log",
+        "dtick": LOG10_2,
+        "tick0": 0,
+        "exponentformat": "none",
+        "gridcolor": "lightgray",
+        "range": x_range,
+    }
+    yaxis: dict[str, object] = {
+        "title": "Performance (GOPS/s)",
+        "type": "log",
+        "dtick": LOG10_2,
+        "tick0": 0,
+        "exponentformat": "none",
+        "gridcolor": "lightgray",
+        "range": y_range,
+    }
+    if power2_ticks:
+        xticks = _power2_tick_config(x_range)
+        yticks = _power2_tick_config(y_range)
+        if xticks is not None:
+            xaxis.update(xticks)
+        if yticks is not None:
+            yaxis.update(yticks)
+
     fig.update_layout(
         template="plotly_white",
-        xaxis={
-            "title": "Arithmetic Intensity (OPS/Byte)",
-            "type": "log",
-            "dtick": LOG10_2,
-            "tick0": 0,
-            "exponentformat": "none",
-            "gridcolor": "lightgray",
-            "range": x_range,
-        },
-        yaxis={
-            "title": "Performance (GOPS/s)",
-            "type": "log",
-            "dtick": LOG10_2,
-            "tick0": 0,
-            "exponentformat": "none",
-            "gridcolor": "lightgray",
-            "range": y_range,
-        },
+        xaxis=xaxis,
+        yaxis=yaxis,
         uirevision="roofline-plot",
         hovermode="closest",
         dragmode="zoom",

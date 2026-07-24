@@ -121,6 +121,7 @@ def create_app(config: GUIConfig) -> dash.Dash:
     saved = load_gui_settings(gui_settings_path())
     initial_store.normalize_by_threads = saved.normalize_by_threads
     initial_store.marker_scale_factor = saved.marker_scale_factor
+    initial_store.power2_ticks = saved.power2_ticks
     debug(f"Loaded GUI settings: {saved}")
 
     app.layout = build_layout(initial_store, opts, app_dropdown_options)
@@ -401,6 +402,7 @@ def _register_callbacks(
             app_by_id,
             normalize_by_threads=store.normalize_by_threads,
             marker_scale_factor=store.marker_scale_factor,
+            power2_ticks=store.power2_ticks,
         )
         figure_dict = cast("dict[str, Any]", figure.to_dict())
         _tr(f"_update_plot exit traces={len(figure_dict.get('data', []))}")
@@ -468,6 +470,7 @@ def _register_callbacks(
             GUISettings(
                 normalize_by_threads=store.normalize_by_threads,
                 marker_scale_factor=store.marker_scale_factor,
+                power2_ticks=store.power2_ticks,
             ),
         )
         return store.to_dict()
@@ -490,6 +493,30 @@ def _register_callbacks(
             GUISettings(
                 normalize_by_threads=store.normalize_by_threads,
                 marker_scale_factor=store.marker_scale_factor,
+                power2_ticks=store.power2_ticks,
+            ),
+        )
+        return store.to_dict()
+
+    # 11. Power2 ticks toggle
+    @app.callback(
+        Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
+        Input(SettingsPanelID.SWITCH_POWER2_TICKS, "value"),
+        State(StoreID.ROOF_STORE, "data"),
+        prevent_initial_call=True,
+    )
+    def _toggle_power2_ticks(
+        power2: bool | None,
+        store_data: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        store = RoofStore.from_dict(store_data or {})
+        store.power2_ticks = bool(power2)
+        save_gui_settings(
+            gui_settings_path(),
+            GUISettings(
+                normalize_by_threads=store.normalize_by_threads,
+                marker_scale_factor=store.marker_scale_factor,
+                power2_ticks=store.power2_ticks,
             ),
         )
         return store.to_dict()
