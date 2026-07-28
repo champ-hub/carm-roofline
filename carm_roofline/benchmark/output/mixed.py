@@ -38,7 +38,7 @@ def _write_plot(isa_suites: dict[str, ISABenchmarkSuite], output_path: Path | No
         Gracefully handles errors from sub-handlers. Will not raise exceptions.
         If either subplot fails, the other will still be displayed.
     """
-    plt, _ = safe_matplotlib_import()
+    plt = safe_matplotlib_import()
     if plt is None:
         return
 
