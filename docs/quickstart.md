@@ -36,7 +36,7 @@ See the [Benchmarking](benchmark) page for the full set of options.
 carm gui
 ```
 
-Open the printed URL (default: [http://127.0.0.1:8050](http://127.0.0.1:8050)) in your browser.
+Open the printed URL (default: [http://0.0.0.0:8050](http://0.0.0.0:8050)) in your browser.
 
 
 ### Select the roof
