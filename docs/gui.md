@@ -15,7 +15,7 @@ Run `carm gui --help` for a full argument listing.
 carm gui [options]
 ```
 
-Once launched, open the URL printed in the terminal (default: `http://127.0.0.1:8050`) in your browser.
+Once launched, open the URL printed in the terminal (default: `http://0.0.0.0:8050`) in your browser.
 
 ## What You'll See
 
@@ -33,7 +33,7 @@ The GUI scans `--results-dir` (default: platform user data dir for `carm`) for r
 
 ### Server configuration (`--gui-host`, `--gui-port`, `--gui-debug`)
 
-The Dash server binds to `127.0.0.1:8050` by default. Change the host to `0.0.0.0` to access the GUI from other machines on your network.
+The Dash server binds to `0.0.0.0:8050` by default. Change the host to `0.0.0.0` to access the GUI from other machines on your network.
 
 ### Verbosity (`--verbose`)
 
