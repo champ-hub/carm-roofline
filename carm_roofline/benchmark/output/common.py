@@ -24,15 +24,15 @@ def format_precision_label(data_type: DataType) -> str:
     return name or str(data_type)
 
 
-def safe_matplotlib_import() -> tuple[Any | None, Any | None]:
-    """Safely import matplotlib and numpy with error handling.
+def safe_matplotlib_import() -> Any | None:
+    """Safely import matplotlib with error handling.
 
     Returns:
-        A tuple of (plt, np) if both are available, otherwise (None, None).
-        Logs an error message if imports fail.
+        matplotlib.pyplot module if available, otherwise None.
+        Logs an error message if import fails.
 
     Example:
-        >>> plt, np = safe_matplotlib_import()
+        >>> plt = safe_matplotlib_import()
         >>> if plt is None:
         ...     return  # Skip plotting
 
@@ -41,14 +41,11 @@ def safe_matplotlib_import() -> tuple[Any | None, Any | None]:
     """
     try:
         import matplotlib.pyplot as plt
-        import numpy as np
 
-        return plt, np
-    except ImportError as e:
-        # Determine which package failed for better error message
-        missing = "matplotlib" if "matplotlib" in str(e) else "numpy" if "numpy" in str(e) else "required packages"
-        warn(f"{missing} not available; skipping plots. Install with: pip install {missing}")
-        return None, None
+        return plt
+    except ImportError:
+        warn("matplotlib not available; skipping plots. Install with: pip install matplotlib")
+        return None
 
 
 def save_or_show_plot(

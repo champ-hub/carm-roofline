@@ -145,29 +145,6 @@ def make_fake_matplotlib():
     return mpl, pyplot
 
 
-def make_fake_numpy():
-    """Create a minimal fake numpy module used by roofline plotting.
-
-    Implements `log10` and `logspace`.
-    """
-    np = types.ModuleType("numpy")
-    import math
-
-    def log10(x):
-        return math.log10(x)
-
-    def logspace(a, b, n):
-        # return a simple list of floats between 10**a and 10**b
-        start = 10**a
-        end = 10**b
-        if n <= 1:
-            return [start]
-        step = (end - start) / (n - 1)
-        return [start + i * step for i in range(n)]
-
-    np.log10 = log10
-    np.logspace = logspace
-    return np
 
 
 class _Result:
@@ -261,7 +238,7 @@ def _make_fake_context(isa_names: list[str], freq_hz: float = 3.0e9, nominal_hz:
 
 
 def reload_handlers(monkeypatch):
-    """Reload handler modules so they pick up any monkeypatched matplotlib/numpy."""
+    """Reload handler modules so they pick up any monkeypatched matplotlib."""
     import carm_roofline.benchmark.output.arithmetic as arithmetic
     import carm_roofline.benchmark.output.memory as memory
     import carm_roofline.benchmark.output.mixed as mixed
@@ -511,12 +488,10 @@ def test_roofline_plot_handles_missing_data(monkeypatch):
     """Roofline plot gracefully handles suites with no points and prints notice."""
     from carm_roofline.benchmark.suites import RooflineBenchmarkSuite
 
-    # fake matplotlib and numpy
+    # fake matplotlib
     mpl, _ = make_fake_matplotlib()
-    np = make_fake_numpy()
     monkeypatch.setitem(sys.modules, "matplotlib", mpl)
     monkeypatch.setitem(sys.modules, "matplotlib.pyplot", mpl.pyplot)
-    monkeypatch.setitem(sys.modules, "numpy", np)
 
     # reload roofline to pick up fakes
     _, _, _, roofline = reload_handlers(monkeypatch)
@@ -621,14 +596,13 @@ def test_roofline_cli_prints_summary():
 
 def test_roofline_plot_saves_file(monkeypatch, tmp_path):
     """Roofline plot saves image file when matplotlib is available."""
-    # install fake matplotlib and numpy
+    # install fake matplotlib
     mpl, _ = make_fake_matplotlib()
-    np = make_fake_numpy()
     monkeypatch.setitem(sys.modules, "matplotlib", mpl)
     monkeypatch.setitem(sys.modules, "matplotlib.pyplot", mpl.pyplot)
-    monkeypatch.setitem(sys.modules, "numpy", np)
 
-    # reload handlers so they pick up fake matplotlib/numpy
+    # reload handlers so they pick up fake matplotlib
+
     _, _, _, roofline = reload_handlers(monkeypatch)
 
     suite = _make_minimal_roofline_suite()
