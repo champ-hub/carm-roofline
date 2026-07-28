@@ -32,10 +32,9 @@ dependencies = [
 [project.optional-dependencies]
 # GUI/visualization dependencies
 gui = [
-    "dash[diskcache]",
-    "dash-bootstrap-components",
-    "dash-daq",
-    "plotly",
+    "dash>=4.4.1",
+    "dash-bootstrap-components>=2.0.4",
+    "plotly>=6.7.0",
 ]
 
 # Development tools

@@ -36,7 +36,6 @@ repos:
           'types-PyYAML',
           'dash',
           'dash-bootstrap-components',
-          'dash-daq',
           'plotly',
           'pandas',
           'rich',
