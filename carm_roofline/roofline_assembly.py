@@ -482,7 +482,8 @@ def _compute_valid_tuples(records: list[BenchmarkRecord]) -> frozenset[RooflineT
 def _sort_field(values: set[Any], field: str) -> list[Any]:
     """Sort unique values for a filter dimension."""
     if field == "actual_frequency_hz":
-        return sorted(values, reverse=True)
+        # 0 is a sentinel for records without actual_frequency_hz; never offer it as an option.
+        return sorted((v for v in values if v != 0), reverse=True)
     if field == "load_store_ratio":
         priority = ["2:1"]
         known = [v for v in priority if v in values]
