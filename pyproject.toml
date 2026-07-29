@@ -23,7 +23,6 @@ classifiers = [
 dependencies = [
     "rich>=14.3.2",
     "rich-argparse>=1.7.0",
-    "numpy>=2.0.0",
     "matplotlib>=3.7.2",
     "tomli>=2.0.0",
     "platformdirs>=4.0.0",
@@ -33,11 +32,9 @@ dependencies = [
 [project.optional-dependencies]
 # GUI/visualization dependencies
 gui = [
-    "dash[diskcache]",
-    "dash-bootstrap-components",
-    "dash-daq",
-    "plotly",
-    "pandas",
+    "dash>=4.4.1",
+    "dash-bootstrap-components>=2.0.4",
+    "plotly>=6.7.0",
 ]
 
 # Development tools
@@ -46,12 +43,6 @@ dev = [
     "ruff>=0.14.14",
     "pre-commit>=4.3.0",
     "mypy>=1.8.0",
-]
-
-# Analysis tools dependencies (optional)
-analysis = [
-    # PAPI and DynamoRIO are system-level dependencies
-    # Listed here for documentation purposes
 ]
 
 # All optional dependencies combined
@@ -78,20 +69,14 @@ include = ["carm_roofline", "carm_roofline.*"]
 "carm_roofline.test_bench" = ["test_bench.c", "test_bench.h", "wrapper.inl"]
 "carm_roofline.gui" = ["assets/*"]
 
-# ============================================================================
-# Ruff Configuration (migrated from ruff.toml)
-# ============================================================================
-
 [tool.ruff]
 line-length = 120
 target-version = "py39"
-# Exclude legacy and third-party code
 exclude = [
     "test",  # Test code with temporary workarounds
 ]
 
 [tool.ruff.lint]
-# Start with a focused but helpful rule set; expand later as refactoring stabilizes.
 select = [
     "E",      # pycodestyle errors
     "F",      # pyflakes
@@ -134,10 +119,6 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "lf"
 
-# ============================================================================
-# Pytest Configuration
-# ============================================================================
-
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["test"]
@@ -161,10 +142,6 @@ markers = [
     "riscv: Tests specific to RISC-V architecture",
 ]
 
-# ============================================================================
-# MyPy Configuration
-# ============================================================================
-
 [tool.mypy]
 python_version = "3.9"
 strict = true
@@ -174,7 +151,6 @@ show_column_numbers = true
 cache_fine_grained = true
 warn_unused_configs = true
 exclude_gitignore = true
-# Exclude legacy code from type checking
 exclude = [
     "test/",
 ]

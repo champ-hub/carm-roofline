@@ -136,7 +136,7 @@ def _write_plot(isa_suites: dict[str, ISABenchmarkSuite], output_path: Path | No
         Gracefully handles missing data, invalid values, and I/O errors.
         Will not raise exceptions.
     """
-    plt, _ = safe_matplotlib_import()
+    plt = safe_matplotlib_import()
     if plt is None:
         return
 

@@ -212,17 +212,6 @@ def build_roof_card(
                                 placeholder=ph_machine,
                             ),
                         ),
-                        _field_row(
-                            "Frequency",
-                            dcc_dropdown(
-                                _make_id(RoofCardID.DROPDOWN_FREQUENCY, index=index),
-                                [(str(Frequency(hz)), str(hz)) for hz in options["actual_frequency_hz"]]
-                                if options
-                                else FREQUENCY_OPTIONS,
-                                str(roof.actual_frequency_hz) if roof.actual_frequency_hz is not None else None,
-                                placeholder=ph_frequency,
-                            ),
-                        ),
                         _field_row_pair(
                             _field_row(
                                 "ISA",
@@ -243,24 +232,13 @@ def build_roof_card(
                                 ),
                             ),
                         ),
-                        _field_row_pair(
-                            _field_row(
-                                "Data Type",
-                                dcc_dropdown(
-                                    _make_id(RoofCardID.DROPDOWN_DATA_TYPE, index=index),
-                                    options["data_type"] if options else DATA_TYPE_OPTIONS,
-                                    roof.data_type,
-                                    placeholder=ph_data_type,
-                                ),
-                            ),
-                            _field_row(
-                                "Load-Store Ratio",
-                                dcc_dropdown(
-                                    _make_id(RoofCardID.DROPDOWN_LS_RATIO, index=index),
-                                    options["load_store_ratio"] if options else LOAD_STORE_RATIO_OPTIONS,
-                                    roof.load_store_ratio,
-                                    placeholder=ph_ls_ratio,
-                                ),
+                        _field_row(
+                            "Data Type",
+                            dcc_dropdown(
+                                _make_id(RoofCardID.DROPDOWN_DATA_TYPE, index=index),
+                                options["data_type"] if options else DATA_TYPE_OPTIONS,
+                                roof.data_type,
+                                placeholder=ph_data_type,
                             ),
                         ),
                         _field_row(
@@ -270,6 +248,51 @@ def build_roof_card(
                                 [{"label": o, "value": o} for o in COMPUTE_INST_OPTIONS],
                                 roof.compute_insts,
                             ),
+                        ),
+                        # Advanced subsection (collapsible, collapsed by default)
+                        html.Div(
+                            className="advanced-section",
+                            children=[
+                                html.Div(
+                                    className="advanced-section-header",
+                                    children=[
+                                        html.Span("Advanced", className="advanced-section-title"),
+                                        html.Button(
+                                            "\u25b6" if roof.advanced_collapsed else "\u25bc",
+                                            id=_make_id(RoofCardID.BTN_ADVANCED_COLLAPSE, index=index),
+                                            className="btn-advanced-collapse",
+                                            n_clicks=0,
+                                        ),
+                                    ],
+                                ),
+                                dbc.Collapse(
+                                    is_open=not roof.advanced_collapsed,
+                                    children=[
+                                        _field_row(
+                                            "Frequency",
+                                            dcc_dropdown(
+                                                _make_id(RoofCardID.DROPDOWN_FREQUENCY, index=index),
+                                                [(str(Frequency(hz)), str(hz)) for hz in options["actual_frequency_hz"]]
+                                                if options
+                                                else FREQUENCY_OPTIONS,
+                                                str(roof.actual_frequency_hz)
+                                                if roof.actual_frequency_hz is not None
+                                                else None,
+                                                placeholder=ph_frequency,
+                                            ),
+                                        ),
+                                        _field_row(
+                                            "Load-Store Ratio",
+                                            dcc_dropdown(
+                                                _make_id(RoofCardID.DROPDOWN_LS_RATIO, index=index),
+                                                options["load_store_ratio"] if options else LOAD_STORE_RATIO_OPTIONS,
+                                                roof.load_store_ratio,
+                                                placeholder=ph_ls_ratio,
+                                            ),
+                                        ),
+                                    ],
+                                ),
+                            ],
                         ),
                         # Apps subsection
                         html.Div(
@@ -300,7 +323,7 @@ def build_roof_card(
 
 
 def build_settings_panel(store: RoofStore, options: FilterOptions | None = None) -> html.Div:
-    """Settings panel with the normalize-by-threads toggle."""
+    """Settings panel with various plotting and appearance options."""
     return html.Div(
         className="settings-panel",
         style={"display": "block"} if store.active_panel == ActivePanel.SETTINGS else {"display": "none"},
@@ -313,6 +336,17 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
                     dbc.Switch(
                         id=SettingsPanelID.SWITCH_NORMALIZE,
                         value=store.normalize_by_threads,
+                        className="normalize-toggle",
+                    ),
+                ],
+            ),
+            html.Div(
+                className="settings-toggle-row",
+                children=[
+                    html.Span("2^N axis tick labels", className="settings-toggle-label"),
+                    dbc.Switch(
+                        id=SettingsPanelID.SWITCH_POWER2_TICKS,
+                        value=store.power2_ticks,
                         className="normalize-toggle",
                     ),
                 ],

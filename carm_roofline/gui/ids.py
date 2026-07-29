@@ -61,6 +61,7 @@ class RoofCardID(ID):
     DROPDOWN_LS_RATIO = "dropdown-ls-ratio"
     DROPDOWN_APPS = "dropdown-apps"
     BTN_COLLAPSE_ROOF = "btn-collapse-roof"
+    BTN_ADVANCED_COLLAPSE = "btn-advanced-collapse"
 
 
 class SettingsPanelID(ID):
@@ -68,6 +69,7 @@ class SettingsPanelID(ID):
 
     SWITCH_NORMALIZE = "switch-normalize"
     SLIDER_MARKER_SIZE = "slider-marker-size"
+    SWITCH_POWER2_TICKS = "switch-power2-ticks"
 
 
 class PlotAreaID(ID):

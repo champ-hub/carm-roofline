@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import math
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -106,7 +107,6 @@ _CACHE_LEVELS = ("L1", "L2", "L3", "DRAM")
 def _plot_roofline_to_axis(
     roofline_data: dict[str, tuple[float, dict[str, float]]],
     ax: Any,
-    np: Any,
 ) -> None:
     """Draw roofline curves on a matplotlib log-log axis.
 
@@ -125,9 +125,11 @@ def _plot_roofline_to_axis(
 
     ai_min = min(all_ridges) / 10
     ai_max = max(all_ridges) * 10
-    ai_values = np.logspace(np.log10(ai_min), np.log10(ai_max), 200)
-    if not isinstance(ai_values, list):
-        ai_values = list(ai_values)
+    # Logarithmically spaced values (replaces numpy.logspace)
+    log_min = math.log10(ai_min)
+    log_max = math.log10(ai_max)
+    step = (log_max - log_min) / 199.0
+    ai_values = [10 ** (log_min + i * step) for i in range(200)]
 
     for idx, (isa, (peak_gflops, bw_gbps)) in enumerate(sorted(roofline_data.items())):
         color = _ROOFLINE_COLORS[idx % len(_ROOFLINE_COLORS)]
@@ -192,14 +194,14 @@ def _write_plot(isa_suites: dict[str, ISABenchmarkSuite], output_path: Path | No
         warn("No roofline data found")
         return
 
-    plt, np = safe_matplotlib_import()
+    plt = safe_matplotlib_import()
     if plt is None:
         return
 
     fig = None
     try:
         fig, ax = plt.subplots(figsize=(10, 7))
-        _plot_roofline_to_axis(roofline_data, ax, np)
+        _plot_roofline_to_axis(roofline_data, ax)
         plt.tight_layout()
         save_or_show_plot(output_path, "roofline.png", plt=plt)
     except Exception as e:
