@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import dash_bootstrap_components as dbc
 from dash import dcc, html
@@ -33,12 +33,127 @@ ISA_OPTIONS = ["x86_avx512", "x86_avx2", "x86_avx", "x86_sse", "arm_neon", "risc
 LOAD_STORE_RATIO_OPTIONS = ["2:1", "1:0", "0:1", "1:1", "3:1", "4:1"]
 THREADS_OPTIONS = ["1", "2", "4", "8", "16", "32", "64", "128"]
 
+# Maps placeholder var suffix -> (roof_config_field, display_fn)
+_PLACEHOLDER_SPEC: dict[str, tuple[str, Callable[..., Any]]] = {
+    "machine": ("machine", str),
+    "frequency": ("actual_frequency_hz", lambda v: str(Frequency(v))),
+    "isa": ("isa", str),
+    "threads": ("num_threads", str),
+    "data_type": ("data_type", str),
+    "ls_ratio": ("load_store_ratio", str),
+}
+
 
 def _make_id(type_: str, **parts: int) -> dict[str, str | int]:
     """Build a pattern-matching ID dict."""
     d: dict[str, str | int] = {"type": type_}
     d.update(parts)
     return d
+
+
+def _slider_marks(*values: float | int) -> dict[float | int, str]:
+    """Generate marks dict for dcc.Slider from explicit label values."""
+    return {v: str(v) for v in values}
+
+
+_SWITCH_CONTROLS: list[tuple[str, str, str]] = [
+    ("Normalize performance by threads", SettingsPanelID.SWITCH_NORMALIZE, "normalize_by_threads"),
+    ("2^N axis tick labels", SettingsPanelID.SWITCH_POWER2_TICKS, "power2_ticks"),
+]
+
+_SLIDER_CONTROLS: list[tuple[str, str, str, dict[str, Any]]] = [
+    (
+        "Point size multiplier",
+        SettingsPanelID.SLIDER_MARKER_SIZE,
+        "marker_scale_factor",
+        {
+            "min": 0,
+            "max": 200,
+            "step": 1,
+            "marks": _slider_marks(0, 50, 100, 150, 200),
+        },
+    ),
+    (
+        "Line width",
+        SettingsPanelID.SLIDER_LINE_WIDTH,
+        "line_width",
+        {
+            "min": 0.5,
+            "max": 5.0,
+            "step": 0.25,
+            "marks": _slider_marks(0.5, 1, 2, 3, 4, 5),
+        },
+    ),
+    (
+        "Axis label font size",
+        SettingsPanelID.SLIDER_FONT_SIZE_AXIS_LABEL,
+        "axis_label_font_size",
+        {
+            "min": 8,
+            "max": 24,
+            "step": 1,
+            "marks": _slider_marks(8, 12, 16, 20, 24),
+        },
+    ),
+    (
+        "Axis tick font size",
+        SettingsPanelID.SLIDER_FONT_SIZE_AXIS_TICK,
+        "axis_tick_font_size",
+        {
+            "min": 8,
+            "max": 24,
+            "step": 1,
+            "marks": _slider_marks(8, 12, 16, 20, 24),
+        },
+    ),
+    (
+        "Tooltip font size",
+        SettingsPanelID.SLIDER_FONT_SIZE_TOOLTIP,
+        "tooltip_font_size",
+        {
+            "min": 8,
+            "max": 24,
+            "step": 1,
+            "marks": _slider_marks(8, 12, 16, 20, 24),
+        },
+    ),
+    (
+        "Legend font size",
+        SettingsPanelID.SLIDER_FONT_SIZE_LEGEND,
+        "legend_font_size",
+        {
+            "min": 8,
+            "max": 24,
+            "step": 1,
+            "marks": _slider_marks(8, 12, 16, 20, 24),
+        },
+    ),
+]
+
+
+def _build_settings_switch(label: str, id_: str, value: bool) -> html.Div:
+    return html.Div(
+        className="settings-toggle-row",
+        children=[
+            html.Span(label, className="settings-toggle-label"),
+            dbc.Switch(id=id_, value=value, className="normalize-toggle"),
+        ],
+    )
+
+
+def _build_settings_slider(label: str, id_: str, value: float, **kwargs: Any) -> html.Div:
+    return html.Div(
+        className="settings-slider-row",
+        children=[
+            html.Span(label, className="settings-toggle-label"),
+            dcc.Slider(
+                id=id_,
+                value=value,
+                **kwargs,
+                tooltip={"placement": "bottom", "always_visible": True},
+            ),
+        ],
+    )
 
 
 def build_navbar(active_panel: ActivePanel) -> html.Div:
@@ -143,38 +258,21 @@ def build_roof_card(
     app_options: list[DropdownOption] | None = None,
 ) -> dbc.Card:
     # Placeholder text for cleared dropdowns that have an auto-resolved value
-    ph_machine = (
-        f"{resolved_roof.machine} (auto)"
-        if roof.machine is None and resolved_roof is not None and resolved_roof.machine is not None
-        else None
-    )
-    ph_frequency = (
-        f"{Frequency(resolved_roof.actual_frequency_hz)} (auto)"
-        if roof.actual_frequency_hz is None
-        and resolved_roof is not None
-        and resolved_roof.actual_frequency_hz is not None
-        else None
-    )
-    ph_isa = (
-        f"{resolved_roof.isa} (auto)"
-        if roof.isa is None and resolved_roof is not None and resolved_roof.isa is not None
-        else None
-    )
-    ph_threads = (
-        f"{resolved_roof.num_threads} (auto)"
-        if roof.num_threads is None and resolved_roof is not None and resolved_roof.num_threads is not None
-        else None
-    )
-    ph_data_type = (
-        f"{resolved_roof.data_type} (auto)"
-        if roof.data_type is None and resolved_roof is not None and resolved_roof.data_type is not None
-        else None
-    )
-    ph_ls_ratio = (
-        f"{resolved_roof.load_store_ratio} (auto)"
-        if roof.load_store_ratio is None and resolved_roof is not None and resolved_roof.load_store_ratio is not None
-        else None
-    )
+    placeholders = {}
+    if resolved_roof is not None:
+        for var_suffix, (field, display_fn) in _PLACEHOLDER_SPEC.items():
+            val = getattr(roof, field, None)
+            if val is None:
+                resolved_val = getattr(resolved_roof, field, None)
+                if resolved_val is not None:
+                    placeholders[var_suffix] = f"{display_fn(resolved_val)} (auto)"
+
+    ph_machine = placeholders.get("machine")
+    ph_frequency = placeholders.get("frequency")
+    ph_isa = placeholders.get("isa")
+    ph_threads = placeholders.get("threads")
+    ph_data_type = placeholders.get("data_type")
+    ph_ls_ratio = placeholders.get("ls_ratio")
     return dbc.Card(
         className="roof-card" + (" roof-card--collapsed" if roof.collapsed else ""),
         children=[
@@ -324,123 +422,20 @@ def build_roof_card(
 
 def build_settings_panel(store: RoofStore, options: FilterOptions | None = None) -> html.Div:
     """Settings panel with various plotting and appearance options."""
+    s = store.settings
+    switch_children = [_build_settings_switch(label, id_, getattr(s, field)) for label, id_, field in _SWITCH_CONTROLS]
+    slider_children = [
+        _build_settings_slider(label, id_, getattr(s, field), **kwargs)
+        for label, id_, field, kwargs in _SLIDER_CONTROLS
+    ]
+
     return html.Div(
         className="settings-panel",
         style={"display": "block"} if store.active_panel == ActivePanel.SETTINGS else {"display": "none"},
         children=[
             html.H5("Settings", className="panel-header"),
-            html.Div(
-                className="settings-toggle-row",
-                children=[
-                    html.Span("Normalize performance by threads", className="settings-toggle-label"),
-                    dbc.Switch(
-                        id=SettingsPanelID.SWITCH_NORMALIZE,
-                        value=store.settings.normalize_by_threads,
-                        className="normalize-toggle",
-                    ),
-                ],
-            ),
-            html.Div(
-                className="settings-toggle-row",
-                children=[
-                    html.Span("2^N axis tick labels", className="settings-toggle-label"),
-                    dbc.Switch(
-                        id=SettingsPanelID.SWITCH_POWER2_TICKS,
-                        value=store.settings.power2_ticks,
-                        className="normalize-toggle",
-                    ),
-                ],
-            ),
-            html.Div(
-                className="settings-slider-row",
-                children=[
-                    html.Span("Point size multiplier", className="settings-toggle-label"),
-                    dcc.Slider(
-                        id=SettingsPanelID.SLIDER_MARKER_SIZE,
-                        min=0,
-                        max=200,
-                        step=1,
-                        value=store.settings.marker_scale_factor,
-                        marks={0: "0", 50: "50", 100: "100", 150: "150", 200: "200"},
-                        tooltip={"placement": "bottom", "always_visible": True},
-                    ),
-                ],
-            ),
-            html.Div(
-                className="settings-slider-row",
-                children=[
-                    html.Span("Line width", className="settings-toggle-label"),
-                    dcc.Slider(
-                        id=SettingsPanelID.SLIDER_LINE_WIDTH,
-                        min=0.5,
-                        max=5.0,
-                        step=0.25,
-                        value=store.settings.line_width,
-                        marks={0.5: "0.5", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"},
-                        tooltip={"placement": "bottom", "always_visible": True},
-                    ),
-                ],
-            ),
-            html.Div(
-                className="settings-slider-row",
-                children=[
-                    html.Span("Axis label font size", className="settings-toggle-label"),
-                    dcc.Slider(
-                        id=SettingsPanelID.SLIDER_FONT_SIZE_AXIS_LABEL,
-                        min=8,
-                        max=24,
-                        step=1,
-                        value=store.settings.axis_label_font_size,
-                        marks={8: "8", 12: "12", 16: "16", 20: "20", 24: "24"},
-                        tooltip={"placement": "bottom", "always_visible": True},
-                    ),
-                ],
-            ),
-            html.Div(
-                className="settings-slider-row",
-                children=[
-                    html.Span("Axis tick font size", className="settings-toggle-label"),
-                    dcc.Slider(
-                        id=SettingsPanelID.SLIDER_FONT_SIZE_AXIS_TICK,
-                        min=8,
-                        max=24,
-                        step=1,
-                        value=store.settings.axis_tick_font_size,
-                        marks={8: "8", 12: "12", 16: "16", 20: "20", 24: "24"},
-                        tooltip={"placement": "bottom", "always_visible": True},
-                    ),
-                ],
-            ),
-            html.Div(
-                className="settings-slider-row",
-                children=[
-                    html.Span("Tooltip font size", className="settings-toggle-label"),
-                    dcc.Slider(
-                        id=SettingsPanelID.SLIDER_FONT_SIZE_TOOLTIP,
-                        min=8,
-                        max=24,
-                        step=1,
-                        value=store.settings.tooltip_font_size,
-                        marks={8: "8", 12: "12", 16: "16", 20: "20", 24: "24"},
-                        tooltip={"placement": "bottom", "always_visible": True},
-                    ),
-                ],
-            ),
-            html.Div(
-                className="settings-slider-row",
-                children=[
-                    html.Span("Legend font size", className="settings-toggle-label"),
-                    dcc.Slider(
-                        id=SettingsPanelID.SLIDER_FONT_SIZE_LEGEND,
-                        min=8,
-                        max=24,
-                        step=1,
-                        value=store.settings.legend_font_size,
-                        marks={8: "8", 12: "12", 16: "16", 20: "20", 24: "24"},
-                        tooltip={"placement": "bottom", "always_visible": True},
-                    ),
-                ],
-            ),
+            *switch_children,
+            *slider_children,
         ],
     )
 

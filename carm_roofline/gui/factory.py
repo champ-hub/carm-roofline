@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import replace
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 import dash
 import dash_bootstrap_components as dbc
@@ -73,6 +73,17 @@ def _first_or_none(vals: list[str]) -> str | None:
 def _first_int_or_none(vals: list[int]) -> int | None:
     """First value as int from a filtered-options list, or None if empty."""
     return vals[0] if vals else None
+
+
+# (field_name, filter_key, first_fn) — first_fn is _first_or_none or _first_int_or_none
+_FILTER_FIELD_SPECS: list[tuple[str, str, Callable[..., Any]]] = [
+    ("machine", "machine", _first_or_none),
+    ("isa", "isa", _first_or_none),
+    ("num_threads", "num_threads", _first_int_or_none),
+    ("data_type", "data_type", _first_or_none),
+    ("load_store_ratio", "load_store_ratio", _first_or_none),
+    ("actual_frequency_hz", "actual_frequency_hz", _first_int_or_none),
+]
 
 
 # App factory
@@ -147,6 +158,58 @@ def _register_callbacks(
         _cb_seq += 1
         if config.gui_debug:
             debug(f"[CB#{_cb_seq}] {msg}")
+
+    def _register_setting_callback(
+        input_id: str,
+        field_name: str,
+        converter: Callable[[Any], Any],
+        default: Any,
+    ) -> None:
+        @app.callback(
+            Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
+            Input(input_id, "value"),
+            State(StoreID.ROOF_STORE, "data"),
+            prevent_initial_call=True,
+        )
+        def _update_setting(
+            val: Any,
+            store_data: dict[str, Any] | None,
+        ) -> dict[str, Any]:
+            store = RoofStore.from_dict(store_data or {})
+            value = converter(val) if val is not None else default
+            store.settings = replace(store.settings, **{field_name: value})
+            save_gui_settings(gui_settings_path(), store.settings)
+            return store.to_dict()
+
+    def _register_collapse_callback(
+        input_type_id: str,
+        field_name: str,
+        label: str,
+    ) -> None:
+        @app.callback(
+            Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
+            Input({"type": input_type_id, "index": ALL}, "n_clicks"),
+            State(StoreID.ROOF_STORE, "data"),
+            prevent_initial_call=True,
+        )
+        def _toggle_collapse(
+            n_clicks: list[int | None],
+            store_data: dict[str, Any] | None,
+        ) -> dict[str, Any]:
+            ctx = callback_context
+            if not ctx.triggered:
+                raise PreventUpdate
+            val = ctx.triggered[0].get("value", 0)
+            if not val:
+                raise PreventUpdate
+            store = RoofStore.from_dict(store_data or {})
+            _tr(f"_{label} trigger={ctx.triggered[0].get('prop_id', '?')} roofs={len(store.roofs)}")
+            index = _get_trigger_index()
+            if 0 <= index < len(store.roofs):
+                old = getattr(store.roofs[index], field_name)
+                setattr(store.roofs[index], field_name, not old)
+            _tr(f"_{label} exit roofs={len(store.roofs)}")
+            return store.to_dict()
 
     # 1. Toggle active panel
     @app.callback(
@@ -270,90 +333,46 @@ def _register_callbacks(
                 load_store_ratio=roof.load_store_ratio,
             )
             fo = discover_filter_options(recs, base)
-            if roof.machine is not None and roof.machine not in fo["machine"]:
-                debug(f"_resolve_roof_data[{roof.id}]: machine '{roof.machine}' not in options -> None")
-                roof.machine = None
-            if roof.isa is not None and roof.isa not in fo["isa"]:
-                debug(f"_resolve_roof_data[{roof.id}]: isa '{roof.isa}' not in options -> None")
-                roof.isa = None
-            if roof.num_threads is not None and roof.num_threads not in fo["num_threads"]:
-                debug(f"_resolve_roof_data[{roof.id}]: threads {roof.num_threads} not in options -> None")
-                roof.num_threads = None
-            if roof.data_type is not None and roof.data_type not in fo["data_type"]:
-                debug(f"_resolve_roof_data[{roof.id}]: data_type '{roof.data_type}' not in options -> None")
-                roof.data_type = None
-            if roof.load_store_ratio is not None and roof.load_store_ratio not in fo["load_store_ratio"]:
-                debug(f"_resolve_roof_data[{roof.id}]: ratio '{roof.load_store_ratio}' not in options -> None")
-                roof.load_store_ratio = None
-            if roof.actual_frequency_hz is not None and roof.actual_frequency_hz not in fo["actual_frequency_hz"]:
-                debug(f"_resolve_roof_data[{roof.id}]: freq {roof.actual_frequency_hz} not in options -> None")
-                roof.actual_frequency_hz = None
+            fo_dict = cast(dict[str, list[Any]], fo)
+            # Stabilization: single pass — clears stale values incompatible with current locks
+            for field_name, filter_key, _ in _FILTER_FIELD_SPECS:
+                val = getattr(roof, field_name)
+                if val is not None and val not in fo_dict[filter_key]:
+                    debug(f"_resolve_roof_data[{roof.id}]: {field_name} '{val}' not in options -> None")
+                    setattr(roof, field_name, None)
 
             # Build user-locks filter from stabilized (user-set) values only.
             # Used for per-roof dropdown options so auto-resolved values dont't constrain dropdown menus.
-            user_locks = RooflineFilter(
-                machine=roof.machine,
-                isa=roof.isa,
-                num_threads=roof.num_threads,
-                data_type=roof.data_type,
-                load_store_ratio=roof.load_store_ratio,
-                actual_frequency_hz=roof.actual_frequency_hz,
-            )
+            user_locks = RooflineFilter(**{name: getattr(roof, name) for name, _, _ in _FILTER_FIELD_SPECS})
 
-            # Auto-resolution: pick first valid for any field the user did not set.
-            # `acc` is seeded with ALL user locks so every discover_filter_options call
-            # respects every user constraint. Uses "modify filter, call again" pattern.
-            acc = RooflineFilter(
-                machine=roof.machine,
-                isa=roof.isa,
-                num_threads=roof.num_threads,
-                data_type=roof.data_type,
-                load_store_ratio=roof.load_store_ratio,
-                actual_frequency_hz=roof.actual_frequency_hz,
-            )
-            cur_machine = (
-                roof.machine
-                if roof.machine is not None
-                else _first_or_none(discover_filter_options(recs, acc)["machine"])
-            )
-            acc = replace(acc, machine=cur_machine)
-            cur_isa = roof.isa if roof.isa is not None else _first_or_none(discover_filter_options(recs, acc)["isa"])
-            acc = replace(acc, isa=cur_isa)
-            cur_threads = (
-                roof.num_threads
-                if roof.num_threads is not None
-                else _first_int_or_none(discover_filter_options(recs, acc)["num_threads"])
-            )
-            acc = replace(acc, num_threads=cur_threads)
-            cur_data_type = (
-                roof.data_type
-                if roof.data_type is not None
-                else _first_or_none(discover_filter_options(recs, acc)["data_type"])
-            )
-            acc = replace(acc, data_type=cur_data_type)
-            cur_ls_ratio = (
-                roof.load_store_ratio
-                if roof.load_store_ratio is not None
-                else _first_or_none(discover_filter_options(recs, acc)["load_store_ratio"])
-            )
-            acc = replace(acc, load_store_ratio=cur_ls_ratio)
-            cur_freq = (
-                roof.actual_frequency_hz
-                if roof.actual_frequency_hz is not None
-                else _first_int_or_none(discover_filter_options(recs, acc)["actual_frequency_hz"])
-            )
-            acc = replace(acc, actual_frequency_hz=cur_freq)
+            acc_dict: dict[str, Any] = {name: getattr(roof, name) for name, _, _ in _FILTER_FIELD_SPECS}
+
+            resolved_kwargs: dict[str, Any] = {
+                "roof_id": roof.id,
+                "label": roof.label,
+                "compute_insts": roof.compute_insts,
+                "app_ids": roof.app_ids,
+            }
+            for field_name, filter_key, first_fn in _FILTER_FIELD_SPECS:
+                val = getattr(roof, field_name)
+                if val is not None:
+                    resolved_kwargs[field_name] = val
+                else:
+                    r_opts = discover_filter_options(recs, RooflineFilter(**acc_dict))
+                    resolved_kwargs[field_name] = first_fn(cast(dict[str, list[Any]], r_opts)[filter_key])
+                acc_dict[field_name] = resolved_kwargs[field_name]
+
             resolved_roofs.append(
                 RoofConfig(
                     roof_id=roof.id,
                     label=roof.label,
-                    machine=cur_machine,
-                    isa=cur_isa,
-                    num_threads=cur_threads,
-                    data_type=cur_data_type,
+                    machine=resolved_kwargs["machine"],
+                    isa=resolved_kwargs["isa"],
+                    num_threads=resolved_kwargs["num_threads"],
+                    data_type=resolved_kwargs["data_type"],
                     compute_insts=roof.compute_insts,
-                    load_store_ratio=cur_ls_ratio,
-                    actual_frequency_hz=cur_freq,
+                    load_store_ratio=resolved_kwargs["load_store_ratio"],
+                    actual_frequency_hz=resolved_kwargs["actual_frequency_hz"],
                     app_ids=roof.app_ids,
                 )
             )
@@ -451,133 +470,15 @@ def _register_callbacks(
         _tr(f"_update_sidebar exit panel={store.active_panel}")
         return [carm_view_panel, settings_panel]
 
-    # 9. Normalize by threads toggle
-    @app.callback(
-        Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input(SettingsPanelID.SWITCH_NORMALIZE, "value"),
-        State(StoreID.ROOF_STORE, "data"),
-        prevent_initial_call=True,
-    )
-    def _toggle_normalize(
-        normalize: bool | None,
-        store_data: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        store = RoofStore.from_dict(store_data or {})
-        store.settings = replace(store.settings, normalize_by_threads=bool(normalize))
-        save_gui_settings(gui_settings_path(), store.settings)
-        return store.to_dict()
-
-    # 10. Marker scale slider
-    @app.callback(
-        Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input(SettingsPanelID.SLIDER_MARKER_SIZE, "value"),
-        State(StoreID.ROOF_STORE, "data"),
-        prevent_initial_call=True,
-    )
-    def _update_marker_scale(
-        scale: float | None,
-        store_data: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        store = RoofStore.from_dict(store_data or {})
-        store.settings = replace(store.settings, marker_scale_factor=float(scale if scale is not None else 50.0))
-        save_gui_settings(gui_settings_path(), store.settings)
-        return store.to_dict()
-
-    # 11. Power2 ticks toggle
-    @app.callback(
-        Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input(SettingsPanelID.SWITCH_POWER2_TICKS, "value"),
-        State(StoreID.ROOF_STORE, "data"),
-        prevent_initial_call=True,
-    )
-    def _toggle_power2_ticks(
-        power2: bool | None,
-        store_data: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        store = RoofStore.from_dict(store_data or {})
-        store.settings = replace(store.settings, power2_ticks=bool(power2))
-        save_gui_settings(gui_settings_path(), store.settings)
-        return store.to_dict()
-
-    # 12. Line width slider
-    @app.callback(
-        Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input(SettingsPanelID.SLIDER_LINE_WIDTH, "value"),
-        State(StoreID.ROOF_STORE, "data"),
-        prevent_initial_call=True,
-    )
-    def _update_line_width(
-        width: float | None,
-        store_data: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        store = RoofStore.from_dict(store_data or {})
-        store.settings = replace(store.settings, line_width=float(width if width is not None else 1.5))
-        save_gui_settings(gui_settings_path(), store.settings)
-        return store.to_dict()
-
-    # 13. Axis label font size slider
-    @app.callback(
-        Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input(SettingsPanelID.SLIDER_FONT_SIZE_AXIS_LABEL, "value"),
-        State(StoreID.ROOF_STORE, "data"),
-        prevent_initial_call=True,
-    )
-    def _update_axis_label_font_size(
-        size: int | None,
-        store_data: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        store = RoofStore.from_dict(store_data or {})
-        store.settings = replace(store.settings, axis_label_font_size=int(size if size is not None else 14))
-        save_gui_settings(gui_settings_path(), store.settings)
-        return store.to_dict()
-
-    # 14. Axis tick font size slider
-    @app.callback(
-        Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input(SettingsPanelID.SLIDER_FONT_SIZE_AXIS_TICK, "value"),
-        State(StoreID.ROOF_STORE, "data"),
-        prevent_initial_call=True,
-    )
-    def _update_axis_tick_font_size(
-        size: int | None,
-        store_data: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        store = RoofStore.from_dict(store_data or {})
-        store.settings = replace(store.settings, axis_tick_font_size=int(size if size is not None else 12))
-        save_gui_settings(gui_settings_path(), store.settings)
-        return store.to_dict()
-
-    # 15. Tooltip font size slider
-    @app.callback(
-        Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input(SettingsPanelID.SLIDER_FONT_SIZE_TOOLTIP, "value"),
-        State(StoreID.ROOF_STORE, "data"),
-        prevent_initial_call=True,
-    )
-    def _update_tooltip_font_size(
-        size: int | None,
-        store_data: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        store = RoofStore.from_dict(store_data or {})
-        store.settings = replace(store.settings, tooltip_font_size=int(size if size is not None else 12))
-        save_gui_settings(gui_settings_path(), store.settings)
-        return store.to_dict()
-
-    # 16. Legend font size slider
-    @app.callback(
-        Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input(SettingsPanelID.SLIDER_FONT_SIZE_LEGEND, "value"),
-        State(StoreID.ROOF_STORE, "data"),
-        prevent_initial_call=True,
-    )
-    def _update_legend_font_size(
-        size: int | None,
-        store_data: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        store = RoofStore.from_dict(store_data or {})
-        store.settings = replace(store.settings, legend_font_size=int(size if size is not None else 10))
-        save_gui_settings(gui_settings_path(), store.settings)
-        return store.to_dict()
+    # 9-16. Settings controls (factory-generated)
+    _register_setting_callback(SettingsPanelID.SWITCH_NORMALIZE, "normalize_by_threads", bool, False)
+    _register_setting_callback(SettingsPanelID.SLIDER_MARKER_SIZE, "marker_scale_factor", float, 50.0)
+    _register_setting_callback(SettingsPanelID.SWITCH_POWER2_TICKS, "power2_ticks", bool, False)
+    _register_setting_callback(SettingsPanelID.SLIDER_LINE_WIDTH, "line_width", float, 1.5)
+    _register_setting_callback(SettingsPanelID.SLIDER_FONT_SIZE_AXIS_LABEL, "axis_label_font_size", int, 14)
+    _register_setting_callback(SettingsPanelID.SLIDER_FONT_SIZE_AXIS_TICK, "axis_tick_font_size", int, 12)
+    _register_setting_callback(SettingsPanelID.SLIDER_FONT_SIZE_TOOLTIP, "tooltip_font_size", int, 12)
+    _register_setting_callback(SettingsPanelID.SLIDER_FONT_SIZE_LEGEND, "legend_font_size", int, 10)
 
     # 17. Sync button styles with active panel
     @app.callback(
@@ -591,52 +492,6 @@ def _register_callbacks(
         settings_cls = f"navbar-btn{' navbar-btn--active' if not is_carm_view else ''}"
         return carm_view_cls, settings_cls
 
-    # 14. Toggle roof card collapse
-    @app.callback(
-        Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input({"type": RoofCardID.BTN_COLLAPSE_ROOF, "index": ALL}, "n_clicks"),
-        State(StoreID.ROOF_STORE, "data"),
-        prevent_initial_call=True,
-    )
-    def _toggle_collapse_roof(
-        n_clicks: list[int | None],
-        store_data: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        ctx = callback_context
-        if not ctx.triggered:
-            raise PreventUpdate
-        val = ctx.triggered[0].get("value", 0)
-        if not val:
-            raise PreventUpdate
-        store = RoofStore.from_dict(store_data or {})
-        _tr(f"_toggle_collapse_roof trigger={ctx.triggered[0].get('prop_id', '?')} roofs={len(store.roofs)}")
-        index = _get_trigger_index()
-        if 0 <= index < len(store.roofs):
-            store.roofs[index].collapsed = not store.roofs[index].collapsed
-        _tr(f"_toggle_collapse_roof exit  roofs={len(store.roofs)}")
-        return store.to_dict()
-
-    # 15. Toggle advanced section collapse
-    @app.callback(
-        Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input({"type": RoofCardID.BTN_ADVANCED_COLLAPSE, "index": ALL}, "n_clicks"),
-        State(StoreID.ROOF_STORE, "data"),
-        prevent_initial_call=True,
-    )
-    def _toggle_advanced_collapse(
-        n_clicks: list[int | None],
-        store_data: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        ctx = callback_context
-        if not ctx.triggered:
-            raise PreventUpdate
-        val = ctx.triggered[0].get("value", 0)
-        if not val:
-            raise PreventUpdate
-        store = RoofStore.from_dict(store_data or {})
-        _tr(f"_toggle_advanced_collapse trigger={ctx.triggered[0].get('prop_id', '?')} roofs={len(store.roofs)}")
-        index = _get_trigger_index()
-        if 0 <= index < len(store.roofs):
-            store.roofs[index].advanced_collapsed = not store.roofs[index].advanced_collapsed
-        _tr(f"_toggle_advanced_collapse exit  roofs={len(store.roofs)}")
-        return store.to_dict()
+    # Collapse toggles (factory-generated)
+    _register_collapse_callback(RoofCardID.BTN_COLLAPSE_ROOF, "collapsed", "toggle_collapse_roof")
+    _register_collapse_callback(RoofCardID.BTN_ADVANCED_COLLAPSE, "advanced_collapsed", "toggle_advanced_collapse")
