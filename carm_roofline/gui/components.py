@@ -198,7 +198,9 @@ def build_navbar(active_panel: ActivePanel) -> html.Div:
 
 
 def build_sidebar(
-    store: RoofStore, roof_options: FilterOptions | None = None, app_options: list[DropdownOption] | None = None
+    store: RoofStore,
+    roof_options: FilterOptions | None = None,
+    per_roof_app_options: list[list[DropdownOption]] | None = None,
 ) -> html.Div:
     """Left sidebar containing settings or data-selection panel."""
     return html.Div(
@@ -209,7 +211,9 @@ def build_sidebar(
                 id=SidebarID.SIDEBAR_CONTENT,
                 children=[
                     build_carm_view_panel(
-                        store, [roof_options] * len(store.roofs) if roof_options else None, app_options=app_options
+                        store,
+                        [roof_options] * len(store.roofs) if roof_options else None,
+                        per_roof_app_options=per_roof_app_options,
                     ),
                     build_settings_panel(store, roof_options),
                 ],
@@ -222,7 +226,7 @@ def build_carm_view_panel(
     store: RoofStore,
     per_roof_options: list[FilterOptions | None] | None = None,
     resolved_roofs: list[RoofConfig] | None = None,
-    app_options: list[DropdownOption] | None = None,
+    per_roof_app_options: list[list[DropdownOption]] | None = None,
 ) -> html.Div:
     """CARM View panel listing all roof configuration cards."""
     return html.Div(
@@ -236,7 +240,7 @@ def build_carm_view_panel(
                     i,
                     per_roof_options[i] if per_roof_options and i < len(per_roof_options) else None,
                     resolved_roofs[i] if resolved_roofs and i < len(resolved_roofs) else None,
-                    app_options,
+                    per_roof_app_options[i] if per_roof_app_options and i < len(per_roof_app_options) else None,
                 )
                 for i, roof in enumerate(store.roofs)
             ],
@@ -492,7 +496,9 @@ def build_plot_area() -> html.Div:
 
 
 def build_layout(
-    store: RoofStore, roof_options: FilterOptions | None = None, app_options: list[DropdownOption] | None = None
+    store: RoofStore,
+    roof_options: FilterOptions | None = None,
+    per_roof_app_options: list[list[DropdownOption]] | None = None,
 ) -> html.Div:
     """Top-level application layout."""
 
@@ -503,7 +509,7 @@ def build_layout(
             html.Div(
                 className="content-row",
                 children=[
-                    build_sidebar(store, roof_options, app_options),
+                    build_sidebar(store, roof_options, per_roof_app_options),
                     html.Div(
                         className="main-area",
                         children=[

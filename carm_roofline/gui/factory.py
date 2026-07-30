@@ -87,6 +87,17 @@ _FILTER_FIELD_SPECS: list[tuple[str, str, Callable[..., Any]]] = [
 ]
 
 
+def _filter_app_options_for_roofs(
+    roofs: list[RoofConfig],
+    app_dropdown_options: list[DropdownOption] | None,
+    app_by_id: dict[str, ApplicationRecord] | None,
+) -> list[list[DropdownOption]] | None:
+    """Filter app dropdown options per roof by machine."""
+    if not app_dropdown_options or not app_by_id:
+        return None
+    return [[o for o in app_dropdown_options if app_by_id[o["value"]].machine == roof.machine] for roof in roofs]
+
+
 # App factory
 
 
@@ -135,7 +146,11 @@ def create_app(config: GUIConfig) -> dash.Dash:
         fresh_store = RoofStore(roof_template=initial_roof)
         fresh_store.roofs = [initial_roof]
         fresh_store.settings = saved
-        return build_layout(fresh_store, opts, app_dropdown_options)
+        return build_layout(
+            fresh_store,
+            opts,
+            _filter_app_options_for_roofs([initial_roof], app_dropdown_options, app_by_id),
+        )
 
     app.layout = serve_layout
 
@@ -288,7 +303,10 @@ def _register_callbacks(
             store.active_panel = ActivePanel(active_panel) if active_panel else ActivePanel.CARM_VIEW
         for i, roof in enumerate(store.roofs):
             if i < len(machine_vals):
+                old_machine = roof.machine
                 roof.machine = machine_vals[i]
+                if roof.machine != old_machine:
+                    roof.app_ids = []
             if i < len(isa_vals):
                 roof.isa = isa_vals[i]
             if i < len(threads_vals):
@@ -468,7 +486,12 @@ def _register_callbacks(
             app_ids_vals,
             active_panel=active_panel,
         )
-        carm_view_panel = build_carm_view_panel(store, per_roof_opts, resolved_roofs, app_dropdown_options)
+        carm_view_panel = build_carm_view_panel(
+            store,
+            per_roof_opts,
+            resolved_roofs,
+            per_roof_app_options=_filter_app_options_for_roofs(resolved_roofs, app_dropdown_options, app_by_id),
+        )
         settings_panel = build_settings_panel(store, None)
         _tr(f"_update_sidebar exit panel={store.active_panel}")
         return [carm_view_panel, settings_panel]

@@ -140,6 +140,7 @@ class ApplicationRecord:
     aggregation: str
     metadata: dict[str, Any]
     points: list[ApplicationPoint]
+    machine: str
 
 
 # ── JSONL loading ─────────────────────────────────────────────────────────────
@@ -209,7 +210,7 @@ def load_all_benchmarks(results_root: Path) -> list[BenchmarkRecord]:
     return all_records
 
 
-def load_applications(path: Path) -> list[ApplicationRecord]:
+def load_applications(path: Path, machine: str = "") -> list[ApplicationRecord]:
     """Read a JSONL file of application runs and return one record per line.
 
     Each line must have ``format_version >= "2.0"``, a ``metadata`` dict with
@@ -219,6 +220,7 @@ def load_applications(path: Path) -> list[ApplicationRecord]:
 
     Args:
         path: Path to ``applications.jsonl``.
+        machine: Machine name associated with this file.
 
     Returns:
         List of ``ApplicationRecord`` objects.
@@ -269,7 +271,9 @@ def load_applications(path: Path) -> list[ApplicationRecord]:
                     )
                 )
             records.append(
-                ApplicationRecord(id=id_, label=label, aggregation=aggregation, metadata=meta, points=points)
+                ApplicationRecord(
+                    id=id_, label=label, aggregation=aggregation, metadata=meta, points=points, machine=machine
+                )
             )
     if not records:
         warn(f"No valid application records in {path}")
@@ -301,7 +305,7 @@ def load_all_applications(results_root: Path) -> list[ApplicationRecord]:
             jsonl_path = entry / "applications.jsonl"
             if jsonl_path.exists():
                 try:
-                    all_records.extend(load_applications(jsonl_path))
+                    all_records.extend(load_applications(jsonl_path, machine=entry.name))
                     found += 1
                 except Exception as e:
                     warn(f"Failed to load {jsonl_path}: {e}")

@@ -80,9 +80,10 @@ def test_build_roofline_figure_renders_application_points() -> None:
     """Enabled roof with selected app ids renders marker traces."""
     rec = ApplicationRecord(
         id="r1",
-        label="run1 \u2014 2024-01-01 (global)",
+        label="run1 — 2024-01-01 (global)",
         aggregation="global",
         metadata={},
+        machine="test_machine",
         points=[
             ApplicationPoint(
                 label="p1",
@@ -179,6 +180,7 @@ def test_build_roofline_figure_normalize_by_threads() -> None:
         label="run1",
         aggregation="global",
         metadata={},
+        machine="test_machine",
         points=[
             ApplicationPoint(
                 label="p1",
