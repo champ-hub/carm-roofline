@@ -15,7 +15,6 @@ from carm_roofline.gui.config import GUIConfig, gui_settings_path, load_gui_sett
 from carm_roofline.gui.data import (
     ActivePanel,
     DropdownOption,
-    GUISettings,
     RoofConfig,
     RoofStore,
     build_roofline_figure,
@@ -119,14 +118,7 @@ def create_app(config: GUIConfig) -> dash.Dash:
     initial_store.roofs = [initial_roof]
     # Override defaults with persisted settings
     saved = load_gui_settings(gui_settings_path())
-    initial_store.normalize_by_threads = saved.normalize_by_threads
-    initial_store.marker_scale_factor = saved.marker_scale_factor
-    initial_store.power2_ticks = saved.power2_ticks
-    initial_store.line_width = saved.line_width
-    initial_store.axis_label_font_size = saved.axis_label_font_size
-    initial_store.axis_tick_font_size = saved.axis_tick_font_size
-    initial_store.tooltip_font_size = saved.tooltip_font_size
-    initial_store.legend_font_size = saved.legend_font_size
+    initial_store.settings = saved
     debug(f"Loaded GUI settings: {saved}")
 
     app.layout = build_layout(initial_store, opts, app_dropdown_options)
@@ -405,14 +397,7 @@ def _register_callbacks(
             resolved_roofs,
             records or [],
             app_by_id,
-            normalize_by_threads=store.normalize_by_threads,
-            marker_scale_factor=store.marker_scale_factor,
-            power2_ticks=store.power2_ticks,
-            line_width=store.line_width,
-            axis_label_font_size=store.axis_label_font_size,
-            axis_tick_font_size=store.axis_tick_font_size,
-            tooltip_font_size=store.tooltip_font_size,
-            legend_font_size=store.legend_font_size,
+            settings=store.settings,
         )
         figure_dict = cast("dict[str, Any]", figure.to_dict())
         _tr(f"_update_plot exit traces={len(figure_dict.get('data', []))}")
@@ -474,20 +459,8 @@ def _register_callbacks(
         store_data: dict[str, Any] | None,
     ) -> dict[str, Any]:
         store = RoofStore.from_dict(store_data or {})
-        store.normalize_by_threads = bool(normalize)
-        save_gui_settings(
-            gui_settings_path(),
-            GUISettings(
-                normalize_by_threads=store.normalize_by_threads,
-                marker_scale_factor=store.marker_scale_factor,
-                power2_ticks=store.power2_ticks,
-                line_width=store.line_width,
-                axis_label_font_size=store.axis_label_font_size,
-                axis_tick_font_size=store.axis_tick_font_size,
-                tooltip_font_size=store.tooltip_font_size,
-                legend_font_size=store.legend_font_size,
-            ),
-        )
+        store.settings = replace(store.settings, normalize_by_threads=bool(normalize))
+        save_gui_settings(gui_settings_path(), store.settings)
         return store.to_dict()
 
     # 10. Marker scale slider
@@ -502,20 +475,8 @@ def _register_callbacks(
         store_data: dict[str, Any] | None,
     ) -> dict[str, Any]:
         store = RoofStore.from_dict(store_data or {})
-        store.marker_scale_factor = float(scale if scale is not None else 50.0)
-        save_gui_settings(
-            gui_settings_path(),
-            GUISettings(
-                normalize_by_threads=store.normalize_by_threads,
-                marker_scale_factor=store.marker_scale_factor,
-                power2_ticks=store.power2_ticks,
-                line_width=store.line_width,
-                axis_label_font_size=store.axis_label_font_size,
-                axis_tick_font_size=store.axis_tick_font_size,
-                tooltip_font_size=store.tooltip_font_size,
-                legend_font_size=store.legend_font_size,
-            ),
-        )
+        store.settings = replace(store.settings, marker_scale_factor=float(scale if scale is not None else 50.0))
+        save_gui_settings(gui_settings_path(), store.settings)
         return store.to_dict()
 
     # 11. Power2 ticks toggle
@@ -530,20 +491,8 @@ def _register_callbacks(
         store_data: dict[str, Any] | None,
     ) -> dict[str, Any]:
         store = RoofStore.from_dict(store_data or {})
-        store.power2_ticks = bool(power2)
-        save_gui_settings(
-            gui_settings_path(),
-            GUISettings(
-                normalize_by_threads=store.normalize_by_threads,
-                marker_scale_factor=store.marker_scale_factor,
-                power2_ticks=store.power2_ticks,
-                line_width=store.line_width,
-                axis_label_font_size=store.axis_label_font_size,
-                axis_tick_font_size=store.axis_tick_font_size,
-                tooltip_font_size=store.tooltip_font_size,
-                legend_font_size=store.legend_font_size,
-            ),
-        )
+        store.settings = replace(store.settings, power2_ticks=bool(power2))
+        save_gui_settings(gui_settings_path(), store.settings)
         return store.to_dict()
 
     # 12. Line width slider
@@ -558,20 +507,8 @@ def _register_callbacks(
         store_data: dict[str, Any] | None,
     ) -> dict[str, Any]:
         store = RoofStore.from_dict(store_data or {})
-        store.line_width = float(width if width is not None else 1.5)
-        save_gui_settings(
-            gui_settings_path(),
-            GUISettings(
-                normalize_by_threads=store.normalize_by_threads,
-                marker_scale_factor=store.marker_scale_factor,
-                power2_ticks=store.power2_ticks,
-                line_width=store.line_width,
-                axis_label_font_size=store.axis_label_font_size,
-                axis_tick_font_size=store.axis_tick_font_size,
-                tooltip_font_size=store.tooltip_font_size,
-                legend_font_size=store.legend_font_size,
-            ),
-        )
+        store.settings = replace(store.settings, line_width=float(width if width is not None else 1.5))
+        save_gui_settings(gui_settings_path(), store.settings)
         return store.to_dict()
 
     # 13. Axis label font size slider
@@ -586,20 +523,8 @@ def _register_callbacks(
         store_data: dict[str, Any] | None,
     ) -> dict[str, Any]:
         store = RoofStore.from_dict(store_data or {})
-        store.axis_label_font_size = int(size if size is not None else 14)
-        save_gui_settings(
-            gui_settings_path(),
-            GUISettings(
-                normalize_by_threads=store.normalize_by_threads,
-                marker_scale_factor=store.marker_scale_factor,
-                power2_ticks=store.power2_ticks,
-                line_width=store.line_width,
-                axis_label_font_size=store.axis_label_font_size,
-                axis_tick_font_size=store.axis_tick_font_size,
-                tooltip_font_size=store.tooltip_font_size,
-                legend_font_size=store.legend_font_size,
-            ),
-        )
+        store.settings = replace(store.settings, axis_label_font_size=int(size if size is not None else 14))
+        save_gui_settings(gui_settings_path(), store.settings)
         return store.to_dict()
 
     # 14. Axis tick font size slider
@@ -614,20 +539,8 @@ def _register_callbacks(
         store_data: dict[str, Any] | None,
     ) -> dict[str, Any]:
         store = RoofStore.from_dict(store_data or {})
-        store.axis_tick_font_size = int(size if size is not None else 12)
-        save_gui_settings(
-            gui_settings_path(),
-            GUISettings(
-                normalize_by_threads=store.normalize_by_threads,
-                marker_scale_factor=store.marker_scale_factor,
-                power2_ticks=store.power2_ticks,
-                line_width=store.line_width,
-                axis_label_font_size=store.axis_label_font_size,
-                axis_tick_font_size=store.axis_tick_font_size,
-                tooltip_font_size=store.tooltip_font_size,
-                legend_font_size=store.legend_font_size,
-            ),
-        )
+        store.settings = replace(store.settings, axis_tick_font_size=int(size if size is not None else 12))
+        save_gui_settings(gui_settings_path(), store.settings)
         return store.to_dict()
 
     # 15. Tooltip font size slider
@@ -642,20 +555,8 @@ def _register_callbacks(
         store_data: dict[str, Any] | None,
     ) -> dict[str, Any]:
         store = RoofStore.from_dict(store_data or {})
-        store.tooltip_font_size = int(size if size is not None else 12)
-        save_gui_settings(
-            gui_settings_path(),
-            GUISettings(
-                normalize_by_threads=store.normalize_by_threads,
-                marker_scale_factor=store.marker_scale_factor,
-                power2_ticks=store.power2_ticks,
-                line_width=store.line_width,
-                axis_label_font_size=store.axis_label_font_size,
-                axis_tick_font_size=store.axis_tick_font_size,
-                tooltip_font_size=store.tooltip_font_size,
-                legend_font_size=store.legend_font_size,
-            ),
-        )
+        store.settings = replace(store.settings, tooltip_font_size=int(size if size is not None else 12))
+        save_gui_settings(gui_settings_path(), store.settings)
         return store.to_dict()
 
     # 16. Legend font size slider
@@ -670,20 +571,8 @@ def _register_callbacks(
         store_data: dict[str, Any] | None,
     ) -> dict[str, Any]:
         store = RoofStore.from_dict(store_data or {})
-        store.legend_font_size = int(size if size is not None else 10)
-        save_gui_settings(
-            gui_settings_path(),
-            GUISettings(
-                normalize_by_threads=store.normalize_by_threads,
-                marker_scale_factor=store.marker_scale_factor,
-                power2_ticks=store.power2_ticks,
-                line_width=store.line_width,
-                axis_label_font_size=store.axis_label_font_size,
-                axis_tick_font_size=store.axis_tick_font_size,
-                tooltip_font_size=store.tooltip_font_size,
-                legend_font_size=store.legend_font_size,
-            ),
-        )
+        store.settings = replace(store.settings, legend_font_size=int(size if size is not None else 10))
+        save_gui_settings(gui_settings_path(), store.settings)
         return store.to_dict()
 
     # 17. Sync button styles with active panel

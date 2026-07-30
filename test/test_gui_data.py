@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from carm_roofline.gui.data import RoofConfig, RoofStore, build_roofline_figure
+from carm_roofline.gui.data import GUISettings, RoofConfig, RoofStore, build_roofline_figure
 from carm_roofline.roofline_assembly import ApplicationPoint, ApplicationRecord, BenchmarkRecord
 
 pytestmark = pytest.mark.unit
@@ -39,7 +39,7 @@ def test_roofstore_round_trip_preserves_all_fields() -> None:
     assert r.load_store_ratio == "1:1"
     assert r.actual_frequency_hz == 2500000000
     assert r.app_ids == []
-    assert restored.normalize_by_threads is False
+    assert restored.settings.normalize_by_threads is False
 
 
 def test_roofstore_round_trip_with_none_fields() -> None:
@@ -71,9 +71,9 @@ def test_roofstore_round_trip_app_ids() -> None:
     r = restored.roofs[0]
     assert r.app_ids == ["abc123"]
     # normalize_by_threads round-trips at the store level
-    store.normalize_by_threads = True
+    store.settings.normalize_by_threads = True
     restored2 = RoofStore.from_dict(store.to_dict())
-    assert restored2.normalize_by_threads is True
+    assert restored2.settings.normalize_by_threads is True
 
 
 def test_build_roofline_figure_renders_application_points() -> None:
@@ -203,7 +203,7 @@ def test_build_roofline_figure_normalize_by_threads() -> None:
     assert any(t.y[0] == pytest.approx(120.0) for t in perf_ceilings)
 
     # With normalization: app perf=4e9/(2)/1e9=2.0, ceiling=120/2=60
-    fig_norm = build_roofline_figure([roof], records, {"r1": rec}, normalize_by_threads=True)
+    fig_norm = build_roofline_figure([roof], records, {"r1": rec}, settings=GUISettings(normalize_by_threads=True))
     norm_markers = [t for t in fig_norm.data if t.mode == "markers" and t.showlegend]
     assert len(norm_markers) == 1
     assert list(norm_markers[0].y) == pytest.approx([2.0])

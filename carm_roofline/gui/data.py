@@ -109,14 +109,7 @@ class RoofStore:
     def __init__(self, roof_template: RoofConfig | None = None) -> None:
         self.roofs: list[RoofConfig] = [roof_template or RoofConfig()]
         self.active_panel: ActivePanel = ActivePanel.CARM_VIEW
-        self.normalize_by_threads: bool = False
-        self.marker_scale_factor: float = 50.0
-        self.power2_ticks: bool = False
-        self.line_width: float = 1.5
-        self.axis_label_font_size: int = 14
-        self.axis_tick_font_size: int = 12
-        self.tooltip_font_size: int = 12
-        self.legend_font_size: int = 10
+        self.settings: GUISettings = GUISettings()
 
     # Roof CRUD
     def add_roof(self, roof_template: RoofConfig | None = None) -> RoofConfig:
@@ -163,14 +156,7 @@ class RoofStore:
                 for r in self.roofs
             ],
             "active_panel": self.active_panel,
-            "normalize_by_threads": self.normalize_by_threads,
-            "marker_scale_factor": self.marker_scale_factor,
-            "power2_ticks": self.power2_ticks,
-            "line_width": self.line_width,
-            "axis_label_font_size": self.axis_label_font_size,
-            "axis_tick_font_size": self.axis_tick_font_size,
-            "tooltip_font_size": self.tooltip_font_size,
-            "legend_font_size": self.legend_font_size,
+            "settings": asdict(self.settings),
         }
 
     @classmethod
@@ -194,14 +180,7 @@ class RoofStore:
             for r in data.get("roofs", [])
         ]
         store.active_panel = ActivePanel(data.get("active_panel", "carm_view"))
-        store.power2_ticks = data.get("power2_ticks", False)
-        store.line_width = data.get("line_width", 1.5)
-        store.axis_label_font_size = data.get("axis_label_font_size", 14)
-        store.axis_tick_font_size = data.get("axis_tick_font_size", 12)
-        store.tooltip_font_size = data.get("tooltip_font_size", 12)
-        store.legend_font_size = data.get("legend_font_size", 10)
-        store.normalize_by_threads = data.get("normalize_by_threads", False)
-        store.marker_scale_factor = data.get("marker_scale_factor", 50.0)
+        store.settings = GUISettings.from_dict(data.get("settings", {}))
         return store
 
 
@@ -282,14 +261,7 @@ def build_roofline_figure(
     roofs: list[RoofConfig],
     records: list[BenchmarkRecord],
     applications_by_id: dict[str, ApplicationRecord] | None = None,
-    normalize_by_threads: bool = False,
-    marker_scale_factor: float = 50.0,
-    power2_ticks: bool = False,
-    line_width: float = 1.5,
-    axis_label_font_size: int = 14,
-    axis_tick_font_size: int = 12,
-    tooltip_font_size: int = 12,
-    legend_font_size: int = 10,
+    settings: GUISettings | None = None,
 ) -> go.Figure:
     """Build a Plotly roofline figure from real benchmark records.
 
@@ -298,6 +270,15 @@ def build_roofline_figure(
     ridge-point markers, and optional application run points are drawn.
     Roofs with no matching data produce a warning annotation instead.
     """
+    s = settings or GUISettings()
+    normalize_by_threads = s.normalize_by_threads
+    marker_scale_factor = s.marker_scale_factor
+    power2_ticks = s.power2_ticks
+    line_width = s.line_width
+    axis_label_font_size = s.axis_label_font_size
+    axis_tick_font_size = s.axis_tick_font_size
+    tooltip_font_size = s.tooltip_font_size
+    legend_font_size = s.legend_font_size
     fig = go.Figure()
     LOG10_2 = math.log10(2)
 
