@@ -114,14 +114,18 @@ def create_app(config: GUIConfig) -> dash.Dash:
 
     # Build a sensible default roof config from the first available options
     initial_roof = make_default_roof(opts)
-    initial_store = RoofStore(roof_template=initial_roof)
-    initial_store.roofs = [initial_roof]
-    # Override defaults with persisted settings
-    saved = load_gui_settings(gui_settings_path())
-    initial_store.settings = saved
-    debug(f"Loaded GUI settings: {saved}")
 
-    app.layout = build_layout(initial_store, opts, app_dropdown_options)
+    # Callable layout: Dash evaluates this on EVERY page request, so the
+    # dcc.Store(ROOF_STORE) initial data reflects the latest saved settings.
+    # This prevents callbacks 9-16 from overwriting user changes on reload.
+    def serve_layout() -> html.Div:
+        saved = load_gui_settings(gui_settings_path())
+        fresh_store = RoofStore(roof_template=initial_roof)
+        fresh_store.roofs = [initial_roof]
+        fresh_store.settings = saved
+        return build_layout(fresh_store, opts, app_dropdown_options)
+
+    app.layout = serve_layout
 
     _register_callbacks(app, config, records, opts, app_by_id, app_dropdown_options)
     return app
