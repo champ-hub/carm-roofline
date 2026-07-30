@@ -477,6 +477,7 @@ def _register_callbacks(
     _register_setting_callback(SettingsPanelID.SWITCH_NORMALIZE, "normalize_by_threads", bool, False)
     _register_setting_callback(SettingsPanelID.SLIDER_MARKER_SIZE, "marker_scale_factor", float, 50.0)
     _register_setting_callback(SettingsPanelID.SWITCH_POWER2_TICKS, "power2_ticks", bool, False)
+    _register_setting_callback(SettingsPanelID.SWITCH_SHOW_ROOF_FILLS, "show_roof_fills", bool, True)
     _register_setting_callback(SettingsPanelID.SLIDER_LINE_WIDTH, "line_width", float, 1.5)
     _register_setting_callback(SettingsPanelID.SLIDER_FONT_SIZE_AXIS_LABEL, "axis_label_font_size", int, 14)
     _register_setting_callback(SettingsPanelID.SLIDER_FONT_SIZE_AXIS_TICK, "axis_tick_font_size", int, 12)

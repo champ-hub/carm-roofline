@@ -438,6 +438,11 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
             SettingsPanelID.SWITCH_POWER2_TICKS,
             s.power2_ticks,
         ),
+        _build_settings_switch(
+            "Show roof fills",
+            SettingsPanelID.SWITCH_SHOW_ROOF_FILLS,
+            s.show_roof_fills,
+        ),
     ]
     plot_style_sliders = [
         _build_settings_slider(label, id_, getattr(s, field), **kwargs)

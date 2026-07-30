@@ -70,6 +70,7 @@ class SettingsPanelID(ID):
     SWITCH_NORMALIZE = "switch-normalize"
     SLIDER_MARKER_SIZE = "slider-marker-size"
     SWITCH_POWER2_TICKS = "switch-power2-ticks"
+    SWITCH_SHOW_ROOF_FILLS = "switch-show-roof-fills"
     SLIDER_LINE_WIDTH = "slider-line-width"
     SLIDER_FONT_SIZE_AXIS_LABEL = "slider-font-size-axis-label"
     SLIDER_FONT_SIZE_AXIS_TICK = "slider-font-size-axis-tick"
