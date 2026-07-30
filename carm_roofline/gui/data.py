@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 import uuid
 from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
@@ -42,6 +43,40 @@ FREQUENCY_OPTIONS = [(str(Frequency(hz)), str(hz)) for hz in [2500000000, 300000
 # Data models
 
 
+def _machine_display_name(machine: str) -> str:
+    """Strip the hash suffix from a machine name for display.
+
+    Machine names are generated as ``"<short_model>_<config_hash>"`` (e.g.
+    ``"Ryzen-7-7735HS_59486dd1"``).  This extracts the short model name
+    without the 8-hex-digit hash suffix.
+    """
+    return re.sub(r"_[0-9a-f]{8}$", "", machine)
+
+
+def format_roof_label(
+    machine: str | None,
+    isa: str | None,
+    num_threads: int | None,
+    data_type: str | None,
+) -> str:
+    """Generate a descriptive label for a roof configuration.
+
+    Format: ``"<machine> (<isa>, <N> threads, <data_type>)"``
+    with each optional component omitted when ``None``.
+    """
+    display_machine = _machine_display_name(machine) if machine else "Unknown"
+    details: list[str] = []
+    if isa:
+        details.append(isa)
+    if num_threads is not None:
+        details.append(f"{num_threads} threads")
+    if data_type:
+        details.append(data_type)
+    if details:
+        return f"{display_machine} ({', '.join(details)})"
+    return display_machine
+
+
 @dataclass
 class RoofConfig:
     id: str = ""
@@ -72,7 +107,7 @@ class RoofConfig:
         advanced_collapsed: bool = True,
     ) -> None:
         self.id = roof_id or uuid.uuid4().hex
-        self.label = label or f"Roof {self.id[:6]}"
+        self.label = label or format_roof_label(machine, isa, num_threads, data_type)
         self.collapsed = collapsed
         self.advanced_collapsed = advanced_collapsed
         self.machine = machine

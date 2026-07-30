@@ -18,6 +18,7 @@ from carm_roofline.gui.data import (
     RoofConfig,
     RoofStore,
     build_roofline_figure,
+    format_roof_label,
     make_default_roof,
 )
 from carm_roofline.gui.ids import (
@@ -312,6 +313,9 @@ def _register_callbacks(
                     roof.actual_frequency_hz = None
             if i < len(app_ids_vals):
                 roof.app_ids = list(app_ids_vals[i] or [])
+        # Refresh labels from current field values
+        for roof in store.roofs:
+            roof.label = format_roof_label(roof.machine, roof.isa, roof.num_threads, roof.data_type)
         debug(f"_resolve_roof_data: {len(store.roofs)} roof(s), panel={store.active_panel}")
         recs = records or []
         per_roof_opts: list[FilterOptions | None] = []
@@ -349,7 +353,6 @@ def _register_callbacks(
 
             resolved_kwargs: dict[str, Any] = {
                 "roof_id": roof.id,
-                "label": roof.label,
                 "compute_insts": roof.compute_insts,
                 "app_ids": roof.app_ids,
             }
