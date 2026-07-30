@@ -9,9 +9,10 @@ from typing import Any, TypedDict
 
 import plotly.graph_objects as go
 
-from carm_roofline.core.units import Frequency, Seconds
+from carm_roofline.core.units import Bandwidth, Bytes, Frequency, Operations, Performance, Seconds
 from carm_roofline.output_utils import debug, warn
 from carm_roofline.roofline_assembly import (
+    ApplicationPoint,
     ApplicationRecord,
     AssembledRoofline,
     BenchmarkRecord,
@@ -293,6 +294,26 @@ _APP_MARKER_SYMBOLS: tuple[str, ...] = (
 MIN_MARKER_SIZE: float = 50.0
 
 
+def _format_point_tooltip(rec: ApplicationRecord, p: ApplicationPoint) -> str:
+    """Format a rich tooltip string for an application roofline point."""
+    parts = [
+        f"<b>{rec.label}</b>",
+        f"<i>{p.label}</i>",
+        "<b>Performance</b>",
+        f"  Arithmetic Intensity: {p.arithmetic_intensity:.3f} OPS/Byte",
+        f"  Performance: {Performance(p.flops_per_second)!s}",
+        f"  Bandwidth: {Bandwidth(p.bandwidth)!s}",
+        "<b>Execution</b>",
+        f"  {p.num_threads} thread(s), {p.num_ranks} rank(s)",
+        f"  Duration: {Seconds(p.runtime_s)!s}",
+        "<b>Work</b>",
+        f"  Total FLOPs: {Operations(int(p.total_flops))!s}",
+        f"  Total Bytes: {Bytes(int(p.total_bytes))!s}",
+        f"  Regions: {p.num_regions}",
+    ]
+    return "<br>".join(parts)
+
+
 def build_roofline_figure(
     roofs: list[RoofConfig],
     records: list[BenchmarkRecord],
@@ -431,7 +452,6 @@ def build_roofline_figure(
                     else MIN_MARKER_SIZE
                     for p in rec.points
                 ]
-                duration_strings = [str(Seconds(p.runtime_s)) for p in rec.points]
                 fig.add_trace(
                     go.Scatter(
                         x=[p.arithmetic_intensity for p in rec.points],
@@ -452,21 +472,8 @@ def build_roofline_figure(
                             "sizemode": "area",
                             "opacity": 0.6,
                         },
-                        text=[p.label for p in rec.points],
-                        customdata=list(
-                            zip(
-                                [p.num_threads for p in rec.points],
-                                duration_strings,
-                            )
-                        ),
-                        hovertemplate=(
-                            f"{rec.label}<br>%{{text}}<br>"
-                            f"AI=%{{x:.3f}} OPS/Byte<br>"
-                            f"Perf=%{{y:.1f}} GOPS/s<br>"
-                            f"Threads=%{{customdata[0]}}<br>"
-                            f"Duration=%{{customdata[1]}}"
-                            "<extra></extra>"
-                        ),
+                        text=[_format_point_tooltip(rec, p) for p in rec.points],
+                        hovertemplate="%{text}<extra></extra>",
                     )
                 )
 
@@ -631,10 +638,12 @@ def build_roofline_figure(
                             marker={"opacity": 0, "color": color},
                             hoverinfo="text",
                             hovertext=(
-                                f"{roof.label} {op_name} x {level}<br>"
-                                f"AI = {ridge_ai:.2f} OPS/Byte<br>"
-                                f"Performance = {gops:.1f} GOPS/s<br>"
-                                f"BW = {bw / roof_divisor!s}"
+                                f"<b>{roof.label}</b><br>"
+                                f"{op_name} x {level}<br>"
+                                f"<b>Ridge Point</b><br>"
+                                f"  Arithmetic Intensity: {ridge_ai:.2f} OPS/Byte<br>"
+                                f"  Performance: {gops:.1f} GOPS/s<br>"
+                                f"  Bandwidth: {bw / roof_divisor!s}"
                             ),
                             showlegend=False,
                         )

@@ -124,14 +124,16 @@ def test_build_roofline_figure_renders_application_points() -> None:
     assert markers[0].marker.sizemode == "area"
     # marker opacity is 0.6
     assert markers[0].marker.opacity == 0.6
-    # customdata contains (num_threads, duration_string) pairs
-    assert len(markers[0].customdata) == 2
-    assert markers[0].customdata[0][0] == 1  # num_threads=1
-    assert markers[0].customdata[1][0] == 2  # num_threads=2
-    assert isinstance(markers[0].customdata[0][1], str)
-    assert isinstance(markers[0].customdata[1][1], str)
-    # hovertemplate contains Duration
-    assert "Duration=" in markers[0].hovertemplate
+    # text contains rich tooltip via _format_point_tooltip
+    assert len(markers[0].text) == 2
+    assert "<b>run1 — 2024-01-01 (global)</b>" in markers[0].text[0]
+    assert "<i>p1</i>" in markers[0].text[0]
+    assert "Performance" in markers[0].text[0]
+    assert "Execution" in markers[0].text[0]
+    assert "Work" in markers[0].text[0]
+    assert "  Arithmetic Intensity: 0.500 OPS/Byte" in markers[0].text[0]
+    assert "  Duration:" in markers[0].text[0]
+    assert markers[0].hovertemplate == "%{text}<extra></extra>"
 
 
 def test_build_roofline_figure_normalize_by_threads() -> None:
