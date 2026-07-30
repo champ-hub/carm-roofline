@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from carm_roofline.arguments import InsertsArguments, add_verbose_argument
@@ -60,6 +62,17 @@ def load_gui_settings(path: Path) -> GUISettings:
 
 
 def save_gui_settings(path: Path, settings: GUISettings) -> None:
-    """Save GUI settings to a JSON file, creating parent directories as needed."""
+    """Save GUI settings to a JSON file, creating parent directories as needed.
+
+    Uses an atomic write pattern (temp file + rename) to prevent file corruption
+    when multiple Dash callbacks write settings concurrently.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(settings.to_dict(), sort_keys=True))
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(settings.to_dict(), f, sort_keys=True)
+        os.replace(tmp, path)
+    except BaseException:
+        os.unlink(tmp)
+        raise
