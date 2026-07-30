@@ -294,8 +294,12 @@ _APP_MARKER_SYMBOLS: tuple[str, ...] = (
 MIN_MARKER_SIZE: float = 50.0
 
 
-def _format_point_tooltip(rec: ApplicationRecord, p: ApplicationPoint) -> str:
+def _format_point_tooltip(rec: ApplicationRecord, p: ApplicationPoint, roof_num_threads: int | None = None) -> str:
     """Format a rich tooltip string for an application roofline point."""
+    if roof_num_threads is not None and roof_num_threads != p.num_threads:
+        threads_line = f"  {p.num_threads} thread(s) <b>[ROOF USES {roof_num_threads}!]</b>, {p.num_ranks} rank(s)"
+    else:
+        threads_line = f"  {p.num_threads} thread(s), {p.num_ranks} rank(s)"
     parts = [
         f"<b>{rec.label}</b>",
         f"<i>{p.label}</i>",
@@ -304,7 +308,7 @@ def _format_point_tooltip(rec: ApplicationRecord, p: ApplicationPoint) -> str:
         f"  Performance: {Performance(p.flops_per_second)!s}",
         f"  Bandwidth: {Bandwidth(p.bandwidth)!s}",
         "<b>Execution</b>",
-        f"  {p.num_threads} thread(s), {p.num_ranks} rank(s)",
+        threads_line,
         f"  Duration: {Seconds(p.runtime_s)!s}",
         "<b>Work</b>",
         f"  Total FLOPs: {Operations(int(p.total_flops))!s}",
@@ -452,6 +456,9 @@ def build_roofline_figure(
                     else MIN_MARKER_SIZE
                     for p in rec.points
                 ]
+                mismatches = [roof.num_threads is not None and roof.num_threads != p.num_threads for p in rec.points]
+                customdata = [_format_point_tooltip(rec, p, roof.num_threads) for p in rec.points]
+                display_labels = ["!" if m else None for m in mismatches]
                 fig.add_trace(
                     go.Scatter(
                         x=[p.arithmetic_intensity for p in rec.points],
@@ -461,7 +468,7 @@ def build_roofline_figure(
                             / 1e9
                             for p in rec.points
                         ],
-                        mode="markers",
+                        mode="markers+text",
                         name=rec.label,
                         legendgroup=roof.id,
                         showlegend=True,
@@ -472,8 +479,11 @@ def build_roofline_figure(
                             "sizemode": "area",
                             "opacity": 0.6,
                         },
-                        text=[_format_point_tooltip(rec, p) for p in rec.points],
-                        hovertemplate="%{text}<extra></extra>",
+                        text=display_labels,
+                        textposition="top center",
+                        textfont={"color": "red", "size": 16, "weight": "bold"},
+                        customdata=customdata,
+                        hovertemplate="%{customdata}<extra></extra>",
                     )
                 )
 

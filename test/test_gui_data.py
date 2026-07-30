@@ -112,7 +112,7 @@ def test_build_roofline_figure_renders_application_points() -> None:
     )
     roof = RoofConfig(app_ids=["r1"])
     fig = build_roofline_figure([roof], [], {"r1": rec})
-    markers = [t for t in fig.data if t.mode == "markers"]
+    markers = [t for t in fig.data if t.mode == "markers+text"]
     assert len(markers) == 1
     assert list(markers[0].x) == [0.5, 1.0]
     # marker sizes are not uniform (different runtimes produce different sizes)
@@ -124,16 +124,16 @@ def test_build_roofline_figure_renders_application_points() -> None:
     assert markers[0].marker.sizemode == "area"
     # marker opacity is 0.6
     assert markers[0].marker.opacity == 0.6
-    # text contains rich tooltip via _format_point_tooltip
-    assert len(markers[0].text) == 2
-    assert "<b>run1 — 2024-01-01 (global)</b>" in markers[0].text[0]
-    assert "<i>p1</i>" in markers[0].text[0]
-    assert "Performance" in markers[0].text[0]
-    assert "Execution" in markers[0].text[0]
-    assert "Work" in markers[0].text[0]
-    assert "  Arithmetic Intensity: 0.500 OPS/Byte" in markers[0].text[0]
-    assert "  Duration:" in markers[0].text[0]
-    assert markers[0].hovertemplate == "%{text}<extra></extra>"
+    # customdata contains rich tooltip via _format_point_tooltip
+    assert len(markers[0].customdata) == 2
+    assert "<b>run1 \u2014 2024-01-01 (global)</b>" in markers[0].customdata[0]
+    assert "<i>p1</i>" in markers[0].customdata[0]
+    assert "Performance" in markers[0].customdata[0]
+    assert "Execution" in markers[0].customdata[0]
+    assert "Work" in markers[0].customdata[0]
+    assert "  Arithmetic Intensity: 0.500 OPS/Byte" in markers[0].customdata[0]
+    assert "  Duration:" in markers[0].customdata[0]
+    assert markers[0].hovertemplate == "%{customdata}<extra></extra>"
 
 
 def test_build_roofline_figure_normalize_by_threads() -> None:
@@ -196,7 +196,7 @@ def test_build_roofline_figure_normalize_by_threads() -> None:
     )
     # Without normalization: app perf=4e9/1e9=4.0, peak ceiling=120/1e9=120
     fig_un = build_roofline_figure([roof], records, {"r1": rec})
-    un_markers = [t for t in fig_un.data if t.mode == "markers" and t.showlegend]
+    un_markers = [t for t in fig_un.data if t.mode == "markers+text" and t.showlegend]
     assert len(un_markers) == 1
     # The y-value is flops_per_second/1e9 = 4e9/1e9 = 4.0
     assert list(un_markers[0].y) == pytest.approx([4.0])
@@ -206,7 +206,7 @@ def test_build_roofline_figure_normalize_by_threads() -> None:
 
     # With normalization: app perf=4e9/(2)/1e9=2.0, ceiling=120/2=60
     fig_norm = build_roofline_figure([roof], records, {"r1": rec}, settings=GUISettings(normalize_by_threads=True))
-    norm_markers = [t for t in fig_norm.data if t.mode == "markers" and t.showlegend]
+    norm_markers = [t for t in fig_norm.data if t.mode == "markers+text" and t.showlegend]
     assert len(norm_markers) == 1
     assert list(norm_markers[0].y) == pytest.approx([2.0])
     perf_ceilings_norm = [t for t in fig_norm.data if t.mode == "lines" and t.name.startswith("Test Roof")]
