@@ -70,6 +70,11 @@ class SettingsPanelID(ID):
     SWITCH_NORMALIZE = "switch-normalize"
     SLIDER_MARKER_SIZE = "slider-marker-size"
     SWITCH_POWER2_TICKS = "switch-power2-ticks"
+    SLIDER_LINE_WIDTH = "slider-line-width"
+    SLIDER_FONT_SIZE_AXIS_LABEL = "slider-font-size-axis-label"
+    SLIDER_FONT_SIZE_AXIS_TICK = "slider-font-size-axis-tick"
+    SLIDER_FONT_SIZE_TOOLTIP = "slider-font-size-tooltip"
+    SLIDER_FONT_SIZE_LEGEND = "slider-font-size-legend"
 
 
 class PlotAreaID(ID):

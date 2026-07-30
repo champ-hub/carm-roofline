@@ -366,6 +366,81 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
                     ),
                 ],
             ),
+            html.Div(
+                className="settings-slider-row",
+                children=[
+                    html.Span("Line width", className="settings-toggle-label"),
+                    dcc.Slider(
+                        id=SettingsPanelID.SLIDER_LINE_WIDTH,
+                        min=0.5,
+                        max=5.0,
+                        step=0.25,
+                        value=store.line_width,
+                        marks={0.5: "0.5", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"},
+                        tooltip={"placement": "bottom", "always_visible": True},
+                    ),
+                ],
+            ),
+            html.Div(
+                className="settings-slider-row",
+                children=[
+                    html.Span("Axis label font size", className="settings-toggle-label"),
+                    dcc.Slider(
+                        id=SettingsPanelID.SLIDER_FONT_SIZE_AXIS_LABEL,
+                        min=8,
+                        max=24,
+                        step=1,
+                        value=store.axis_label_font_size,
+                        marks={8: "8", 12: "12", 16: "16", 20: "20", 24: "24"},
+                        tooltip={"placement": "bottom", "always_visible": True},
+                    ),
+                ],
+            ),
+            html.Div(
+                className="settings-slider-row",
+                children=[
+                    html.Span("Axis tick font size", className="settings-toggle-label"),
+                    dcc.Slider(
+                        id=SettingsPanelID.SLIDER_FONT_SIZE_AXIS_TICK,
+                        min=8,
+                        max=24,
+                        step=1,
+                        value=store.axis_tick_font_size,
+                        marks={8: "8", 12: "12", 16: "16", 20: "20", 24: "24"},
+                        tooltip={"placement": "bottom", "always_visible": True},
+                    ),
+                ],
+            ),
+            html.Div(
+                className="settings-slider-row",
+                children=[
+                    html.Span("Tooltip font size", className="settings-toggle-label"),
+                    dcc.Slider(
+                        id=SettingsPanelID.SLIDER_FONT_SIZE_TOOLTIP,
+                        min=8,
+                        max=24,
+                        step=1,
+                        value=store.tooltip_font_size,
+                        marks={8: "8", 12: "12", 16: "16", 20: "20", 24: "24"},
+                        tooltip={"placement": "bottom", "always_visible": True},
+                    ),
+                ],
+            ),
+            html.Div(
+                className="settings-slider-row",
+                children=[
+                    html.Span("Legend font size", className="settings-toggle-label"),
+                    dcc.Slider(
+                        id=SettingsPanelID.SLIDER_FONT_SIZE_LEGEND,
+                        min=8,
+                        max=24,
+                        step=1,
+                        value=store.legend_font_size,
+                        marks={8: "8", 12: "12", 16: "16", 20: "20", 24: "24"},
+                        tooltip={"placement": "bottom", "always_visible": True},
+                    ),
+                ],
+            ),
         ],
     )
 

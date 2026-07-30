@@ -112,6 +112,11 @@ class RoofStore:
         self.normalize_by_threads: bool = False
         self.marker_scale_factor: float = 50.0
         self.power2_ticks: bool = False
+        self.line_width: float = 1.5
+        self.axis_label_font_size: int = 14
+        self.axis_tick_font_size: int = 12
+        self.tooltip_font_size: int = 12
+        self.legend_font_size: int = 10
 
     # Roof CRUD
     def add_roof(self, roof_template: RoofConfig | None = None) -> RoofConfig:
@@ -161,6 +166,11 @@ class RoofStore:
             "normalize_by_threads": self.normalize_by_threads,
             "marker_scale_factor": self.marker_scale_factor,
             "power2_ticks": self.power2_ticks,
+            "line_width": self.line_width,
+            "axis_label_font_size": self.axis_label_font_size,
+            "axis_tick_font_size": self.axis_tick_font_size,
+            "tooltip_font_size": self.tooltip_font_size,
+            "legend_font_size": self.legend_font_size,
         }
 
     @classmethod
@@ -185,6 +195,11 @@ class RoofStore:
         ]
         store.active_panel = ActivePanel(data.get("active_panel", "carm_view"))
         store.power2_ticks = data.get("power2_ticks", False)
+        store.line_width = data.get("line_width", 1.5)
+        store.axis_label_font_size = data.get("axis_label_font_size", 14)
+        store.axis_tick_font_size = data.get("axis_tick_font_size", 12)
+        store.tooltip_font_size = data.get("tooltip_font_size", 12)
+        store.legend_font_size = data.get("legend_font_size", 10)
         store.normalize_by_threads = data.get("normalize_by_threads", False)
         store.marker_scale_factor = data.get("marker_scale_factor", 50.0)
         return store
@@ -197,6 +212,11 @@ class GUISettings:
     normalize_by_threads: bool = False
     marker_scale_factor: float = 50.0
     power2_ticks: bool = False
+    line_width: float = 1.5
+    axis_label_font_size: int = 14
+    axis_tick_font_size: int = 12
+    tooltip_font_size: int = 12
+    legend_font_size: int = 10
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -222,7 +242,7 @@ _COLORS = [
     "#fecb52",
 ]
 
-_BW_LINE_STYLES: dict[str, dict[str, object]] = {
+_BW_LINE_STYLES: dict[str, dict[str, Any]] = {
     "L1": {"dash": "10px 0px", "width": 1.5},
     "L2": {"dash": "12px 4px", "width": 1.5},
     "L3": {"dash": "6px 2px", "width": 1.5},
@@ -265,6 +285,11 @@ def build_roofline_figure(
     normalize_by_threads: bool = False,
     marker_scale_factor: float = 50.0,
     power2_ticks: bool = False,
+    line_width: float = 1.5,
+    axis_label_font_size: int = 14,
+    axis_tick_font_size: int = 12,
+    tooltip_font_size: int = 12,
+    legend_font_size: int = 10,
 ) -> go.Figure:
     """Build a Plotly roofline figure from real benchmark records.
 
@@ -481,7 +506,8 @@ def build_roofline_figure(
             else:
                 ai_right = 1e6
                 y_right = bw_norm.value * ai_right / 1e9
-            style = _BW_LINE_STYLES.get(level, {"dash": "solid", "width": 1})
+            style = dict(_BW_LINE_STYLES.get(level, {"dash": "solid", "width": 1}))
+            style["width"] = style["width"] * line_width
             segments.append((level, ai_left, ai_right, y_left, y_right, bw_norm, style))
         # Append synthetic extension anchor so every real segment has a
         # "next" to pair with in a single fill loop.
@@ -554,7 +580,9 @@ def build_roofline_figure(
             else:
                 compute_x_start = 1e-6
             is_top = perf.value == peak_perf_raw
-            line_style = {"dash": "solid", "width": 1.5} if is_top else {"dash": "dot", "width": 2}
+            line_style = (
+                {"dash": "solid", "width": 1.5 * line_width} if is_top else {"dash": "dot", "width": 2 * line_width}
+            )
             fig.add_trace(
                 go.Scatter(
                     x=[compute_x_start, 1e6],
@@ -618,6 +646,11 @@ def build_roofline_figure(
         if yticks is not None:
             yaxis.update(yticks)
 
+    xaxis["title_font"] = {"size": axis_label_font_size}
+    yaxis["title_font"] = {"size": axis_label_font_size}
+    xaxis["tickfont"] = {"size": axis_tick_font_size}
+    yaxis["tickfont"] = {"size": axis_tick_font_size}
+
     fig.update_layout(
         template="plotly_white",
         xaxis=xaxis,
@@ -625,13 +658,14 @@ def build_roofline_figure(
         uirevision="roofline-plot",
         hovermode="closest",
         dragmode="zoom",
+        hoverlabel={"font": {"size": tooltip_font_size}},
         legend={
             "orientation": "v",
             "yanchor": "top",
             "y": 0.95,
             "xanchor": "left",
             "x": 1.02,
-            "font": {"size": 10},
+            "font": {"size": legend_font_size},
         },
     )
 
