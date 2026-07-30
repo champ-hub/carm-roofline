@@ -561,6 +561,7 @@ def build_roofline_figure(
                     fillcolor=fill_color,
                     line={"width": 0},
                     showlegend=False,
+                    legendgroup=roof.id,
                     hoverinfo="skip",
                     name="",
                 )
