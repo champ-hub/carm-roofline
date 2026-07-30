@@ -421,10 +421,25 @@ def build_roof_card(
 
 
 def build_settings_panel(store: RoofStore, options: FilterOptions | None = None) -> html.Div:
-    """Settings panel with various plotting and appearance options."""
+    """Settings panel with various plotting and appearance options, grouped into accordion sections."""
     s = store.settings
-    switch_children = [_build_settings_switch(label, id_, getattr(s, field)) for label, id_, field in _SWITCH_CONTROLS]
-    slider_children = [
+
+    # Plotting settings — only the normalize switch
+    normalize_switch = _build_settings_switch(
+        "Normalize performance by threads",
+        SettingsPanelID.SWITCH_NORMALIZE,
+        s.normalize_by_threads,
+    )
+
+    # Plot style — everything else
+    plot_style_switches = [
+        _build_settings_switch(
+            "2^N axis tick labels",
+            SettingsPanelID.SWITCH_POWER2_TICKS,
+            s.power2_ticks,
+        ),
+    ]
+    plot_style_sliders = [
         _build_settings_slider(label, id_, getattr(s, field), **kwargs)
         for label, id_, field, kwargs in _SLIDER_CONTROLS
     ]
@@ -434,8 +449,23 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
         style={"display": "block"} if store.active_panel == ActivePanel.SETTINGS else {"display": "none"},
         children=[
             html.H5("Settings", className="panel-header"),
-            *switch_children,
-            *slider_children,
+            dbc.Accordion(
+                children=[
+                    dbc.AccordionItem(
+                        title="Plotting settings",
+                        item_id="plotting-settings",
+                        children=[normalize_switch],
+                    ),
+                    dbc.AccordionItem(
+                        title="Plot style",
+                        item_id="plot-style",
+                        children=[*plot_style_switches, *plot_style_sliders],
+                    ),
+                ],
+                always_open=True,
+                active_item=["plotting-settings", "plot-style"],
+                start_collapsed=False,
+            ),
         ],
     )
 
