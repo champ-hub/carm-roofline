@@ -154,9 +154,10 @@ class TestPrecisionCascade:
         assert set(precisions.keys()) == {"fp16_32", "fp16_16", "int8", "int4", "fp64", "bf16", "tf32", "int1"}
 
     def test_nvidia_cc89(self):
+        """Ada (consumer CC 8.9) has no FP64 tensor cores; fp64 is datacenter-only (CC 80/90)."""
         cc = ComputeCapability(major=8, minor=9, vendor=GPUVendor.NVIDIA)
         precisions = cc.supported_tensor_precisions()
-        assert set(precisions.keys()) == {"fp16_32", "fp16_16", "int8", "int4", "fp64", "bf16", "tf32", "int1", "fp8"}
+        assert set(precisions.keys()) == {"fp16_32", "fp16_16", "int8", "int4", "bf16", "tf32", "int1", "fp8"}
 
     def test_nvidia_cc100(self):
         """Future CC 10.0 — should at least match CC >=89 tier."""
@@ -189,17 +190,17 @@ class TestPrecisionCascade:
     def test_amd_gfx908(self):
         cc = ComputeCapability.from_string("gfx908", GPUVendor.AMD)
         precisions = cc.supported_tensor_precisions()
-        assert set(precisions.keys()) == {"fp32", "int8"}
+        assert set(precisions.keys()) == {"fp32", "int8", "fp16"}
 
     def test_amd_gfx90a(self):
         cc = ComputeCapability.from_string("gfx90a", GPUVendor.AMD)
         precisions = cc.supported_tensor_precisions()
-        assert set(precisions.keys()) == {"fp32", "int8", "fp64"}
+        assert set(precisions.keys()) == {"fp32", "int8", "fp64", "fp16"}
 
     def test_amd_gfx942(self):
         cc = ComputeCapability.from_string("gfx942", GPUVendor.AMD)
         precisions = cc.supported_tensor_precisions()
-        assert set(precisions.keys()) == {"fp32", "int8", "fp64", "tf32", "fp8"}
+        assert set(precisions.keys()) == {"fp32", "int8", "fp64", "fp16", "fp8"}
 
     # -- Vector precisions --
 

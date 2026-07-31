@@ -216,9 +216,10 @@ class TestDetectGPU:
             returncode=0,
         )
 
-        vendor, cc, _model = detect_gpu(device=0)
+        vendor, cc, _model, device_index = detect_gpu(device=0)
         assert vendor == GPUVendor.NVIDIA
         assert cc.as_int == 89
+        assert device_index == 0  # vendor-relative (only NVIDIA GPU)
         # Verify nvidia-smi called with vendor-relative index 0
         mock_run.assert_called_once_with(
             ["nvidia-smi", "--query-gpu=compute_cap,gpu_name", "-i", "0", "--format=csv,noheader"],
@@ -242,9 +243,10 @@ class TestDetectGPU:
             returncode=0,
         )
 
-        vendor, cc, _model = detect_gpu(device=0)
+        vendor, cc, _model, device_index = detect_gpu(device=0)
         assert vendor == GPUVendor.AMD
         assert cc.gfx_arch == "gfx942"
+        assert device_index == 0  # vendor-relative (only AMD GPU)
 
     @patch("carm_roofline.gpu.detect._get_amd_gfx_arch")
     @patch("carm_roofline.gpu.detect.shutil.which")
@@ -264,8 +266,9 @@ class TestDetectGPU:
             returncode=0,
         )
 
-        vendor, _cc, _model = detect_gpu(device=1)
+        vendor, _cc, _model, device_index = detect_gpu(device=1)
         assert vendor == GPUVendor.AMD
+        assert device_index == 0  # vendor-relative despite global index 1
         # Verify amd-smi called with AMD-relative index 0
         mock_run.assert_called_once_with(
             ["amd-smi", "static", "-g0", "-a", "--json"],
@@ -291,8 +294,9 @@ class TestDetectGPU:
             returncode=0,
         )
 
-        vendor, _cc, _model = detect_gpu(device=2)
+        vendor, _cc, _model, device_index = detect_gpu(device=2)
         assert vendor == GPUVendor.NVIDIA
+        assert device_index == 1  # second NVIDIA GPU
         # Verify nvidia-smi called with vendor-relative index 1
         mock_run.assert_called_once_with(
             ["nvidia-smi", "--query-gpu=compute_cap,gpu_name", "-i", "1", "--format=csv,noheader"],
@@ -336,8 +340,9 @@ class TestDetectGPU:
             returncode=0,
         )
 
-        vendor, _cc, _model = detect_gpu(device=0)
+        vendor, _cc, _model, device_index = detect_gpu(device=0)
         assert vendor == GPUVendor.NVIDIA
+        assert device_index == 0  # fallback path: index passed through
 
     @patch("carm_roofline.gpu.detect._get_amd_gfx_arch")
     @patch("carm_roofline.gpu.detect.shutil.which")
@@ -358,8 +363,9 @@ class TestDetectGPU:
             returncode=0,
         )
 
-        vendor, _cc, _model = detect_gpu(device=0)
+        vendor, _cc, _model, device_index = detect_gpu(device=0)
         assert vendor == GPUVendor.AMD
+        assert device_index == 0  # fallback path: index passed through
 
     @patch("carm_roofline.gpu.detect._get_amd_gfx_arch")
     @patch("carm_roofline.gpu.detect.shutil.which")
@@ -382,8 +388,9 @@ class TestDetectGPU:
             amd_mock,
         ]
 
-        vendor, _cc, _model = detect_gpu(device=0)
+        vendor, _cc, _model, device_index = detect_gpu(device=0)
         assert vendor == GPUVendor.AMD
+        assert device_index == 0  # fallback path: index passed through
 
     @patch("carm_roofline.gpu.detect.shutil.which")
     @patch("carm_roofline.gpu.detect._enumerate_gpus")
@@ -418,7 +425,7 @@ class TestDetectGPU:
     @patch("carm_roofline.gpu.detect.detect_gpu")
     def test_detect_compute_capability(self, mock_detect):
         cc = ComputeCapability(major=8, minor=9, vendor=GPUVendor.NVIDIA)
-        mock_detect.return_value = (GPUVendor.NVIDIA, cc, "RTX 4090")
+        mock_detect.return_value = (GPUVendor.NVIDIA, cc, "RTX 4090", 0)
         result = detect_compute_capability()
         assert result is not None
         assert result.as_int == 89

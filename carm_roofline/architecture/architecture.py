@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from carm_roofline.isa import BaseISA
 
 from carm_roofline.gpu.compute_capability import ComputeCapability
+from carm_roofline.gpu.memory import GPUMemoryTopology
 
 from .config import load_memory_topology_from_toml
 from .detect import DetectedArchitecture, detect_for_isa, native_detect
@@ -183,6 +184,7 @@ class Architecture(InsertsArguments):
     model_name: str | None
     actual_frequency_hz: int | None
     gpu_compute_capability: ComputeCapability | None = None
+    gpu_memory_topology: GPUMemoryTopology | None = None
 
     isa: list[type[BaseISA]]
 
@@ -277,7 +279,7 @@ class Architecture(InsertsArguments):
             try:
                 from carm_roofline.gpu.detect import detect_gpu
 
-                vendor, cc, model_name = detect_gpu(device=gpu_device)
+                vendor, cc, model_name, gpu_index = detect_gpu(device=gpu_device)
                 self.gpu_compute_capability = cc
                 detail(f"Detected {vendor.value} GPU: {model_name} (CC {cc.as_int})")
             except FileNotFoundError:
@@ -285,6 +287,21 @@ class Architecture(InsertsArguments):
                     "GPU device specified (--gpu-device) but no GPU detected. "
                     "Install NVIDIA drivers (nvidia-smi) or AMD ROCm (amd-smi)."
                 ) from None
+
+        self.gpu_memory_topology = None
+        if gpu_device is not None and self.gpu_compute_capability is not None:
+            try:
+                from carm_roofline.gpu.memory import discover_gpu_memory_topology
+
+                self.gpu_memory_topology = discover_gpu_memory_topology(
+                    vendor=vendor,
+                    device=gpu_index,
+                    compute_capability=self.gpu_compute_capability,
+                )
+                detail(f"Detected GPU memory topology: {self.gpu_memory_topology}")
+            except Exception as e:
+                warn(f"GPU memory topology discovery failed: {e}")
+                self.gpu_memory_topology = None
 
     def get_frequency_for_isa(self, isa_name: str) -> Frequency:
         """Get the frequency wrapper for a specific ISA.

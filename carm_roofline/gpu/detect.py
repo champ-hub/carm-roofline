@@ -193,7 +193,7 @@ def _detect_amd(device: int) -> tuple[GPUVendor, ComputeCapability, str] | None:
     return GPUVendor.AMD, cc, market_name
 
 
-def detect_gpu(device: int = 0) -> tuple[GPUVendor, ComputeCapability, str]:
+def detect_gpu(device: int = 0) -> tuple[GPUVendor, ComputeCapability, str, int]:
     """Detect a GPU by its PCI bus index (physical slot order).
 
     The ``device`` index refers to the Nth GPU in PCI bus order (``--gpu-device 0`` = first physical GPU,
@@ -206,7 +206,9 @@ def detect_gpu(device: int = 0) -> tuple[GPUVendor, ComputeCapability, str]:
         device: Zero-based GPU index in PCI bus order.
 
     Returns:
-        Tuple of ``(vendor, compute_capability, model_name)``.
+        Tuple of ``(vendor, compute_capability, model_name, device_index)`` where ``device_index`` is the
+        vendor-relative index (Nth GPU of that vendor) for vendor-specific tools: the CUDA driver API,
+        nvidia-smi, amd-smi, rocminfo, and ``discover_gpu_memory_topology``.
 
     Raises:
         FileNotFoundError: No GPU found at the given index, or no detection tool is available.
@@ -220,7 +222,7 @@ def detect_gpu(device: int = 0) -> tuple[GPUVendor, ComputeCapability, str]:
         result = _detect_nvidia(rel_idx) if vendor == GPUVendor.NVIDIA else _detect_amd(rel_idx)
 
         if result is not None:
-            return result
+            return (*result, rel_idx)
 
         raise FileNotFoundError(
             f"Detected {vendor.value} GPU at device {device} but the corresponding SMI tool is unavailable or failed."
@@ -229,11 +231,11 @@ def detect_gpu(device: int = 0) -> tuple[GPUVendor, ComputeCapability, str]:
     # Fallback: sysfs unavailable — try each vendor
     result = _detect_nvidia(device)
     if result is not None:
-        return result
+        return (*result, device)
 
     result = _detect_amd(device)
     if result is not None:
-        return result
+        return (*result, device)
 
     raise FileNotFoundError("No GPU detected. Install NVIDIA drivers (nvidia-smi) or AMD ROCm (amd-smi).")
 
@@ -258,7 +260,7 @@ def detect_compute_capability(device: int = 0) -> ComputeCapability | None:
     See :func:`detect_gpu` for semantics.
     """
     try:
-        _, cc, _ = detect_gpu(device=device)
+        _, cc, _, _ = detect_gpu(device=device)
         return cc
     except (FileNotFoundError, UserError):
         return None

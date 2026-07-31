@@ -10,6 +10,7 @@ from carm_roofline.gpu.detect import (
     reset_gpu_clocks,
 )
 from carm_roofline.gpu.frequency import GPUFrequencyManager
+from carm_roofline.gpu.memory import GPUMemoryLevel, GPUMemoryTopology, discover_gpu_memory_topology
 from carm_roofline.gpu.precision import (
     AMD_TENSOR_PRECISIONS,
     NVIDIA_TENSOR_PRECISIONS,
@@ -24,11 +25,14 @@ __all__ = [
     "ComputeCapability",
     "GPUFrequencyManager",
     "GPULaunchConfig",
+    "GPUMemoryLevel",
+    "GPUMemoryTopology",
     "GPUVendor",
     "TensorPrecision",
     "detect_compute_capability",
     "detect_gpu",
     "detect_gpu_vendor",
+    "discover_gpu_memory_topology",
     "lock_gpu_frequencies",
     "read_gpu_frequencies",
     "reset_gpu_clocks",
