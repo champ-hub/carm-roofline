@@ -76,6 +76,24 @@ def test_roofstore_round_trip_app_ids() -> None:
     assert restored2.settings.normalize_by_threads is True
 
 
+def test_roofstore_round_trip_preserves_paraver_state() -> None:
+    """ParaverState survives to_dict -> from_dict round trip; default round-trips too."""
+    store = RoofStore()
+    store.paraver_state.time_window = (1.0, 5.5)
+    restored = RoofStore.from_dict(store.to_dict())
+    assert restored.paraver_state.time_window == (1.0, 5.5)
+
+    default_store = RoofStore()
+    assert default_store.paraver_state.time_window is None
+    restored_default = RoofStore.from_dict(default_store.to_dict())
+    assert restored_default.paraver_state.time_window is None
+
+    # Old store JSON without the "paraver" key deserializes to defaults.
+    old_data = default_store.to_dict()
+    del old_data["paraver"]
+    assert RoofStore.from_dict(old_data).paraver_state.time_window is None
+
+
 def test_build_roofline_figure_renders_application_points() -> None:
     """Enabled roof with selected app ids renders marker traces."""
     rec = ApplicationRecord(

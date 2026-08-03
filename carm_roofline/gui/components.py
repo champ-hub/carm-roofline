@@ -6,6 +6,7 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html
 
 from carm_roofline.core.units import Frequency
+from carm_roofline.gui.config import DEFAULT_GUIMODE, GUIMode
 from carm_roofline.gui.data import (
     COMPUTE_INST_OPTIONS,
     DATA_TYPE_OPTIONS,
@@ -17,7 +18,9 @@ from carm_roofline.gui.data import (
 )
 from carm_roofline.gui.ids import (
     CarmViewPanelID,
+    ExportPanelID,
     NavbarID,
+    ParaverID,
     PlotAreaID,
     RoofCardID,
     SettingsPanelID,
@@ -156,10 +159,11 @@ def _build_settings_slider(label: str, id_: str, value: float, **kwargs: Any) ->
     )
 
 
-def build_navbar(active_panel: ActivePanel) -> html.Div:
+def build_navbar(active_panel: ActivePanel, mode: GUIMode = DEFAULT_GUIMODE) -> html.Div:
     """Black top navbar with logo and panel-toggle buttons."""
     carm_view_active = active_panel == ActivePanel.CARM_VIEW
     settings_active = active_panel == ActivePanel.SETTINGS
+    export_active = active_panel == ActivePanel.EXPORT
 
     return html.Div(
         className="navbar",
@@ -185,6 +189,18 @@ def build_navbar(active_panel: ActivePanel) -> html.Div:
                         className=f"navbar-btn{' navbar-btn--active' if carm_view_active else ''}",
                         n_clicks=0,
                     ),
+                    *(
+                        [
+                            html.Button(
+                                "Paraver Export",
+                                id=NavbarID.BTN_EXPORT,
+                                className=f"navbar-btn{' navbar-btn--active' if export_active else ''}",
+                                n_clicks=0,
+                            ),
+                        ]
+                        if mode.has_export_tab
+                        else []
+                    ),
                     html.Button(
                         "Settings",
                         id=NavbarID.BTN_SETTINGS,
@@ -201,22 +217,27 @@ def build_sidebar(
     store: RoofStore,
     roof_options: FilterOptions | None = None,
     per_roof_app_options: list[list[DropdownOption]] | None = None,
+    mode: GUIMode = DEFAULT_GUIMODE,
 ) -> html.Div:
     """Left sidebar containing settings or data-selection panel."""
+    children = [
+        build_carm_view_panel(
+            store,
+            [roof_options] * len(store.roofs) if roof_options else None,
+            per_roof_app_options=per_roof_app_options,
+            include_apps_section=mode.show_app_dropdown,
+        ),
+        build_settings_panel(store, roof_options),
+    ]
+    if mode.has_export_tab:
+        children.append(build_export_panel(store))
     return html.Div(
         className="sidebar",
         children=[
             # Hidden store for active panel
             html.Div(
                 id=SidebarID.SIDEBAR_CONTENT,
-                children=[
-                    build_carm_view_panel(
-                        store,
-                        [roof_options] * len(store.roofs) if roof_options else None,
-                        per_roof_app_options=per_roof_app_options,
-                    ),
-                    build_settings_panel(store, roof_options),
-                ],
+                children=children,
             ),
         ],
     )
@@ -227,6 +248,7 @@ def build_carm_view_panel(
     per_roof_options: list[FilterOptions | None] | None = None,
     resolved_roofs: list[RoofConfig] | None = None,
     per_roof_app_options: list[list[DropdownOption]] | None = None,
+    include_apps_section: bool = True,
 ) -> html.Div:
     """CARM View panel listing all roof configuration cards."""
     return html.Div(
@@ -241,6 +263,7 @@ def build_carm_view_panel(
                     per_roof_options[i] if per_roof_options and i < len(per_roof_options) else None,
                     resolved_roofs[i] if resolved_roofs and i < len(resolved_roofs) else None,
                     per_roof_app_options[i] if per_roof_app_options and i < len(per_roof_app_options) else None,
+                    include_apps_section=include_apps_section,
                 )
                 for i, roof in enumerate(store.roofs)
             ],
@@ -254,12 +277,48 @@ def build_carm_view_panel(
     )
 
 
+def _build_apps_section(
+    index: int,
+    app_ids: list[str],
+    app_options: list[DropdownOption] | None,
+    include: bool,
+) -> list[html.Div]:
+    """The applications multi-select subsection of a roof card.
+
+    Returns an empty list when *include* is False so callers can splat the
+    result into the roof-card body children.
+    """
+    if not include:
+        return []
+    return [
+        html.Div(
+            className="apps-section",
+            children=[
+                html.Div(
+                    className="apps-section-header",
+                    children=[
+                        html.Span("Applications", className="apps-section-title"),
+                    ],
+                ),
+                _multi_dropdown(
+                    _make_id(RoofCardID.DROPDOWN_APPS, index=index),
+                    app_options or [],
+                    app_ids,
+                    clearable=True,
+                    placeholder="Search applications\u2026" if (app_options or []) else "No application data",
+                ),
+            ],
+        ),
+    ]
+
+
 def build_roof_card(
     roof: RoofConfig,
     index: int,
     options: FilterOptions | None = None,
     resolved_roof: RoofConfig | None = None,
     app_options: list[DropdownOption] | None = None,
+    include_apps_section: bool = True,
 ) -> dbc.Card:
     # Placeholder text for cleared dropdowns that have an auto-resolved value
     placeholders = {}
@@ -397,26 +456,7 @@ def build_roof_card(
                             ],
                         ),
                         # Apps subsection
-                        html.Div(
-                            className="apps-section",
-                            children=[
-                                html.Div(
-                                    className="apps-section-header",
-                                    children=[
-                                        html.Span("Applications", className="apps-section-title"),
-                                    ],
-                                ),
-                                _multi_dropdown(
-                                    _make_id(RoofCardID.DROPDOWN_APPS, index=index),
-                                    app_options or [],
-                                    roof.app_ids,
-                                    clearable=True,
-                                    placeholder="Search applications\u2026"
-                                    if (app_options or [])
-                                    else "No application data",
-                                ),
-                            ],
-                        ),
+                        *_build_apps_section(index, roof.app_ids, app_options, include_apps_section),
                     ],
                 ),
             ),
@@ -479,19 +519,59 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
     )
 
 
-def build_plot_area() -> html.Div:
+def build_export_panel(store: RoofStore) -> html.Div:
+    """Export panel: buttons for writing the displayed data back to paraver."""
+    return html.Div(
+        className="export-panel",
+        style={"display": "block"} if store.active_panel == ActivePanel.EXPORT else {"display": "none"},
+        children=[
+            html.H5("Export to Paraver", className="panel-header"),
+            html.Button(
+                "Export visible points",
+                id=ExportPanelID.BTN_EXPORT_POINTS,
+                className="btn-export-points",
+                n_clicks=0,
+            ),
+            html.Div(id=ExportPanelID.STATUS, className="export-panel-status"),
+            dcc.Download(id=ExportPanelID.DOWNLOAD),
+        ],
+    )
+
+
+def build_plot_area(mode: GUIMode = DEFAULT_GUIMODE, trace_bounds: tuple[float, float] | None = None) -> html.Div:
     """The main plotting area with a Graph component."""
     from carm_roofline.gui.data import build_roofline_figure
 
+    children: list[Any] = [
+        dcc_graph(
+            PlotAreaID.ROOFLINE_PLOT,
+            figure=build_roofline_figure([], []),
+            config={"responsive": True, "toImageButtonOptions": {"format": "svg", "filename": "roofline"}},
+        ),
+    ]
+    if mode.show_time_slider:
+        children.insert(
+            0,
+            html.Div(
+                className="time-window-control",
+                children=[
+                    html.Span("Time window", className="time-window-label"),
+                    dcc.RangeSlider(
+                        id=ParaverID.SLIDER_TIME_WINDOW,
+                        min=trace_bounds[0] if trace_bounds else 0,
+                        max=trace_bounds[1] if trace_bounds else 1,
+                        value=list(trace_bounds) if trace_bounds else [0, 1],
+                        step=None,  # continuous time axis
+                        disabled=trace_bounds is None,
+                        tooltip={"placement": "bottom"},
+                        className="time-window-slider",
+                    ),
+                ],
+            ),
+        )
     return html.Div(
         className="plot-area",
-        children=[
-            dcc_graph(
-                PlotAreaID.ROOFLINE_PLOT,
-                figure=build_roofline_figure([], []),
-                config={"responsive": True, "toImageButtonOptions": {"format": "svg", "filename": "roofline"}},
-            ),
-        ],
+        children=children,
     )
 
 
@@ -499,21 +579,23 @@ def build_layout(
     store: RoofStore,
     roof_options: FilterOptions | None = None,
     per_roof_app_options: list[list[DropdownOption]] | None = None,
+    mode: GUIMode = DEFAULT_GUIMODE,
+    trace_bounds: tuple[float, float] | None = None,
 ) -> html.Div:
     """Top-level application layout."""
 
     return html.Div(
         className="app-container",
         children=[
-            build_navbar(store.active_panel),
+            build_navbar(store.active_panel, mode),
             html.Div(
                 className="content-row",
                 children=[
-                    build_sidebar(store, roof_options, per_roof_app_options),
+                    build_sidebar(store, roof_options, per_roof_app_options, mode),
                     html.Div(
                         className="main-area",
                         children=[
-                            build_plot_area(),
+                            build_plot_area(mode, trace_bounds),
                         ],
                     ),
                 ],

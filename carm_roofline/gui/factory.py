@@ -10,8 +10,20 @@ import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, callback_context, html
 from dash.exceptions import PreventUpdate
 
-from carm_roofline.gui.components import build_carm_view_panel, build_layout, build_settings_panel
-from carm_roofline.gui.config import GUIConfig, gui_settings_path, load_gui_settings, save_gui_settings
+from carm_roofline.gui.components import (
+    build_carm_view_panel,
+    build_export_panel,
+    build_layout,
+    build_settings_panel,
+)
+from carm_roofline.gui.config import (
+    DEFAULT_GUIMODE,
+    GUIConfig,
+    GUIMode,
+    gui_settings_path,
+    load_gui_settings,
+    save_gui_settings,
+)
 from carm_roofline.gui.data import (
     ActivePanel,
     DropdownOption,
@@ -21,23 +33,31 @@ from carm_roofline.gui.data import (
     format_roof_label,
     make_default_roof,
 )
+from carm_roofline.gui.export import EXPORT_FILENAME, serialize_paraver_export
 from carm_roofline.gui.ids import (
     CarmViewPanelID,
+    ExportPanelID,
     NavbarID,
+    ParaverID,
     PlotAreaID,
     RoofCardID,
     SettingsPanelID,
     SidebarID,
     StoreID,
 )
-from carm_roofline.output_utils import debug
+from carm_roofline.gui.providers import (
+    BenchmarkAppsProvider,
+    ParaverProvider,
+    filter_points_by_window,
+    trace_time_range,
+)
+from carm_roofline.output_utils import debug, warn
 from carm_roofline.roofline_assembly import (
     ApplicationRecord,
     BenchmarkRecord,
     FilterOptions,
     RooflineFilter,
     discover_filter_options,
-    load_all_applications,
     load_all_benchmarks,
 )
 
@@ -116,15 +136,29 @@ def create_app(config: GUIConfig) -> dash.Dash:
     # set dash logging to show all callbacks
     logging.getLogger("dash").setLevel(logging.DEBUG)
     # Load all benchmark records from results directory
+    mode = GUIMode.from_name(config.gui_mode)
+
     records: list[BenchmarkRecord] = []
-    applications: list[ApplicationRecord] = []
     if config.results_dir.exists():
         records = load_all_benchmarks(config.results_dir)
-        applications = load_all_applications(config.results_dir)
 
-    # Build application lookup maps
-    app_by_id: dict[str, ApplicationRecord] = {a.id: a for a in applications}
-    app_dropdown_options: list[DropdownOption] = [{"label": a.label, "value": a.id} for a in applications]
+    app_by_id: dict[str, ApplicationRecord] = {}
+    app_dropdown_options: list[DropdownOption] = []
+    trace_bounds: tuple[float, float] | None = None
+
+    if mode.show_time_slider:
+        # Paraver mode: application points come from an external trace.
+        if config.paraver_trace is not None:
+            try:
+                app_by_id = ParaverProvider(config.paraver_trace).load()
+            except NotImplementedError as exc:
+                warn(f"Paraver trace support is not implemented yet: {exc}")
+            trace_bounds = trace_time_range(app_by_id)
+        else:
+            warn("Paraver mode needs --paraver-trace; running without application points.")
+    elif config.results_dir.exists():
+        app_by_id = BenchmarkAppsProvider(config.results_dir).load()
+        app_dropdown_options = [{"label": a.label, "value": a.id} for a in app_by_id.values()]
 
     # Discover available filter / dropdown options from data
     opts: FilterOptions | None = None
@@ -150,11 +184,13 @@ def create_app(config: GUIConfig) -> dash.Dash:
             fresh_store,
             opts,
             _filter_app_options_for_roofs([initial_roof], app_dropdown_options, app_by_id),
+            mode,
+            trace_bounds,
         )
 
     app.layout = serve_layout
 
-    _register_callbacks(app, config, records, opts, app_by_id, app_dropdown_options)
+    _register_callbacks(app, config, records, opts, app_by_id, app_dropdown_options, mode)
     return app
 
 
@@ -165,6 +201,7 @@ def _register_callbacks(
     opts: FilterOptions | None = None,
     app_by_id: dict[str, ApplicationRecord] | None = None,
     app_dropdown_options: list[DropdownOption] | None = None,
+    mode: GUIMode = DEFAULT_GUIMODE,
 ) -> None:
     """Register all application callbacks."""
     _cb_seq: int = 0
@@ -232,12 +269,21 @@ def _register_callbacks(
         Output(StoreID.ACTIVE_PANEL, "data"),
         Input(NavbarID.BTN_CARM_VIEW, "n_clicks"),
         Input(NavbarID.BTN_SETTINGS, "n_clicks"),
+        # allow_optional: the Export button only exists in paraver mode; Dash 4's client
+        # renderer hard-errors on a missing Input dependency otherwise.
+        Input(NavbarID.BTN_EXPORT, "n_clicks", allow_optional=True),
     )
-    def _toggle_panel(carm_view_clicks: int | None, settings_clicks: int | None) -> ActivePanel:
+    def _toggle_panel(
+        carm_view_clicks: int | None,
+        settings_clicks: int | None,
+        export_clicks: int | None,
+    ) -> ActivePanel:
         ctx = callback_context
         if not ctx.triggered:
             return ActivePanel.CARM_VIEW
         trigger = ctx.triggered[0]["prop_id"]
+        if NavbarID.BTN_EXPORT in trigger:
+            return ActivePanel.EXPORT
         if NavbarID.BTN_SETTINGS in trigger:
             return ActivePanel.SETTINGS
         return ActivePanel.CARM_VIEW
@@ -437,10 +483,17 @@ def _register_callbacks(
             freq_vals,
             app_ids_vals,
         )
+        if mode.show_time_slider:
+            window = store.paraver_state.time_window
+            points_by_id = filter_points_by_window(app_by_id or {}, window)
+            for roof in resolved_roofs:
+                roof.app_ids = list(points_by_id.keys())
+        else:
+            points_by_id = app_by_id or {}
         figure = build_roofline_figure(
             resolved_roofs,
             records or [],
-            app_by_id,
+            points_by_id,
             settings=store.settings,
         )
         figure_dict = cast("dict[str, Any]", figure.to_dict())
@@ -491,10 +544,14 @@ def _register_callbacks(
             per_roof_opts,
             resolved_roofs,
             per_roof_app_options=_filter_app_options_for_roofs(resolved_roofs, app_dropdown_options, app_by_id),
+            include_apps_section=mode.show_app_dropdown,
         )
         settings_panel = build_settings_panel(store, None)
+        children = [carm_view_panel, settings_panel]
+        if mode.has_export_tab:
+            children.append(build_export_panel(store))
         _tr(f"_update_sidebar exit panel={store.active_panel}")
-        return [carm_view_panel, settings_panel]
+        return children
 
     # 9-16. Settings controls (factory-generated)
     _register_setting_callback(SettingsPanelID.SWITCH_NORMALIZE, "normalize_by_threads", bool, False)
@@ -513,11 +570,67 @@ def _register_callbacks(
         Output(NavbarID.BTN_SETTINGS, "className"),
         Input(StoreID.ACTIVE_PANEL, "data"),
     )
-    def _update_button_styles(active_panel: str | None) -> tuple[str, str]:
-        is_carm_view = active_panel == ActivePanel.CARM_VIEW
-        carm_view_cls = f"navbar-btn{' navbar-btn--active' if is_carm_view else ''}"
-        settings_cls = f"navbar-btn{' navbar-btn--active' if not is_carm_view else ''}"
+    def _update_panel_button_styles(active_panel: str | None) -> tuple[str, str]:
+        active_panel = active_panel or ActivePanel.CARM_VIEW
+        carm_view_cls = f"navbar-btn{' navbar-btn--active' if active_panel == ActivePanel.CARM_VIEW else ''}"
+        settings_cls = f"navbar-btn{' navbar-btn--active' if active_panel == ActivePanel.SETTINGS else ''}"
         return carm_view_cls, settings_cls
+
+    # Export button style — registered only in paraver mode: Dash 4's Output has no
+    # allow_optional, and a missing Output target hard-errors the client renderer.
+    if mode.has_export_tab:
+
+        @app.callback(
+            Output(NavbarID.BTN_EXPORT, "className"),
+            Input(StoreID.ACTIVE_PANEL, "data"),
+        )
+        def _update_export_button_style(active_panel: str | None) -> str:
+            active_panel = active_panel or ActivePanel.CARM_VIEW
+            return f"navbar-btn{' navbar-btn--active' if active_panel == ActivePanel.EXPORT else ''}"
+
+    # 18. Paraver time-window slider -> per-session window state in ROOF_STORE
+    if mode.show_time_slider:
+
+        @app.callback(
+            Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
+            Input(ParaverID.SLIDER_TIME_WINDOW, "value"),
+            State(StoreID.ROOF_STORE, "data"),
+            prevent_initial_call=True,
+        )
+        def _update_time_window(
+            value: list[float] | None,
+            store_data: dict[str, Any] | None,
+        ) -> dict[str, Any]:
+            store = RoofStore.from_dict(store_data or {})
+            store.paraver_state.time_window = (value[0], value[1]) if value else None
+            return store.to_dict()
+
+    # 19. Export visible points (paraver mode only)
+    if mode.has_export_tab:
+
+        @app.callback(
+            Output(ExportPanelID.DOWNLOAD, "data"),
+            Output(ExportPanelID.STATUS, "children"),
+            Input(ExportPanelID.BTN_EXPORT_POINTS, "n_clicks"),
+            State(StoreID.ROOF_STORE, "data"),
+            prevent_initial_call=True,
+        )
+        def _export_points(
+            n_clicks: int | None,
+            store_data: dict[str, Any] | None,
+        ) -> tuple[Any, str]:
+            if not n_clicks:
+                raise PreventUpdate
+            store = RoofStore.from_dict(store_data or {})
+            windowed = filter_points_by_window(app_by_id or {}, store.paraver_state.time_window)
+            points = [p for rec in windowed.values() for p in rec.points]
+            try:
+                content = serialize_paraver_export(points)
+            except NotImplementedError as exc:
+                return None, f"Export not yet implemented: {exc}"
+            # Equivalent to dcc.send_string(content, filename=EXPORT_FILENAME) — built
+            # as an explicit dict because the Dash stubs do not type dcc.send_string.
+            return {"content": content, "filename": EXPORT_FILENAME}, ""
 
     # Collapse toggles (factory-generated)
     _register_collapse_callback(RoofCardID.BTN_COLLAPSE_ROOF, "collapsed", "toggle_collapse_roof")

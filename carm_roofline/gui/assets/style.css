@@ -272,6 +272,25 @@
 .plot-area {
     flex: 1;
     display: flex;
+    flex-direction: column;
+}
+
+.time-window-control {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 12px;
+    flex-shrink: 0;
+}
+
+.time-window-label {
+    white-space: nowrap;
+    font-size: 13px;
+    color: #555;
+}
+
+.time-window-control .time-window-slider {
+    flex: 1;
 }
 
 .legend-item {

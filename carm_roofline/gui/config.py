@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from carm_roofline.arguments import InsertsArguments, add_verbose_argument
@@ -22,6 +23,8 @@ class GUIConfig(InsertsArguments):
         self.gui_host: str = args.gui_host
         self.gui_port: int = args.gui_port
         self.gui_debug: bool = args.gui_debug
+        self.gui_mode: str = args.gui_mode
+        self.paraver_trace: Path | None = args.paraver_trace
 
     @staticmethod
     def insert_arguments(parser: argparse.ArgumentParser) -> None:
@@ -35,6 +38,40 @@ class GUIConfig(InsertsArguments):
         parser.add_argument("--gui-host", default="0.0.0.0", help="Host address for the Dash server")
         parser.add_argument("--gui-port", type=int, default=8050, help="Port for the Dash server")
         parser.add_argument("--gui-debug", action="store_true", help="Enable Dash debug mode")
+        parser.add_argument(
+            "--gui-mode",
+            choices=("carm", "paraver"),
+            default="carm",
+            help=(
+                "GUI mode: 'carm' (points from benchmarked applications) or "
+                "'paraver' (points from an external paraver trace)"
+            ),
+        )
+        parser.add_argument(
+            "--paraver-trace",
+            type=Path,
+            default=None,
+            help="Path to the paraver trace file (only used with --gui-mode paraver)",
+        )
+
+
+@dataclass(frozen=True)
+class GUIMode:
+    """UI deltas of the active mode. CARM defaults keep every builder call site unchanged."""
+
+    show_app_dropdown: bool = True
+    show_time_slider: bool = False
+    has_export_tab: bool = False
+
+    @classmethod
+    def from_name(cls, name: str) -> GUIMode:
+        if name == "paraver":
+            return cls(show_app_dropdown=False, show_time_slider=True, has_export_tab=True)
+        return cls()
+
+
+# Module-level singleton for default argument values (ruff B008).
+DEFAULT_GUIMODE = GUIMode()
 
 
 def gui_settings_path() -> Path:

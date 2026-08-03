@@ -34,6 +34,7 @@ class NavbarID(ID):
 
     BTN_CARM_VIEW = "btn-carm-view"
     BTN_SETTINGS = "btn-settings"
+    BTN_EXPORT = "btn-export"
 
 
 class SidebarID(ID):
@@ -82,3 +83,17 @@ class PlotAreaID(ID):
     """IDs for the roofline plot graph."""
 
     ROOFLINE_PLOT = "roofline-plot"
+
+
+class ParaverID(ID):
+    """IDs for the paraver time-window control."""
+
+    SLIDER_TIME_WINDOW = "paraver-time-window"
+
+
+class ExportPanelID(ID):
+    """IDs for the export-to-paraver panel."""
+
+    BTN_EXPORT_POINTS = "btn-export-points"
+    STATUS = "export-panel-status"
+    DOWNLOAD = "export-download"

@@ -129,6 +129,7 @@ class ApplicationPoint:
     arithmetic_intensity: float
     flops_per_second: float
     bandwidth: float
+    time_s: float | None = None  # trace timestamp in seconds; None for CARM-benchmarked points
 
 
 @dataclass(frozen=True)

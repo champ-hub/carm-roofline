@@ -32,6 +32,7 @@ class DropdownOption(TypedDict):
 class ActivePanel(str, Enum):
     CARM_VIEW = "carm_view"
     SETTINGS = "settings"
+    EXPORT = "export"
 
 
 # Data-derived options (populated from loaded records via discover_filter_options)
@@ -139,6 +140,23 @@ def make_default_roof(opts: FilterOptions | None = None) -> RoofConfig:
     )
 
 
+@dataclass
+class ParaverState:
+    """Per-session paraver view state. Not persisted to gui-settings.json."""
+
+    time_window: tuple[float, float] | None = None  # (lo, hi) seconds; None = full range
+
+    def to_dict(self) -> dict[str, object]:
+        return {"time_window": list(self.time_window) if self.time_window else None}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ParaverState:
+        window = data.get("time_window")
+        if window is not None:
+            window = (float(window[0]), float(window[1]))  # dcc.Store JSON round-trips tuples as lists
+        return cls(time_window=window)
+
+
 class RoofStore:
     """In-memory state store for the GUI."""
 
@@ -146,6 +164,7 @@ class RoofStore:
         self.roofs: list[RoofConfig] = [roof_template or RoofConfig()]
         self.active_panel: ActivePanel = ActivePanel.CARM_VIEW
         self.settings: GUISettings = GUISettings()
+        self.paraver_state: ParaverState = ParaverState()
 
     # Roof CRUD
     def add_roof(self, roof_template: RoofConfig | None = None) -> RoofConfig:
@@ -193,6 +212,7 @@ class RoofStore:
             ],
             "active_panel": self.active_panel,
             "settings": asdict(self.settings),
+            "paraver": self.paraver_state.to_dict(),
         }
 
     @classmethod
@@ -217,6 +237,7 @@ class RoofStore:
         ]
         store.active_panel = ActivePanel(data.get("active_panel", "carm_view"))
         store.settings = GUISettings.from_dict(data.get("settings", {}))
+        store.paraver_state = ParaverState.from_dict(data.get("paraver", {}))
         return store
 
 
