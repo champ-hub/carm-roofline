@@ -57,6 +57,11 @@ carm_roofline/            Main Python package
 ├── isa/                  ISA identity hierarchy (BaseISA, from_name, all)
 ├── test_bench/           C measurement harness (builder.py, test_bench.c/h, wrapper.inl)
 ├── profiling/            PAPI/perf application profiling pipeline
+├── paraver/              Paraver trace loading for profiled apps
+│   ├── counters.py       Intel counter registry, config template, flops/bytes weights
+│   ├── loading.py        Window/legend CSV + '#' header parsing; time-unit scaling
+│   ├── pipeline.py       run_paramedir, config rendering, counter CSV merge, trace table
+│   └── configs/          counter_template.cfg
 ├── gui/                  Dash+Plotly interactive roofline dashboard
 ├── carm.py               Entry point, CLI parser, subcommand dispatch
 ├── context.py            CARMContext dataclass (architecture, benchmarking, exec_interface, run_config)

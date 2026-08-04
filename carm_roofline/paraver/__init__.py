@@ -1,0 +1,74 @@
+"""Paraver trace loading: window CSV, legend CSV, and the counter pipeline.
+
+The public API is shaped for the future ``ParaverProvider``: load the window and
+legend CSVs into pandas, render the counter config template, and build the trace
+table once counter CSVs exist.
+"""
+
+from __future__ import annotations
+
+from carm_roofline.paraver.counters import (
+    INTEL_COUNTERS,
+    TEMPLATE_FILENAME,
+    CounterSpec,
+    bytes_weights,
+    configs_dir,
+    counter_config_template,
+    flops_weights,
+    fp_names,
+    memory_names,
+)
+from carm_roofline.paraver.loading import (
+    METRIC_COLUMNS,
+    TIME_SCALE_FACTORS,
+    TRACE_COLUMNS,
+    WINDOW_CSV_COLUMNS,
+    ParaverHeader,
+    load_legend_csv,
+    load_window_csv,
+    parse_paraver_header,
+    time_unit_to_seconds,
+)
+from carm_roofline.paraver.pipeline import (
+    COUNTER_CSV_COLUMNS,
+    attach_state_codes,
+    build_trace_table,
+    compute_trace_metrics,
+    load_counter_data,
+    merge_counter_frames,
+    parse_counter_csv,
+    render_counter_config,
+    run_paramedir,
+    write_counter_configs,
+)
+
+__all__ = [
+    "COUNTER_CSV_COLUMNS",
+    "INTEL_COUNTERS",
+    "METRIC_COLUMNS",
+    "TEMPLATE_FILENAME",
+    "TIME_SCALE_FACTORS",
+    "TRACE_COLUMNS",
+    "WINDOW_CSV_COLUMNS",
+    "CounterSpec",
+    "ParaverHeader",
+    "attach_state_codes",
+    "build_trace_table",
+    "bytes_weights",
+    "compute_trace_metrics",
+    "configs_dir",
+    "counter_config_template",
+    "flops_weights",
+    "fp_names",
+    "load_counter_data",
+    "load_legend_csv",
+    "load_window_csv",
+    "memory_names",
+    "merge_counter_frames",
+    "parse_counter_csv",
+    "parse_paraver_header",
+    "render_counter_config",
+    "run_paramedir",
+    "time_unit_to_seconds",
+    "write_counter_configs",
+]
