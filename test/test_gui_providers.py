@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from carm_roofline.core.error import UserError
 from carm_roofline.gui.providers import (
     BenchmarkAppsProvider,
     ParaverProvider,
@@ -95,10 +96,114 @@ def test_trace_time_range_none_without_timestamps() -> None:
     assert trace_time_range(app_by_id) is None
 
 
-def test_paraver_provider_load_not_implemented() -> None:
-    """ParaverProvider.load raises NotImplementedError until the trace format is defined."""
-    with pytest.raises(NotImplementedError, match="not defined yet"):
-        ParaverProvider(Path("trace.prv")).load()
+def test_paraver_provider_converts_trace_rows_to_application_points(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ParaverProvider converts trace table rows to ApplicationPoints grouped in one ApplicationRecord."""
+    # Create a window CSV with header so parse_paraver_header works and
+    # build_trace_table can attach state codes.
+    window_csv = tmp_path / "window.csv"
+    window_csv.write_text(
+        "#20260803:CSV:RUNAPP:/p/t.prv:nanoseconds:window_in_code_mode\n1.1.1\t0.0\t1000000000.0\t1.0\n"
+    )
+
+    # Dummy .prv file — only needs to exist on disk for the provider check.
+    trace = tmp_path / "t.prv"
+    trace.write_text("#Paraver dummy\n")
+
+    # Capture the args run_paramedir receives so we can assert the provider
+    # forwards the trace path and the window header's time unit.
+    captured: list[tuple[str | Path, str | Path, str]] = []
+
+    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+        captured.append((trace_path, output_dir, time_unit))
+        out = Path(output_dir)
+        # One FP counter row: thread 1.1.1, 0-1 s, value=4 instructions
+        (out / "fp-avx2-dp.csv").write_text(
+            f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_code_mode\n1.1.1\t0.0\t1000000000.0\t4\n",
+            encoding="utf-8",
+        )
+        # One memory counter row: same burst, value=2 loads
+        (out / "mem-loads.csv").write_text(
+            f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_code_mode\n1.1.1\t0.0\t1000000000.0\t2\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        "carm_roofline.gui.providers.run_paramedir",
+        _fake_run_paramedir,
+    )
+    # Also skip the which("paramedir") check in the provider.
+    monkeypatch.setattr("shutil.which", lambda _x: "/usr/bin/paramedir")
+
+    provider = ParaverProvider(trace, window_csv)
+    app_by_id = provider.load()
+
+    # The trace path (resolved) and the window header's time unit reach run_paramedir.
+    assert len(captured) == 1
+    called_trace, _out_dir, called_unit = captured[0]
+    assert Path(called_trace) == trace.resolve()
+    assert called_unit == "nanoseconds"
+
+    # The loaded window CSV interval (min start, max end) is exposed in seconds.
+    assert provider.window_extent == (0.0, 1.0)
+
+    assert len(app_by_id) == 1
+    rec_id, rec = next(iter(app_by_id.items()))
+    assert rec_id == rec.id
+    assert len(rec_id) == 16  # sha256 hex prefix
+
+    # Label and machine derive from file stems.
+    assert rec.machine == "t"
+    assert "t" in rec.label
+    assert "window.csv" in rec.label
+
+    # Aggregation is "paraver" (not benchmark avg/min/max).
+    assert rec.aggregation == "paraver"
+
+    # Metadata carries header details.
+    assert rec.metadata["prv_path"] == str(trace.resolve())
+    assert rec.metadata["window_csv"] == str(window_csv.resolve())
+    assert rec.metadata["time_unit"] == "nanoseconds"
+    assert rec.metadata["window_mode"] == "window_in_code_mode"
+
+    # One point per burst row.
+    assert len(rec.points) == 1
+    p = rec.points[0]
+
+    # Label is the Paraver thread_id.
+    assert p.label == "1.1.1"
+
+    # Timestamp and runtime (1e9 ns → 1.0 s).
+    assert p.time_s == 0.0
+    assert p.runtime_s == pytest.approx(1.0)
+
+    # num_threads/num_ranks are 1 per-row because the table is per-thread.
+    assert p.num_threads == 1
+    assert p.num_ranks == 1
+    assert p.num_regions == 1
+
+    # Computed metrics (exact values depend on counter weights, but invariants hold).
+    assert p.total_flops > 0
+    assert p.total_bytes > 0
+    assert p.arithmetic_intensity == pytest.approx(p.total_flops / p.total_bytes)
+    assert p.flops_per_second == pytest.approx(p.total_flops / p.runtime_s)
+    assert p.bandwidth == pytest.approx(p.total_bytes / p.runtime_s)
+
+
+def test_paraver_provider_missing_paramedir_raises_user_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ParaverProvider raises UserError when paramedir is not on PATH."""
+    window_csv = tmp_path / "window.csv"
+    window_csv.write_text(
+        "#20260803:CSV:RUNAPP:/p/t.prv:microseconds:window_in_code_mode\n1.1.1\t0.0\t1000000.0\t1.0\n"
+    )
+    trace = tmp_path / "t.prv"
+    trace.write_text("#dummy\n")
+
+    monkeypatch.setattr("shutil.which", lambda _x: None)
+
+    with pytest.raises(UserError, match="paramedir not found"):
+        ParaverProvider(trace, window_csv).load()
 
 
 def test_benchmark_apps_provider_loads_applications_jsonl(tmp_path: Path) -> None:

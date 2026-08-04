@@ -10,6 +10,7 @@ import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, callback_context, html
 from dash.exceptions import PreventUpdate
 
+from carm_roofline.core.error import UserError
 from carm_roofline.gui.components import (
     build_carm_view_panel,
     build_export_panel,
@@ -145,17 +146,26 @@ def create_app(config: GUIConfig) -> dash.Dash:
     app_by_id: dict[str, ApplicationRecord] = {}
     app_dropdown_options: list[DropdownOption] = []
     trace_bounds: tuple[float, float] | None = None
+    initial_window: tuple[float, float] | None = None
 
     if mode.show_time_slider:
         # Paraver mode: application points come from an external trace.
-        if config.paraver_trace is not None:
+        if config.paraver_trace is not None and config.paraver_window_csv is not None:
+            provider = ParaverProvider(
+                config.paraver_trace,
+                config.paraver_window_csv,
+                legend_csv_path=config.paraver_legend_csv,
+                use_colors=config.paraver_use_colors,
+            )
             try:
-                app_by_id = ParaverProvider(config.paraver_trace).load()
-            except NotImplementedError as exc:
-                warn(f"Paraver trace support is not implemented yet: {exc}")
+                app_by_id = provider.load()
+            except UserError as exc:
+                warn(str(exc))
             trace_bounds = trace_time_range(app_by_id)
+            if config.paraver_use_semantic_window:
+                initial_window = provider.window_extent
         else:
-            warn("Paraver mode needs --paraver-trace; running without application points.")
+            warn("Paraver mode needs --paraver-trace and --paraver-window-csv; running without application points.")
     elif config.results_dir.exists():
         app_by_id = BenchmarkAppsProvider(config.results_dir).load()
         app_dropdown_options = [{"label": a.label, "value": a.id} for a in app_by_id.values()]
@@ -171,6 +181,11 @@ def create_app(config: GUIConfig) -> dash.Dash:
 
     # Build a sensible default roof config from the first available options
     initial_roof = make_default_roof(opts)
+    if mode.show_time_slider:
+        # Paraver mode: preselect every loaded trace record so the plot draws
+        # without a manual application selection (the callback re-assigns all
+        # filtered point ids to each roof on every update).
+        initial_roof.app_ids = list(app_by_id.keys())
 
     # Callable layout: Dash evaluates this on EVERY page request, so the
     # dcc.Store(ROOF_STORE) initial data reflects the latest saved settings.
@@ -180,6 +195,8 @@ def create_app(config: GUIConfig) -> dash.Dash:
         fresh_store = RoofStore(roof_template=initial_roof)
         fresh_store.roofs = [initial_roof]
         fresh_store.settings = saved
+        if initial_window is not None:
+            fresh_store.paraver_state.time_window = initial_window
         return build_layout(
             fresh_store,
             opts,

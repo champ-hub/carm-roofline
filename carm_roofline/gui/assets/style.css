@@ -281,6 +281,9 @@
     gap: 12px;
     margin: 8px 12px;
     flex-shrink: 0;
+    /* Keep the hover tooltip (which hangs below the thumbs) above the plot. */
+    position: relative;
+    z-index: 1;
 }
 
 .time-window-label {

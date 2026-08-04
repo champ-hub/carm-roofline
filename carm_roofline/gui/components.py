@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any, Callable
 
 import dash_bootstrap_components as dbc
@@ -57,6 +58,54 @@ def _make_id(type_: str, **parts: int) -> dict[str, str | int]:
 def _slider_marks(*values: float | int) -> dict[float | int, str]:
     """Generate marks dict for dcc.Slider from explicit label values."""
     return {v: str(v) for v in values}
+
+
+def _time_window_marks(lo: float, hi: float, max_ticks: int = 5) -> dict[float, str]:
+    """Readable tick marks for the time-window slider.
+
+    Dash 4 auto-generates marks at fixed 0/25/50/75/100% positions when none are
+    given, labeling them with raw float values (e.g. ``0.06614603825000001``).
+    Instead, cover the trace extent with a "nice" 1/2/5 x 10**n step and format
+    each tick with just enough decimals for that step.
+    """
+    span = hi - lo
+    if not math.isfinite(span) or span <= 0:
+        return {lo: f"{lo:.3g}"}
+    raw_step = span / (max_ticks - 1)
+    exponent = math.floor(math.log10(raw_step))
+    mantissa = raw_step / (10.0**exponent)
+    # Round the raw step to a "nice" 1/2/5 x 10**n value; the 10 case is
+    # renormalized to 1 x 10**(n+1) so the coefficient stays in {1, 2, 5}.
+    if mantissa < 1.5:
+        coefficient = 1.0
+    elif mantissa < 3.5:
+        coefficient = 2.0
+    elif mantissa < 7.5:
+        coefficient = 5.0
+    else:
+        coefficient = 1.0
+        exponent += 1
+    step = coefficient * (10.0**exponent)
+    decimals = max(0, -exponent)
+    first = max(math.ceil(lo / step) * step, lo)
+    eps = step * 1e-9
+    ticks: list[float] = []
+    tick = first
+    while tick <= hi + eps:
+        ticks.append(round(tick, decimals))
+        tick += step
+    if not ticks:
+        ticks = [lo]
+    # Rounding can nudge the last tick a hair past hi; keep every mark key in range.
+    return {min(t, hi): _format_tick_label(t, decimals) for t in ticks}
+
+
+def _format_tick_label(value: float, decimals: int) -> str:
+    """Format a slider tick value, trimming trailing zeros after the point."""
+    label = f"{value:.{decimals}f}"
+    if "." in label:
+        label = label.rstrip("0").rstrip(".")
+    return label
 
 
 _SWITCH_CONTROLS: list[tuple[str, str, str]] = [
@@ -550,6 +599,10 @@ def build_plot_area(mode: GUIMode = DEFAULT_GUIMODE, trace_bounds: tuple[float, 
         ),
     ]
     if mode.show_time_slider:
+        lo, hi = trace_bounds if trace_bounds else (0.0, 1.0)
+        # Dash 4.1.0's step=None is bugged (collapses both handles) so use an explicit fine-grained step
+        span = hi - lo
+        step = span / 1000 if span > 0 else 1.0
         children.insert(
             0,
             html.Div(
@@ -558,12 +611,14 @@ def build_plot_area(mode: GUIMode = DEFAULT_GUIMODE, trace_bounds: tuple[float, 
                     html.Span("Time window", className="time-window-label"),
                     dcc.RangeSlider(
                         id=ParaverID.SLIDER_TIME_WINDOW,
-                        min=trace_bounds[0] if trace_bounds else 0,
-                        max=trace_bounds[1] if trace_bounds else 1,
-                        value=list(trace_bounds) if trace_bounds else [0, 1],
-                        step=None,  # continuous time axis
+                        min=lo,
+                        max=hi,
+                        value=[lo, hi],
+                        step=step,
+                        marks=_time_window_marks(lo, hi),
+                        allow_direct_input=False,
                         disabled=trace_bounds is None,
-                        tooltip={"placement": "bottom"},
+                        tooltip={"placement": "bottom", "transform": "paraverTime"},
                         className="time-window-slider",
                     ),
                 ],

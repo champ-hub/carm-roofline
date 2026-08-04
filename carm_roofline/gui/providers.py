@@ -2,15 +2,27 @@
 
 Each provider implements ``load() -> dict[str, ApplicationRecord]`` (records keyed
 by id). CARM mode sources points from benchmarked applications; paraver mode sources
-them from an external trace whose format is an external dependency not yet defined.
+them from an external Paraver trace via the paramedir counter pipeline.
 """
 
 from __future__ import annotations
 
+import hashlib
+import shutil
+import tempfile
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
-from carm_roofline.roofline_assembly import ApplicationRecord, load_all_applications
+from carm_roofline.core.error import UserError
+from carm_roofline.paraver import (
+    build_trace_table,
+    load_legend_csv,
+    load_window_csv,
+    parse_paraver_header,
+    run_paramedir,
+)
+from carm_roofline.roofline_assembly import ApplicationPoint, ApplicationRecord, load_all_applications
 
 
 class BenchmarkAppsProvider:
@@ -25,18 +37,116 @@ class BenchmarkAppsProvider:
 
 
 class ParaverProvider:
-    """Application points from an external paraver trace.
+    """Application points from an external Paraver trace via the paramedir pipeline.
 
-    The .prv/.pcf trace format is an external dependency that has not been defined
-    yet, so loading is not implemented. This class is the single plug point where
-    the trace parser will land; nothing else in the GUI may depend on the format.
+    The provider runs ``paramedir`` over the ``.prv`` trace, loads counter CSVs,
+    builds a trace table, and converts each row into an :class:`ApplicationPoint`
+    grouped in one :class:`ApplicationRecord`.
     """
 
-    def __init__(self, trace_path: Path) -> None:
-        self._trace_path = trace_path
+    def __init__(
+        self,
+        trace_path: Path,
+        window_csv_path: Path,
+        legend_csv_path: Path | None = None,
+        use_colors: bool = False,
+    ) -> None:
+        self._trace_path = trace_path.resolve()
+        self._window_csv_path = window_csv_path.resolve()
+        self._legend_csv_path = legend_csv_path.resolve() if legend_csv_path else None
+        self._use_colors = use_colors
+        self._window_extent: tuple[float, float] | None = None
+
+    @property
+    def window_extent(self) -> tuple[float, float] | None:
+        """Loaded window CSV interval (min start, max end) in seconds, or None.
+
+        Set by :meth:`load`; used to initialize the semantic-window startup filter.
+        """
+        return self._window_extent
 
     def load(self) -> dict[str, ApplicationRecord]:
-        raise NotImplementedError(f"paraver trace format not defined yet; cannot load {self._trace_path}")
+        # Parse the window CSV header to get the time unit for paramedir.
+        with open(self._window_csv_path, encoding="utf-8") as fh:
+            header = parse_paraver_header(fh.readline().strip())
+
+        # Create a temporary working directory for paramedir counter outputs.
+        work_dir = Path(tempfile.mkdtemp(prefix="carm-paraver-"))
+        try:
+            if not shutil.which("paramedir"):
+                raise UserError("paramedir not found on PATH; install it to load Paraver traces")
+
+            run_paramedir(self._trace_path, work_dir, header.time_unit)
+
+            trace = build_trace_table(self._window_csv_path, work_dir, header.time_unit)
+        except Exception:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            raise
+
+        if trace.empty:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            raise UserError(
+                f"trace table is empty after processing {self._trace_path} with window {self._window_csv_path}"
+            )
+
+        # Loaded window extent (min start, max end) in seconds for the semantic window.
+        window_frame = load_window_csv(self._window_csv_path)
+        if not window_frame.empty:
+            starts = window_frame["time_s"]
+            ends = starts + window_frame["duration_s"]
+            self._window_extent = (float(starts.min()), float(ends.max()))
+
+        # Convert trace rows to ApplicationPoint objects.
+        points: list[ApplicationPoint] = []
+        for _, row in trace.iterrows():
+            dur: float = float(row["duration_s"])
+            flops: float = float(row["flops"])
+            byt: float = float(row["bytes"])
+            bandwidth = byt / dur if dur > 0 else 0.0
+            points.append(
+                ApplicationPoint(
+                    label=str(row["thread_id"]),
+                    total_flops=flops,
+                    total_bytes=byt,
+                    runtime_s=dur,
+                    num_ranks=1,
+                    num_threads=1,
+                    num_regions=1,
+                    arithmetic_intensity=float(row["ai"]),
+                    flops_per_second=float(row["perf"]),
+                    bandwidth=bandwidth,
+                    time_s=float(row["time_s"]),
+                )
+            )
+
+        # Stable record id derived from trace and window paths (not Python hash).
+        record_id = hashlib.sha256(f"{self._trace_path}:{self._window_csv_path}".encode()).hexdigest()[:16]
+        trace_stem = self._trace_path.stem
+        window_name = self._window_csv_path.name
+
+        metadata: dict[str, Any] = {
+            "prv_path": str(self._trace_path),
+            "window_csv": str(self._window_csv_path),
+            "time_unit": header.time_unit,
+            "window_mode": header.window_mode,
+        }
+
+        # Load legend if colors are requested.
+        legend = None
+        if self._use_colors and self._legend_csv_path is not None:
+            legend = load_legend_csv(self._legend_csv_path)
+            metadata["legend"] = legend.to_dict(orient="records")
+
+        record = ApplicationRecord(
+            id=record_id,
+            label=f"{trace_stem} — {window_name}",
+            aggregation="paraver",
+            metadata=metadata,
+            points=points,
+            machine=trace_stem,
+        )
+
+        return {record_id: record}
 
 
 def filter_points_by_window(
