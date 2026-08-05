@@ -3,9 +3,10 @@ from __future__ import annotations
 import math
 import re
 import uuid
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -13,7 +14,7 @@ import plotly.graph_objects as go
 from carm_roofline.core.units import Bandwidth, Bytes, Frequency, Operations, Performance, Seconds
 from carm_roofline.gui.providers import ParaverData
 from carm_roofline.output_utils import debug, warn
-from carm_roofline.paraver import ParaverWindowMode
+from carm_roofline.paraver import ParaverWindowMode, TraceRow, trace_metric, trace_state_code, trace_text
 from carm_roofline.roofline_assembly import (
     ApplicationPoint,
     ApplicationRecord,
@@ -793,8 +794,9 @@ def build_paraver_figure(
     runtime_min = runtime_range = 0.0
     if has_points:
         assert trace is not None and paraver is not None
-        runtime_min = float(trace["duration_s"].min())
-        runtime_max = float(trace["duration_s"].max())
+        duration_s = trace_metric(trace, "duration_s")
+        runtime_min = float(duration_s.min())
+        runtime_max = float(duration_s.max())
         runtime_range = runtime_max - runtime_min
         x_range, y_range = _extend_ranges_to_points(x_range, y_range, trace)
     for idx, (roof, model) in enumerate(zip(roofs, models)):
@@ -811,19 +813,21 @@ def _extend_ranges_to_points(
     x_range: list[float], y_range: list[float], trace: pd.DataFrame
 ) -> tuple[list[float], list[float]]:
     """Widen log10 axis ranges to include positive-metric points (0.5 decade margin)."""
-    ai_pos = trace.loc[trace["ai"] > 0, "ai"]
-    perf_pos = trace.loc[trace["perf"] > 0, "perf"]
+    ai = trace_metric(trace, "ai")
+    perf = trace_metric(trace, "perf")
+    ai_pos = ai[ai > 0]
+    perf_pos = perf[perf > 0]
     if not ai_pos.empty:
         x_range[0] = min(x_range[0], math.log10(float(ai_pos.min())) - 0.5)
-        x_range[1] = max(x_range[1], math.log10(float(trace["ai"].max())) + 0.5)
+        x_range[1] = max(x_range[1], math.log10(float(ai.max())) + 0.5)
     if not perf_pos.empty:
         y_range[0] = min(y_range[0], math.log10(float(perf_pos.min()) / 1e9) - 0.5)
-        y_range[1] = max(y_range[1], math.log10(float(trace["perf"].max()) / 1e9) + 0.5)
+        y_range[1] = max(y_range[1], math.log10(float(perf.max()) / 1e9) + 0.5)
     return x_range, y_range
 
 
 def _paraver_marker_sizes(
-    duration_s: pd.Series, runtime_min: float, runtime_range: float, marker_scale_factor: float
+    duration_s: pd.Series[float], runtime_min: float, runtime_range: float, marker_scale_factor: float
 ) -> list[float]:
     """Runtime-proportional marker sizes, same formula as the CARM path (MIN_MARKER_SIZE floor)."""
     if runtime_range <= 0:
@@ -843,21 +847,25 @@ def _add_paraver_point_traces(
     if paraver.window_mode == ParaverWindowMode.GRADIENT:
         _add_paraver_gradient_trace(fig, paraver, trace, settings, runtime_min, runtime_range)
         return
-    labelled = trace[trace["legend_label"].notna()]
+    labelled = trace[trace_text(trace, "legend_label").notna()]
     if labelled.empty:
         return
     for label, group in labelled.groupby("legend_label", sort=False):
-        sizes = _paraver_marker_sizes(group["duration_s"], runtime_min, runtime_range, settings.marker_scale_factor)
-        customdata = [_format_paraver_tooltip(paraver.label, row, label) for row in group.itertuples()]
+        assert isinstance(label, str)  # legend_label is str; NaN rows were filtered above
+        sizes = _paraver_marker_sizes(
+            trace_metric(group, "duration_s"), runtime_min, runtime_range, settings.marker_scale_factor
+        )
+        rows = cast(Iterable[TraceRow], group.itertuples())
+        customdata = [_format_paraver_tooltip(paraver.label, row, label) for row in rows]
         fig.add_trace(
             go.Scatter(
-                x=group["ai"].tolist(),
-                y=(group["perf"] / 1e9).tolist(),
+                x=trace_metric(group, "ai").tolist(),
+                y=(trace_metric(group, "perf") / 1e9).tolist(),
                 mode="markers",
                 name=label,
                 showlegend=True,
                 marker={
-                    "color": group["legend_color"].iloc[0],
+                    "color": trace_text(group, "legend_color").iloc[0],
                     "size": sizes,
                     "sizemode": "area",
                     "opacity": 0.6,
@@ -877,17 +885,20 @@ def _add_paraver_gradient_trace(
     runtime_range: float,
 ) -> None:
     """Single trace, one legend entry (paraver.label), colorscale over state_code."""
-    sizes = _paraver_marker_sizes(trace["duration_s"], runtime_min, runtime_range, settings.marker_scale_factor)
-    customdata = [_format_paraver_tooltip(paraver.label, row, None) for row in trace.itertuples()]
+    sizes = _paraver_marker_sizes(
+        trace_metric(trace, "duration_s"), runtime_min, runtime_range, settings.marker_scale_factor
+    )
+    rows = cast(Iterable[TraceRow], trace.itertuples())
+    customdata = [_format_paraver_tooltip(paraver.label, row, None) for row in rows]
     fig.add_trace(
         go.Scatter(
-            x=trace["ai"].tolist(),
-            y=(trace["perf"] / 1e9).tolist(),
+            x=trace_metric(trace, "ai").tolist(),
+            y=(trace_metric(trace, "perf") / 1e9).tolist(),
             mode="markers",
             name=paraver.label,
             showlegend=True,
             marker={
-                "color": trace["state_code"].astype(float).tolist(),
+                "color": trace_state_code(trace).astype(float).tolist(),
                 "colorscale": "Viridis",
                 "showscale": False,
                 "size": sizes,
@@ -900,8 +911,8 @@ def _add_paraver_gradient_trace(
     )
 
 
-def _format_paraver_tooltip(label: str, row: Any, state_label: str | None) -> str:
-    """Rich HTML tooltip for a trace-table row; row is a pandas named tuple."""
+def _format_paraver_tooltip(label: str, row: TraceRow, state_label: str | None) -> str:
+    """Rich HTML tooltip for a trace-table row; row is one TraceRow from ``itertuples()``."""
     dur = float(row.duration_s)
     parts = [f"<b>{label}</b>", f"<i>{row.thread_id}</i>"]
     value = float(row.state_code)

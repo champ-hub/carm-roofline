@@ -23,6 +23,8 @@ from carm_roofline.paraver import (
     load_window_csv,
     parse_paraver_header,
     run_paramedir,
+    trace_metric,
+    trace_state_code,
 )
 from carm_roofline.roofline_assembly import ApplicationRecord, load_all_applications
 
@@ -132,7 +134,7 @@ class ParaverProvider:
             # then inclusive [code, code_end] containment. Unmatched rows stay in the
             # trace with NaN legend_label/legend_color (never plotted, but they keep
             # the slider bounds covering the whole trace).
-            codes = trace["state_code"].astype(float)
+            codes = trace_state_code(trace).astype(float)
             left = trace.assign(_code=codes).sort_values("_code")
             matched = pd.merge_asof(
                 left,
@@ -193,11 +195,13 @@ def filter_trace_by_window(trace: pd.DataFrame, window: tuple[float, float] | No
     if window is None:
         return trace
     lo, hi = window
-    return trace[(trace["time_s"] >= lo) & (trace["time_s"] <= hi)]
+    time_s = trace_metric(trace, "time_s")
+    return trace[(time_s >= lo) & (time_s <= hi)]
 
 
 def trace_time_range(trace: pd.DataFrame) -> tuple[float, float] | None:
     """Full timestamp extent of the trace, or None when it is empty."""
     if trace.empty:
         return None
-    return (float(trace["time_s"].min()), float(trace["time_s"].max()))
+    time_s = trace_metric(trace, "time_s")
+    return (float(time_s.min()), float(time_s.max()))

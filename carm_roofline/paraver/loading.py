@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import Literal, NamedTuple
 
 import pandas as pd
 
@@ -19,6 +20,42 @@ from carm_roofline.core.error import UserError
 TRACE_COLUMNS = ("thread_id", "time_s", "duration_s", "state_code", "flops", "bytes", "ai", "perf")
 METRIC_COLUMNS = ("flops", "bytes", "ai", "perf")
 WINDOW_CSV_COLUMNS = ("thread_id", "time_s", "duration_s", "state_code")
+
+# Type-safe column accessors for trace tables.  pandas-stubs cannot encode a column
+# schema on DataFrame, so every column read funnels through these Literal-keyed
+# accessors: the key is checked statically and the return type declares the Series
+# dtype (column-name typos become static errors instead of runtime KeyErrors).
+MetricColumn = Literal["time_s", "duration_s", "flops", "bytes", "ai", "perf"]
+TextColumn = Literal["legend_label", "legend_color"]
+
+
+class TraceRow(NamedTuple):
+    """One trace-table row (TRACE_COLUMNS), as yielded by ``DataFrame.itertuples()``."""
+
+    thread_id: object
+    time_s: float
+    duration_s: float
+    state_code: float
+    flops: float
+    bytes: float
+    ai: float
+    perf: float
+
+
+def trace_metric(trace: pd.DataFrame, column: MetricColumn) -> pd.Series[float]:
+    """Typed read of one float64 trace column (timestamps + metrics)."""
+    return trace[column]
+
+
+def trace_text(trace: pd.DataFrame, column: TextColumn) -> pd.Series[str]:
+    """Typed read of one text trace column (legend label/color; NaN when unmapped)."""
+    return trace[column]
+
+
+def trace_state_code(trace: pd.DataFrame) -> pd.Series[float]:
+    """Typed read of the state_code column (float64; category-backed in final traces)."""
+    return trace["state_code"]
+
 
 # Header time-unit strings → seconds multiplier.
 TIME_SCALE_FACTORS = {"seconds": 1.0, "milliseconds": 1e-3, "microseconds": 1e-6, "nanoseconds": 1e-9}

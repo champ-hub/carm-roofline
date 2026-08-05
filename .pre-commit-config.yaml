@@ -38,6 +38,7 @@ repos:
           'dash-bootstrap-components',
           'plotly',
           'pandas',
+          'pandas-stubs',
           'rich',
           'rich-argparse',
           'numpy',

@@ -44,6 +44,7 @@ dev = [
     "ruff>=0.14.14",
     "pre-commit>=4.3.0",
     "mypy>=1.8.0",
+    "pandas-stubs>=2.2.2",
 ]
 
 # All optional dependencies combined
@@ -163,8 +164,6 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
-    "diskcache.*",
-    "pandas.*",
     "plotly.*",
 ]
 ignore_missing_imports = true
