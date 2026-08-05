@@ -46,8 +46,6 @@ def _carm_namespace(**overrides: object) -> argparse.Namespace:
         gui_mode="carm",
         paraver_trace=None,
         paraver_window_csv=None,
-        paraver_legend_csv=None,
-        paraver_use_colors=False,
         paraver_use_semantic_window=False,
     )
     for k, v in overrides.items():
@@ -61,15 +59,12 @@ def test_guiconfig_carm_defaults_do_not_validate_paraver() -> None:
     assert config.gui_mode == "carm"
     assert config.paraver_trace is None
     assert config.paraver_window_csv is None
-    assert config.paraver_use_colors is False
 
 
 def test_guiconfig_paraver_args_default_to_none() -> None:
     """New Paraver args default to None/False."""
     config = GUIConfig(_carm_namespace())
     assert config.paraver_window_csv is None
-    assert config.paraver_legend_csv is None
-    assert config.paraver_use_colors is False
     assert config.paraver_use_semantic_window is False
 
 
@@ -113,8 +108,8 @@ def test_guiconfig_paraver_window_csv_not_file_raises(tmp_path: Path) -> None:
         )
 
 
-def test_guiconfig_paraver_use_colors_no_legend_derives(tmp_path: Path) -> None:
-    """--paraver-use-colors derives legend path from window CSV stem."""
+def test_guiconfig_paraver_code_mode_requires_legend(tmp_path: Path) -> None:
+    """Code-mode windows require the derived legend CSV (no mode token → code)."""
     trace = tmp_path / "t.prv"
     window = tmp_path / "window.csv"
     trace.write_text("#dummy\n")
@@ -127,7 +122,6 @@ def test_guiconfig_paraver_use_colors_no_legend_derives(tmp_path: Path) -> None:
                 gui_mode="paraver",
                 paraver_trace=trace,
                 paraver_window_csv=window,
-                paraver_use_colors=True,
             )
         )
 
@@ -139,52 +133,34 @@ def test_guiconfig_paraver_use_colors_no_legend_derives(tmp_path: Path) -> None:
             gui_mode="paraver",
             paraver_trace=trace,
             paraver_window_csv=window,
-            paraver_use_colors=True,
         )
     )
-    assert config.paraver_legend_csv == legend
+    assert config.paraver_window_csv == window
 
 
-def test_guiconfig_paraver_use_colors_explicit_legend(tmp_path: Path) -> None:
-    """--paraver-use-colors with explicit --paraver-legend-csv validates it."""
+def test_guiconfig_paraver_gradient_mode_skips_legend(tmp_path: Path) -> None:
+    """Gradient-mode windows need no legend CSV at all."""
     trace = tmp_path / "t.prv"
     window = tmp_path / "window.csv"
-    legend = tmp_path / "explicit.csv"
     trace.write_text("#dummy\n")
-    window.write_text("#ts:CSV:RUNAPP:/p/t.prv:microseconds:\n")
-
-    # Explicit legend missing → error.
-    with pytest.raises(UserError, match=str(legend)):
-        GUIConfig(
-            _carm_namespace(
-                gui_mode="paraver",
-                paraver_trace=trace,
-                paraver_window_csv=window,
-                paraver_legend_csv=legend,
-                paraver_use_colors=True,
-            )
-        )
-
-    # Create the explicit legend → passes.
-    legend.write_text('-1 "idle" 128,128,128\n')
+    window.write_text("#ts:CSV:RUNAPP:/p/t.prv:microseconds:window_in_null_gradient_mode:\n")
     config = GUIConfig(
         _carm_namespace(
             gui_mode="paraver",
             paraver_trace=trace,
             paraver_window_csv=window,
-            paraver_legend_csv=legend,
-            paraver_use_colors=True,
         )
     )
-    assert config.paraver_legend_csv == legend
+    assert config.paraver_window_csv == window
 
 
 def test_guiconfig_paraver_valid_combo_passes(tmp_path: Path) -> None:
-    """A valid Paraver trace + window CSV combos passes validation."""
+    """A valid Paraver trace + window CSV combo passes validation."""
     trace = tmp_path / "t.prv"
     window = tmp_path / "window.csv"
     trace.write_text("#dummy\n")
     window.write_text("#ts:CSV:RUNAPP:/p/t.prv:microseconds:\n")
+    (tmp_path / "window.legend.csv").write_text('-1 "idle" 128,128,128\n')
     config = GUIConfig(
         _carm_namespace(
             gui_mode="paraver",
@@ -196,4 +172,3 @@ def test_guiconfig_paraver_valid_combo_passes(tmp_path: Path) -> None:
     assert config.paraver_trace == trace
     assert config.paraver_window_csv == window
     assert config.paraver_use_semantic_window is True
-    assert config.paraver_use_colors is False

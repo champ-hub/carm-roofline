@@ -1,115 +1,86 @@
-"""Unit tests for application-point providers and window filtering."""
+"""Unit tests for application-point providers and trace-table filtering."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from carm_roofline.core.error import UserError
 from carm_roofline.gui.providers import (
     BenchmarkAppsProvider,
     ParaverProvider,
-    filter_points_by_window,
+    filter_trace_by_window,
     trace_time_range,
 )
-from carm_roofline.roofline_assembly import ApplicationPoint, ApplicationRecord
+from carm_roofline.paraver import ParaverWindowMode
 
 pytestmark = pytest.mark.unit
 
 
-def _point(label: str, time_s: float | None = None) -> ApplicationPoint:
-    return ApplicationPoint(
-        label=label,
-        total_flops=1e9,
-        total_bytes=1e6,
-        runtime_s=1.0,
-        num_ranks=1,
-        num_threads=1,
-        num_regions=1,
-        arithmetic_intensity=1000.0,
-        flops_per_second=1e9,
-        bandwidth=1e6,
-        time_s=time_s,
+def _trace_frame() -> pd.DataFrame:
+    """Trace-shaped frame with timestamps t=0/5/10 and zero metrics."""
+    return pd.DataFrame(
+        {
+            "thread_id": ["0", "0", "0"],
+            "time_s": [0.0, 5.0, 10.0],
+            "duration_s": [1.0, 1.0, 1.0],
+            "state_code": [1.0, 1.0, 1.0],
+            "flops": [0.0, 0.0, 0.0],
+            "bytes": [0.0, 0.0, 0.0],
+            "ai": [0.0, 0.0, 0.0],
+            "perf": [0.0, 0.0, 0.0],
+        }
     )
 
 
-def _record(rec_id: str, points: list[ApplicationPoint]) -> ApplicationRecord:
-    return ApplicationRecord(
-        id=rec_id,
-        label=f"{rec_id} — 2026-01-01 (avg)",
-        aggregation="avg",
-        metadata={"name": rec_id, "date": "2026-01-01", "command": "run"},
-        points=points,
-        machine="machine-a",
-    )
+def test_filter_trace_by_window_keeps_only_rows_in_window() -> None:
+    """Rows at t=0/5/10 with window (2, 8) keep only the t=5 row."""
+    result = filter_trace_by_window(_trace_frame(), (2.0, 8.0))
+    assert result["time_s"].tolist() == [5.0]
 
 
-def test_filter_points_by_window_keeps_only_points_in_window() -> None:
-    """Points at t=0/5/10 with window (2, 8) keep only the t=5 point."""
-    rec = _record("r1", [_point("p0", 0.0), _point("p5", 5.0), _point("p10", 10.0)])
-    result = filter_points_by_window({"r1": rec}, (2.0, 8.0))
-    assert list(result["r1"].points) == [_point("p5", 5.0)]
+def test_filter_trace_by_window_none_returns_same_trace() -> None:
+    """A None window returns the input frame unchanged (same object)."""
+    trace = _trace_frame()
+    assert filter_trace_by_window(trace, None) is trace
 
 
-def test_filter_points_by_window_drops_empty_records() -> None:
-    """A record with no surviving points is dropped from the dict."""
-    rec_outside = _record("r1", [_point("p0", 0.0)])
-    rec_inside = _record("r2", [_point("p5", 5.0)])
-    result = filter_points_by_window({"r1": rec_outside, "r2": rec_inside}, (2.0, 8.0))
-    assert list(result.keys()) == ["r2"]
+def test_filter_trace_by_window_empty_window_returns_empty() -> None:
+    """A window covering no timestamp yields an empty frame."""
+    result = filter_trace_by_window(_trace_frame(), (20.0, 30.0))
+    assert result.empty
 
 
-def test_filter_points_by_window_none_returns_same_dict() -> None:
-    """A None window returns the input dict unchanged (same object)."""
-    rec = _record("r1", [_point("p0", 0.0)])
-    app_by_id = {"r1": rec}
-    assert filter_points_by_window(app_by_id, None) is app_by_id
+def test_trace_time_range_spans_timestamps() -> None:
+    """trace_time_range spans the min and max timestamps of the frame."""
+    assert trace_time_range(_trace_frame()) == (0.0, 10.0)
 
 
-def test_filter_points_by_window_excludes_untimestamped_points() -> None:
-    """Points with time_s=None are excluded whenever a window is applied."""
-    rec = _record("r1", [_point("p_no_ts"), _point("p5", 5.0)])
-    result = filter_points_by_window({"r1": rec}, (2.0, 8.0))
-    assert [p.label for p in result["r1"].points] == ["p5"]
+def test_trace_time_range_empty_returns_none() -> None:
+    """trace_time_range returns None for an empty frame."""
+    assert trace_time_range(_trace_frame().iloc[0:0]) is None
 
 
-def test_filter_points_by_window_excluding_everything_returns_empty() -> None:
-    """A window covering no point yields an empty dict."""
-    rec = _record("r1", [_point("p0", 0.0)])
-    assert filter_points_by_window({"r1": rec}, (2.0, 8.0)) == {}
-
-
-def test_trace_time_range_across_records() -> None:
-    """trace_time_range spans the min and max timestamps across records."""
-    app_by_id = {
-        "r1": _record("r1", [_point("p0", 0.0), _point("p5", 5.0)]),
-        "r2": _record("r2", [_point("p10", 10.0)]),
-    }
-    assert trace_time_range(app_by_id) == (0.0, 10.0)
-
-
-def test_trace_time_range_none_without_timestamps() -> None:
-    """trace_time_range returns None when no point has a timestamp."""
-    app_by_id = {"r1": _record("r1", [_point("p_no_ts")])}
-    assert trace_time_range(app_by_id) is None
-
-
-def test_paraver_provider_converts_trace_rows_to_application_points(
+def test_paraver_provider_loads_code_mode_trace_with_legend(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ParaverProvider converts trace table rows to ApplicationPoints grouped in one ApplicationRecord."""
+    """ParaverProvider maps code-mode rows to legend entries on a trace table."""
+    # Dummy .prv file — only needs to exist on disk for the provider check.
+    trace = tmp_path / "t.prv"
+    trace.write_text("#Paraver dummy\n")
+
     # Create a window CSV with header so parse_paraver_header works and
     # build_trace_table can attach state codes.
     window_csv = tmp_path / "window.csv"
     window_csv.write_text(
-        "#20260803:CSV:RUNAPP:/p/t.prv:nanoseconds:window_in_code_mode\n1.1.1\t0.0\t1000000000.0\t1.0\n"
+        f"#20260803:CSV:RUNAPP:{trace.resolve()}:nanoseconds:window_in_code_mode\n"
+        "1.1.1\t0.0\t1000000000.0\t1.0\n",
+        encoding="utf-8",
     )
-
-    # Dummy .prv file — only needs to exist on disk for the provider check.
-    trace = tmp_path / "t.prv"
-    trace.write_text("#Paraver dummy\n")
+    (tmp_path / "window.legend.csv").write_text('1.000000 "Running" 0,0,255\n', encoding="utf-8")
 
     # Capture the args run_paramedir receives so we can assert the provider
     # forwards the trace path and the window header's time unit.
@@ -137,7 +108,7 @@ def test_paraver_provider_converts_trace_rows_to_application_points(
     monkeypatch.setattr("shutil.which", lambda _x: "/usr/bin/paramedir")
 
     provider = ParaverProvider(trace, window_csv)
-    app_by_id = provider.load()
+    data = provider.load()
 
     # The trace path (resolved) and the window header's time unit reach run_paramedir.
     assert len(captured) == 1
@@ -148,54 +119,129 @@ def test_paraver_provider_converts_trace_rows_to_application_points(
     # The loaded window CSV interval (min start, max end) is exposed in seconds.
     assert provider.window_extent == (0.0, 1.0)
 
-    assert len(app_by_id) == 1
-    rec_id, rec = next(iter(app_by_id.items()))
-    assert rec_id == rec.id
-    assert len(rec_id) == 16  # sha256 hex prefix
+    # Mode, unit, and prv path come from the window header.
+    assert data.window_mode == ParaverWindowMode.CODE
+    assert data.time_unit == "nanoseconds"
+    assert data.prv_path == str(trace.resolve())
 
-    # Label and machine derive from file stems.
-    assert rec.machine == "t"
-    assert "t" in rec.label
-    assert "window.csv" in rec.label
+    # Label derives from file stems.
+    assert "t" in data.label
+    assert "window.csv" in data.label
 
-    # Aggregation is "paraver" (not benchmark avg/min/max).
-    assert rec.aggregation == "paraver"
-
-    # Metadata carries header details.
-    assert rec.metadata["prv_path"] == str(trace.resolve())
-    assert rec.metadata["window_csv"] == str(window_csv.resolve())
-    assert rec.metadata["time_unit"] == "nanoseconds"
-    assert rec.metadata["window_mode"] == "window_in_code_mode"
-
-    # One point per burst row.
-    assert len(rec.points) == 1
-    p = rec.points[0]
-
-    # Label is the Paraver thread_id.
-    assert p.label == "1.1.1"
-
-    # Timestamp and runtime (1e9 ns → 1.0 s).
-    assert p.time_s == 0.0
-    assert p.runtime_s == pytest.approx(1.0)
-
-    # num_threads/num_ranks are 1 per-row because the table is per-thread.
-    assert p.num_threads == 1
-    assert p.num_ranks == 1
-    assert p.num_regions == 1
+    # The legend was loaded and matched the single trace row.
+    assert len(data.legend) == 1
+    row = data.trace.iloc[0]
+    assert row["legend_label"] == "Running"
+    assert row["legend_color"] == "rgb(0,0,255)"
 
     # Computed metrics (exact values depend on counter weights, but invariants hold).
-    assert p.total_flops > 0
-    assert p.total_bytes > 0
-    assert p.arithmetic_intensity == pytest.approx(p.total_flops / p.total_bytes)
-    assert p.flops_per_second == pytest.approx(p.total_flops / p.runtime_s)
-    assert p.bandwidth == pytest.approx(p.total_bytes / p.runtime_s)
+    assert row["flops"] > 0
+    assert row["bytes"] > 0
+    assert row["ai"] == pytest.approx(row["flops"] / row["bytes"])
+    assert row["perf"] == pytest.approx(row["flops"] / row["duration_s"])
+
+
+def test_paraver_provider_code_mode_missing_legend_raises_user_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Code-mode windows without a legend fail fast, before paramedir runs."""
+    window_csv = tmp_path / "window.csv"
+    window_csv.write_text(
+        "#20260803:CSV:RUNAPP:/p/t.prv:microseconds:\n1.1.1\t0.0\t1000000.0\t1.0\n",
+        encoding="utf-8",
+    )
+    trace = tmp_path / "t.prv"
+    trace.write_text("#dummy\n")
+
+    captured: list[object] = []
+    monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", lambda *args: captured.append(args))
+
+    with pytest.raises(UserError, match="legend CSV not found"):
+        ParaverProvider(trace, window_csv).load()
+    assert captured == []
+
+
+def test_paraver_provider_legend_labels_align_to_state_not_position(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rows keep their own legend entry even when the trace is not code-sorted.
+
+    Regression: merge_asof returns a fresh RangeIndex, so the label/color
+    assignment used to pair positionally with the code-sorted merge output,
+    mislabeling every row whose state differs from the code order.
+    """
+    trace = tmp_path / "t.prv"
+    trace.write_text("#Paraver dummy\n")
+    window_csv = tmp_path / "window.csv"
+    # State 8.0 active first, state 1.0 second — reverse of the legend's code order.
+    window_csv.write_text(
+        f"#20260803:CSV:RUNAPP:{trace.resolve()}:nanoseconds:window_in_code_mode\n"
+        "1.1.1\t0.0\t1000000.0\t8.0\n"
+        "1.1.1\t1000000.0\t1000000.0\t1.0\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "window.legend.csv").write_text(
+        '1.000000 "Running" 0,0,255\n8.000000 "Wait/WaitAll" 235,0,0\n', encoding="utf-8"
+    )
+
+    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+        out = Path(output_dir)
+        for name in ("fp-avx2-dp.csv", "mem-loads.csv"):
+            (out / name).write_text(
+                f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_code_mode\n"
+                "1.1.1\t0.0\t1000000.0\t4\n"
+                "1.1.1\t1000000.0\t1000000.0\t4\n",
+                encoding="utf-8",
+            )
+
+    monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", _fake_run_paramedir)
+    monkeypatch.setattr("shutil.which", lambda _x: "/usr/bin/paramedir")
+
+    data = ParaverProvider(trace, window_csv).load()
+    assert data.trace["state_code"].astype(float).tolist() == [8.0, 1.0]
+    assert data.trace["legend_label"].tolist() == ["Wait/WaitAll", "Running"]
+    assert data.trace["legend_color"].tolist() == ["rgb(235,0,0)", "rgb(0,0,255)"]
+
+
+def test_paraver_provider_gradient_mode_loads_without_legend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gradient-mode windows need no legend and carry no legend columns."""
+    window_csv = tmp_path / "window.csv"
+    window_csv.write_text(
+        "#20260803:CSV:RUNAPP:/p/t.prv:microseconds:window_in_null_gradient_mode\n"
+        "1.1.1\t0.0\t1000000.0\t1.0\n",
+        encoding="utf-8",
+    )
+    trace = tmp_path / "t.prv"
+    trace.write_text("#dummy\n")
+
+    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+        out = Path(output_dir)
+        (out / "fp-avx2-dp.csv").write_text(
+            f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_null_gradient_mode\n1.1.1\t0.0\t1000000.0\t4\n",
+            encoding="utf-8",
+        )
+        (out / "mem-loads.csv").write_text(
+            f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_null_gradient_mode\n1.1.1\t0.0\t1000000.0\t2\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", _fake_run_paramedir)
+    monkeypatch.setattr("shutil.which", lambda _x: "/usr/bin/paramedir")
+
+    data = ParaverProvider(trace, window_csv).load()
+    assert data.window_mode == ParaverWindowMode.GRADIENT
+    assert data.legend is None
+    assert "legend_label" not in data.trace.columns
 
 
 def test_paraver_provider_missing_paramedir_raises_user_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """ParaverProvider raises UserError when paramedir is not on PATH."""
     window_csv = tmp_path / "window.csv"
     window_csv.write_text(
-        "#20260803:CSV:RUNAPP:/p/t.prv:microseconds:window_in_code_mode\n1.1.1\t0.0\t1000000.0\t1.0\n"
+        "#20260803:CSV:RUNAPP:/p/t.prv:microseconds:window_in_null_gradient_mode\n1.1.1\t0.0\t1000000.0\t1.0\n",
+        encoding="utf-8",
     )
     trace = tmp_path / "t.prv"
     trace.write_text("#dummy\n")

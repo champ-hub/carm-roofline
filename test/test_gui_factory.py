@@ -6,16 +6,16 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pytest
 
 from carm_roofline.gui.config import GUIConfig
 from carm_roofline.gui.factory import create_app
 from carm_roofline.gui.ids import StoreID
-from carm_roofline.roofline_assembly import ApplicationPoint, ApplicationRecord
+from carm_roofline.gui.providers import ParaverData
+from carm_roofline.paraver import ParaverWindowMode
 
 pytestmark = pytest.mark.unit
-
-RECORD_ID = "paraver-record-0001"
 
 
 def _paraver_namespace(trace: Path, window: Path, use_semantic_window: bool = False) -> argparse.Namespace:
@@ -28,47 +28,42 @@ def _paraver_namespace(trace: Path, window: Path, use_semantic_window: bool = Fa
         gui_mode="paraver",
         paraver_trace=trace,
         paraver_window_csv=window,
-        paraver_legend_csv=None,
-        paraver_use_colors=False,
         paraver_use_semantic_window=use_semantic_window,
     )
 
 
-def _fake_record() -> ApplicationRecord:
-    return ApplicationRecord(
-        id=RECORD_ID,
+def _fake_paraver_data() -> ParaverData:
+    return ParaverData(
+        trace=pd.DataFrame(
+            {
+                "thread_id": ["1.1.1"],
+                "time_s": [0.5],
+                "duration_s": [1.0],
+                "state_code": [1.0],
+                "flops": [16.0],
+                "bytes": [16.0],
+                "ai": [1.0],
+                "perf": [16.0],
+            }
+        ),
         label="t — w.csv",
-        aggregation="paraver",
-        metadata={"prv_path": "/p/t.prv", "time_unit": "nanoseconds", "window_mode": "window_in_code_mode"},
-        points=[
-            ApplicationPoint(
-                label="1.1.1",
-                total_flops=16.0,
-                total_bytes=16.0,
-                runtime_s=1.0,
-                num_ranks=1,
-                num_threads=1,
-                num_regions=1,
-                arithmetic_intensity=1.0,
-                flops_per_second=16.0,
-                bandwidth=16.0,
-                time_s=0.5,
-            )
-        ],
-        machine="t",
+        window_mode=ParaverWindowMode.CODE,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=None,
     )
 
 
 class _FakeProvider:
-    """Provider double capturing constructor args; returns one fixed record."""
+    """Provider double capturing constructor args; returns one fixed ParaverData."""
 
     def __init__(self, trace_path: Path, window_csv_path: Path, **kwargs: Any) -> None:
         self.captured_trace = trace_path
         self.captured_window = window_csv_path
         self.captured_kwargs = kwargs
 
-    def load(self) -> dict[str, ApplicationRecord]:
-        return {RECORD_ID: _fake_record()}
+    def load(self) -> ParaverData:
+        return _fake_paraver_data()
 
     @property
     def window_extent(self) -> tuple[float, float] | None:
@@ -185,8 +180,10 @@ def _find_store_data(node: Any, store_id: str) -> dict[str, Any] | None:
     return None
 
 
-def test_create_app_paraver_wires_config_and_preselects_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Paraver config reaches the provider; the initial store preselects the record."""
+def test_create_app_paraver_wires_config_and_leaves_app_ids_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Paraver config reaches the provider; the initial roof preselects no records."""
     trace = tmp_path / "t.prv"
     trace.write_text("#dummy\n", encoding="utf-8")
     window = tmp_path / "w.csv"
@@ -194,6 +191,7 @@ def test_create_app_paraver_wires_config_and_preselects_record(tmp_path: Path, m
         "#ts:CSV:RUNAPP:/p/t.prv:nanoseconds:window_in_code_mode\n1.1.1\t0.0\t1000000000.0\t1.0\n",
         encoding="utf-8",
     )
+    (tmp_path / "w.legend.csv").write_text('1.000000 "Running" 0,0,255\n', encoding="utf-8")
 
     monkeypatch.setattr("carm_roofline.gui.factory.ParaverProvider", _FakeProvider)
 
@@ -201,8 +199,8 @@ def test_create_app_paraver_wires_config_and_preselects_record(tmp_path: Path, m
     store_data = _find_store_data(app.layout(), StoreID.ROOF_STORE)
     assert store_data is not None
 
-    # The loaded record is preselected on the initial roof.
-    assert store_data["roofs"][0]["app_ids"] == [RECORD_ID]
+    # Paraver points are plotted directly from the trace; no record ids are preselected.
+    assert store_data["roofs"][0]["app_ids"] == []
 
     # Default launch: no semantic window -> time window unset (full range).
     assert store_data["paraver"]["time_window"] is None
@@ -219,6 +217,7 @@ def test_create_app_paraver_semantic_window_sets_initial_window(
         "#ts:CSV:RUNAPP:/p/t.prv:nanoseconds:window_in_code_mode\n1.1.1\t0.0\t1000000000.0\t1.0\n",
         encoding="utf-8",
     )
+    (tmp_path / "w.legend.csv").write_text('1.000000 "Running" 0,0,255\n', encoding="utf-8")
 
     monkeypatch.setattr("carm_roofline.gui.factory.ParaverProvider", _FakeProvider)
 

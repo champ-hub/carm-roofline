@@ -12,6 +12,7 @@ from carm_roofline.paraver.loading import (
     TIME_SCALE_FACTORS,
     TRACE_COLUMNS,
     ParaverHeader,
+    ParaverWindowMode,
     load_legend_csv,
     load_window_csv,
     parse_paraver_header,
@@ -75,6 +76,23 @@ def test_parse_paraver_header_short_defaults() -> None:
 def test_parse_paraver_header_rejects_non_header(line: str) -> None:
     with pytest.raises(ValueError):
         parse_paraver_header(line)
+
+
+@pytest.mark.parametrize(
+    ("header_mode", "expected"),
+    [
+        ("window_in_code_mode", ParaverWindowMode.CODE),
+        ("window_in_null_gradient_mode", ParaverWindowMode.GRADIENT),
+    ],
+)
+def test_paraver_window_mode_from_header(header_mode: str, expected: ParaverWindowMode) -> None:
+    assert ParaverWindowMode.from_header(header_mode) == expected
+
+
+@pytest.mark.parametrize("header_mode", ["", "window_in_code", "some_other_mode"])
+def test_paraver_window_mode_from_header_unknown_raises(header_mode: str) -> None:
+    with pytest.raises(ValueError, match="unknown Paraver window mode"):
+        ParaverWindowMode.from_header(header_mode)
 
 
 def test_load_window_csv_schema_and_scaling(tmp_path: Path) -> None:

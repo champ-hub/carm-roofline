@@ -1,28 +1,30 @@
 """Application-point sources for the roofline plot.
 
-Each provider implements ``load() -> dict[str, ApplicationRecord]`` (records keyed
-by id). CARM mode sources points from benchmarked applications; paraver mode sources
-them from an external Paraver trace via the paramedir counter pipeline.
+CARM mode sources points from benchmarked applications (``BenchmarkAppsProvider``,
+records keyed by id); paraver mode loads an external Paraver trace into a
+:class:`ParaverData` trace table via the paramedir counter pipeline.
 """
 
 from __future__ import annotations
 
-import hashlib
 import shutil
 import tempfile
-from dataclasses import replace
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+
+import pandas as pd
 
 from carm_roofline.core.error import UserError
 from carm_roofline.paraver import (
+    ParaverWindowMode,
     build_trace_table,
+    default_legend_path,
     load_legend_csv,
     load_window_csv,
     parse_paraver_header,
     run_paramedir,
 )
-from carm_roofline.roofline_assembly import ApplicationPoint, ApplicationRecord, load_all_applications
+from carm_roofline.roofline_assembly import ApplicationRecord, load_all_applications
 
 
 class BenchmarkAppsProvider:
@@ -36,12 +38,30 @@ class BenchmarkAppsProvider:
         return {a.id: a for a in applications}
 
 
+@dataclass(frozen=True)
+class ParaverData:
+    """Loaded paraver trace ready for direct plotting.
+
+    ``trace`` carries TRACE_COLUMNS; in code mode it additionally carries
+    ``legend_label`` (str) and ``legend_color`` (str "rgb(r,g,b)") per row, NaN
+    for rows whose state_code no legend range covers. ``window_mode`` is a
+    :class:`ParaverWindowMode` member (``CODE`` | ``GRADIENT``).
+    """
+
+    trace: pd.DataFrame
+    label: str
+    window_mode: ParaverWindowMode  # CODE | GRADIENT
+    time_unit: str
+    prv_path: str
+    legend: pd.DataFrame | None  # code/code_end/label/r/g/b; None in gradient mode
+
+
 class ParaverProvider:
-    """Application points from an external Paraver trace via the paramedir pipeline.
+    """Paraver trace table via the paramedir pipeline.
 
     The provider runs ``paramedir`` over the ``.prv`` trace, loads counter CSVs,
-    builds a trace table, and converts each row into an :class:`ApplicationPoint`
-    grouped in one :class:`ApplicationRecord`.
+    builds a trace table, and (in code mode) maps each state code to its legend
+    entry. Returns a :class:`ParaverData` ready for direct plotting.
     """
 
     def __init__(
@@ -49,12 +69,10 @@ class ParaverProvider:
         trace_path: Path,
         window_csv_path: Path,
         legend_csv_path: Path | None = None,
-        use_colors: bool = False,
     ) -> None:
         self._trace_path = trace_path.resolve()
         self._window_csv_path = window_csv_path.resolve()
         self._legend_csv_path = legend_csv_path.resolve() if legend_csv_path else None
-        self._use_colors = use_colors
         self._window_extent: tuple[float, float] | None = None
 
     @property
@@ -65,10 +83,20 @@ class ParaverProvider:
         """
         return self._window_extent
 
-    def load(self) -> dict[str, ApplicationRecord]:
-        # Parse the window CSV header to get the time unit for paramedir.
+    def load(self) -> ParaverData:
+        # Parse the window CSV header to learn the mode, time unit, and prv path.
         with open(self._window_csv_path, encoding="utf-8") as fh:
             header = parse_paraver_header(fh.readline().strip())
+        window_mode = ParaverWindowMode.from_header(header.window_mode)
+        is_gradient = window_mode == ParaverWindowMode.GRADIENT
+
+        # Fail fast on a missing legend (code mode) before the paramedir run.
+        legend = None
+        if not is_gradient:
+            legend_path = self._legend_csv_path or default_legend_path(self._window_csv_path)
+            if not legend_path.is_file():
+                raise UserError(f"paraver legend CSV not found: {legend_path}")
+            legend = load_legend_csv(legend_path)
 
         # Create a temporary working directory for paramedir counter outputs.
         work_dir = Path(tempfile.mkdtemp(prefix="carm-paraver-"))
@@ -96,81 +124,59 @@ class ParaverProvider:
             ends = starts + window_frame["duration_s"]
             self._window_extent = (float(starts.min()), float(ends.max()))
 
-        # Convert trace rows to ApplicationPoint objects.
-        points: list[ApplicationPoint] = []
-        for _, row in trace.iterrows():
-            dur: float = float(row["duration_s"])
-            flops: float = float(row["flops"])
-            byt: float = float(row["bytes"])
-            bandwidth = byt / dur if dur > 0 else 0.0
-            points.append(
-                ApplicationPoint(
-                    label=str(row["thread_id"]),
-                    total_flops=flops,
-                    total_bytes=byt,
-                    runtime_s=dur,
-                    num_ranks=1,
-                    num_threads=1,
-                    num_regions=1,
-                    arithmetic_intensity=float(row["ai"]),
-                    flops_per_second=float(row["perf"]),
-                    bandwidth=bandwidth,
-                    time_s=float(row["time_s"]),
-                )
+        if legend is not None:
+            # Old-tool semantics: backward merge_asof on the legend's lower bound,
+            # then inclusive [code, code_end] containment. Unmatched rows stay in the
+            # trace with NaN legend_label/legend_color (never plotted, but they keep
+            # the slider bounds covering the whole trace).
+            codes = trace["state_code"].astype(float)
+            left = trace.assign(_code=codes).sort_values("_code")
+            matched = pd.merge_asof(
+                left,
+                legend,
+                left_on="_code",
+                right_on="code",
+                direction="backward",
+            )
+            in_range = (matched["_code"] >= matched["code"]) & (matched["_code"] <= matched["code_end"])
+            matched = matched.loc[in_range]
+            # merge_asof returns a fresh RangeIndex; restore the original row
+            # identity so the assignments below align by index, not position.
+            matched.index = left.index[in_range.to_numpy()]
+            trace = trace.copy()
+            trace["legend_label"] = matched["label"]
+            trace["legend_color"] = (
+                "rgb("
+                + matched["r"].astype(str)
+                + ","
+                + matched["g"].astype(str)
+                + ","
+                + matched["b"].astype(str)
+                + ")"
             )
 
-        # Stable record id derived from trace and window paths (not Python hash).
-        record_id = hashlib.sha256(f"{self._trace_path}:{self._window_csv_path}".encode()).hexdigest()[:16]
         trace_stem = self._trace_path.stem
         window_name = self._window_csv_path.name
-
-        metadata: dict[str, Any] = {
-            "prv_path": str(self._trace_path),
-            "window_csv": str(self._window_csv_path),
-            "time_unit": header.time_unit,
-            "window_mode": header.window_mode,
-        }
-
-        # Load legend if colors are requested.
-        legend = None
-        if self._use_colors and self._legend_csv_path is not None:
-            legend = load_legend_csv(self._legend_csv_path)
-            metadata["legend"] = legend.to_dict(orient="records")
-
-        record = ApplicationRecord(
-            id=record_id,
+        return ParaverData(
+            trace=trace,
             label=f"{trace_stem} — {window_name}",
-            aggregation="paraver",
-            metadata=metadata,
-            points=points,
-            machine=trace_stem,
+            window_mode=window_mode,
+            time_unit=header.time_unit,
+            prv_path=header.prv_path,
+            legend=legend,
         )
 
-        return {record_id: record}
 
-
-def filter_points_by_window(
-    app_by_id: dict[str, ApplicationRecord],
-    window: tuple[float, float] | None,
-) -> dict[str, ApplicationRecord]:
-    """Keep points with time_s inside *window* (inclusive); drop records left empty.
-
-    A ``None`` window returns the input dict unchanged. Points without a timestamp
-    are excluded whenever a window is applied.
-    """
+def filter_trace_by_window(trace: pd.DataFrame, window: tuple[float, float] | None) -> pd.DataFrame:
+    """Keep rows with time_s inside *window* (inclusive); None returns *trace* unchanged."""
     if window is None:
-        return app_by_id
+        return trace
     lo, hi = window
-    filtered: dict[str, ApplicationRecord] = {}
-    for rec_id, rec in app_by_id.items():
-        kept = [p for p in rec.points if p.time_s is not None and lo <= p.time_s <= hi]
-        if kept:
-            filtered[rec_id] = replace(rec, points=kept)
-    return filtered
+    return trace[(trace["time_s"] >= lo) & (trace["time_s"] <= hi)]
 
 
-def trace_time_range(app_by_id: dict[str, ApplicationRecord]) -> tuple[float, float] | None:
-    """Full timestamp extent of the loaded points, or None when no point has a timestamp."""
-    lo = min((p.time_s for rec in app_by_id.values() for p in rec.points if p.time_s is not None), default=None)
-    hi = max((p.time_s for rec in app_by_id.values() for p in rec.points if p.time_s is not None), default=None)
-    return (lo, hi) if lo is not None and hi is not None else None
+def trace_time_range(trace: pd.DataFrame) -> tuple[float, float] | None:
+    """Full timestamp extent of the trace, or None when it is empty."""
+    if trace.empty:
+        return None
+    return (float(trace["time_s"].min()), float(trace["time_s"].max()))

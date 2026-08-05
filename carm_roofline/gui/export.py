@@ -6,11 +6,11 @@ The paraver export format is an external dependency that has not been defined ye
 
 from __future__ import annotations
 
-from carm_roofline.roofline_assembly import ApplicationPoint
+import pandas as pd
 
 EXPORT_FILENAME = "paraver-export.csv"  # update when the export format is defined
 
 
-def serialize_paraver_export(points: list[ApplicationPoint]) -> str:
-    """Serialize the given points to the paraver export format (not yet defined)."""
+def serialize_paraver_export(trace: pd.DataFrame) -> str:
+    """Serialize the given trace table to the paraver export format (not yet defined)."""
     raise NotImplementedError("paraver export format not defined yet")

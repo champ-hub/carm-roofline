@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 import pandas as pd
+
+from carm_roofline.core.error import UserError
 
 # Trace-shaped column schema shared by the window frame and the final trace table.
 TRACE_COLUMNS = ("thread_id", "time_s", "duration_s", "state_code", "flops", "bytes", "ai", "perf")
@@ -52,7 +55,8 @@ def parse_paraver_header(line: str) -> ParaverHeader:
     Raise ValueError unless the line starts with '#' and splits (':') into ≥4 fields.
     parts[0] = '#<timestamp>', parts[1] = 'CSV', parts[2] = 'RUNAPP',
     parts[3] = prv path, parts[4] = time unit, parts[5] = window mode.
-    Missing parts[4]/[5] default as above; extra fields (vmin/vmax) are ignored.
+    Missing/empty parts[4] default to ""; missing/empty parts[5] default to the
+    legacy code-mode string; extra fields (vmin/vmax) are ignored.
     """
     if not line.startswith("#"):
         raise ValueError(f"not a Paraver header line (must start with '#'): {line!r}")
@@ -63,7 +67,7 @@ def parse_paraver_header(line: str) -> ParaverHeader:
         timestamp=parts[0][1:],
         prv_path=parts[3],
         time_unit=parts[4] if len(parts) > 4 else "",
-        window_mode=parts[5] if len(parts) > 5 else "window_in_code_mode",
+        window_mode=parts[5] if len(parts) > 5 and parts[5] else CODE_WINDOW_MODE,
     )
 
 
@@ -129,3 +133,36 @@ def load_legend_csv(path: str | Path) -> pd.DataFrame:
             )
     legend = pd.DataFrame(rows, columns=["code", "code_end", "label", "r", "g", "b"])
     return legend.sort_values("code").reset_index(drop=True)
+
+
+GRADIENT_WINDOW_MODE = "window_in_null_gradient_mode"
+CODE_WINDOW_MODE = "window_in_code_mode"
+
+
+class ParaverWindowMode(Enum):
+    """Normalized Paraver window mode for trace-table plotting.
+
+    ``CODE`` (semantic, legend-colored) is the default; ``GRADIENT`` is the
+    null-gradient variant colored continuously over ``state_code``.
+    """
+
+    CODE = "code"
+    GRADIENT = "gradient"
+
+    @classmethod
+    def from_header(cls, window_mode: str) -> ParaverWindowMode:
+        """Map a Paraver header mode string; unknown modes raise ValueError."""
+        if window_mode == CODE_WINDOW_MODE:
+            return cls.CODE
+        if window_mode == GRADIENT_WINDOW_MODE:
+            return cls.GRADIENT
+        raise ValueError(
+            f"unknown Paraver window mode {window_mode!r}; expected {CODE_WINDOW_MODE!r} or {GRADIENT_WINDOW_MODE!r}"
+        )
+
+
+def default_legend_path(window_csv: Path) -> Path:
+    """Derive the legend path for a window CSV (foo.csv -> foo.legend.csv)."""
+    if window_csv.suffix != ".csv":
+        raise UserError(f"cannot derive a legend CSV from {window_csv}: window CSV must end in '.csv'")
+    return window_csv.with_suffix(".legend.csv")

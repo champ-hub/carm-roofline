@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import math
 
+import pandas as pd
 import pytest
 
-from carm_roofline.gui.data import GUISettings, RoofConfig, RoofStore, build_roofline_figure
+from carm_roofline.gui.data import (
+    GUISettings,
+    RoofConfig,
+    RoofStore,
+    build_paraver_figure,
+    build_roofline_figure,
+)
+from carm_roofline.gui.providers import ParaverData
+from carm_roofline.paraver import ParaverWindowMode
 from carm_roofline.roofline_assembly import ApplicationPoint, ApplicationRecord, BenchmarkRecord
 
 pytestmark = pytest.mark.unit
@@ -308,3 +317,122 @@ def test_build_roofline_figure_empty_fallback() -> None:
     fig0 = build_roofline_figure([], [])
     assert list(fig0.layout.xaxis.range) == pytest.approx([-2.0, 2.0])
     assert list(fig0.layout.yaxis.range) == pytest.approx([0.0, 3.5])
+
+
+def _paraver_trace() -> pd.DataFrame:
+    """Trace-shaped frame with two threads and codes 1/8/8."""
+    return pd.DataFrame(
+        {
+            "thread_id": ["0", "1", "2"],
+            "time_s": [0.0, 1.0, 2.0],
+            "duration_s": [1.0, 1.0, 1.0],
+            "state_code": [1.0, 8.0, 8.0],
+            "flops": [100.0, 200.0, 300.0],
+            "bytes": [10.0, 20.0, 30.0],
+            "ai": [10.0, 10.0, 10.0],
+            "perf": [100.0, 200.0, 300.0],
+        }
+    )
+
+
+def test_build_paraver_figure_code_mode_groups_by_legend() -> None:
+    """Code mode adds one marker trace per legend label, colored by the legend."""
+    trace = _paraver_trace()
+    trace["legend_label"] = ["Running", "Wait/WaitAll", "Wait/WaitAll"]
+    trace["legend_color"] = ["rgb(0,0,255)", "rgb(235,0,0)", "rgb(235,0,0)"]
+    legend = pd.DataFrame(
+        {
+            "code": [1.0, 8.0],
+            "code_end": [1.0, 8.0],
+            "label": ["Running", "Wait/WaitAll"],
+            "r": [0, 235],
+            "g": [0, 0],
+            "b": [255, 0],
+        }
+    )
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.CODE,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=legend,
+    )
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace)
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert [m.name for m in markers] == ["Running", "Wait/WaitAll"]
+    assert [m.marker.color for m in markers] == ["rgb(0,0,255)", "rgb(235,0,0)"]
+    # x/y values match the rows of each legend group (perf in GOPS).
+    assert list(markers[0].x) == [10.0]
+    assert list(markers[0].y) == [100.0 / 1e9]
+    assert list(markers[1].x) == [10.0, 10.0]
+    assert list(markers[1].y) == [200.0 / 1e9, 300.0 / 1e9]
+
+
+def test_build_paraver_figure_gradient_mode_single_trace() -> None:
+    """Gradient mode adds a single Viridis-colored trace named by paraver.label."""
+    trace = _paraver_trace()
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.GRADIENT,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace)
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert len(markers) == 1
+    m = markers[0]
+    assert m.name == "t — w.csv"
+    assert list(m.marker.color) == [1.0, 8.0, 8.0]
+    # Plotly resolves the "Viridis" name into its colorscale; pin its endpoints.
+    assert m.marker.colorscale[0] == (0.0, "#440154")
+    assert m.marker.colorscale[-1] == (1.0, "#fde725")
+    assert m.marker.showscale is False
+
+
+def test_build_paraver_figure_skips_unmatched_rows() -> None:
+    """Rows whose state code no legend range covers produce no trace or legend entry."""
+    trace = _paraver_trace()
+    trace["legend_label"] = ["Running", None, None]
+    trace["legend_color"] = ["rgb(0,0,255)", None, None]
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.CODE,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace)
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert [m.name for m in markers] == ["Running"]
+    assert list(markers[0].x) == [10.0]
+
+
+def test_build_paraver_figure_extends_ranges_to_points() -> None:
+    """Positive-metric extents widen the log10 axis ranges (0.5 decade margin)."""
+    trace = _paraver_trace()
+    trace["ai"] = [1e-9, 2e-9, 3e-9]
+    trace["perf"] = [1.0, 2.0, 3.0]
+    trace["legend_label"] = ["Running"] * 3
+    trace["legend_color"] = ["rgb(0,0,255)"] * 3
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.CODE,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace)
+    # Fallback ranges are [-2, 2] x [0, 3.5]; tiny positive metrics push lo below.
+    assert fig.layout.xaxis.range[0] < -2
+    assert fig.layout.yaxis.range[0] < 0
+
+
+def test_build_paraver_figure_none_paraver_draws_ceilings_only() -> None:
+    """paraver=None/trace=None (failed load) draws ceilings only, without exception."""
+    fig = build_paraver_figure([RoofConfig()], [], None, None)
+    assert all(t.mode != "markers" for t in fig.data)

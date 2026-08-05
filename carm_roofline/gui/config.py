@@ -10,6 +10,7 @@ from pathlib import Path
 from carm_roofline.arguments import InsertsArguments, add_verbose_argument
 from carm_roofline.gui.data import GUISettings
 from carm_roofline.output_utils import warn
+from carm_roofline.paraver import ParaverWindowMode, default_legend_path, parse_paraver_header
 from carm_roofline.results_paths import default_results_root
 
 
@@ -28,8 +29,6 @@ class GUIConfig(InsertsArguments):
 
         # Paraver-mode arguments.
         self.paraver_window_csv: Path | None = args.paraver_window_csv
-        self.paraver_legend_csv: Path | None = args.paraver_legend_csv
-        self.paraver_use_colors: bool = args.paraver_use_colors
         self.paraver_use_semantic_window: bool = args.paraver_use_semantic_window
 
         # Validate Paraver-only requirements.
@@ -69,17 +68,6 @@ class GUIConfig(InsertsArguments):
             help="Path to the Paraver window/mask CSV (required with --gui-mode paraver)",
         )
         parser.add_argument(
-            "--paraver-legend-csv",
-            type=Path,
-            default=None,
-            help="Path to the Paraver legend CSV (optional; derived from window CSV when omitted)",
-        )
-        parser.add_argument(
-            "--paraver-use-colors",
-            action="store_true",
-            help="Apply legend colors to the roofline points (requires a legend CSV)",
-        )
-        parser.add_argument(
             "--paraver-use-semantic-window",
             action="store_true",
             help="Initialize time slider to the window CSV's semantic extent",
@@ -99,21 +87,13 @@ class GUIConfig(InsertsArguments):
             raise UserError(f"paraver trace file not found: {self.paraver_trace}")
         if not self.paraver_window_csv.is_file():
             raise UserError(f"paraver window CSV not found: {self.paraver_window_csv}")
-        if self.paraver_use_colors:
-            legend = self.paraver_legend_csv
-            if legend is None:
-                # Derive legend path from the window CSV name (foo.csv -> foo.legend.csv).
-                window = self.paraver_window_csv
-                if window.suffix != ".csv":
-                    raise UserError(
-                        "--paraver-use-colors requires --paraver-legend-csv when window CSV does not end in .csv"
-                    )
-                legend = window.with_suffix(".legend.csv")
+        # Code-mode windows require the derived legend CSV; gradient mode needs none.
+        with open(self.paraver_window_csv, encoding="utf-8") as fh:
+            header = parse_paraver_header(fh.readline().strip())
+        if ParaverWindowMode.from_header(header.window_mode) == ParaverWindowMode.CODE:
+            legend = default_legend_path(self.paraver_window_csv)
             if not legend.is_file():
                 raise UserError(f"paraver legend CSV not found: {legend}")
-            # Resolve the derived path back onto the instance so the provider uses it.
-            if self.paraver_legend_csv is None:
-                self.paraver_legend_csv = legend
 
 
 @dataclass(frozen=True)

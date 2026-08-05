@@ -7,6 +7,7 @@ from typing import Any, Callable, cast
 
 import dash
 import dash_bootstrap_components as dbc
+import pandas as pd
 from dash import ALL, Input, Output, State, callback_context, html
 from dash.exceptions import PreventUpdate
 
@@ -30,6 +31,7 @@ from carm_roofline.gui.data import (
     DropdownOption,
     RoofConfig,
     RoofStore,
+    build_paraver_figure,
     build_roofline_figure,
     format_roof_label,
     make_default_roof,
@@ -48,8 +50,9 @@ from carm_roofline.gui.ids import (
 )
 from carm_roofline.gui.providers import (
     BenchmarkAppsProvider,
+    ParaverData,
     ParaverProvider,
-    filter_points_by_window,
+    filter_trace_by_window,
     trace_time_range,
 )
 from carm_roofline.output_utils import debug, warn
@@ -147,23 +150,20 @@ def create_app(config: GUIConfig) -> dash.Dash:
     app_dropdown_options: list[DropdownOption] = []
     trace_bounds: tuple[float, float] | None = None
     initial_window: tuple[float, float] | None = None
+    paraver_data: ParaverData | None = None
 
     if mode.show_time_slider:
         # Paraver mode: application points come from an external trace.
         if config.paraver_trace is not None and config.paraver_window_csv is not None:
-            provider = ParaverProvider(
-                config.paraver_trace,
-                config.paraver_window_csv,
-                legend_csv_path=config.paraver_legend_csv,
-                use_colors=config.paraver_use_colors,
-            )
+            provider = ParaverProvider(config.paraver_trace, config.paraver_window_csv)
             try:
-                app_by_id = provider.load()
+                paraver_data = provider.load()
             except UserError as exc:
                 warn(str(exc))
-            trace_bounds = trace_time_range(app_by_id)
-            if config.paraver_use_semantic_window:
-                initial_window = provider.window_extent
+            if paraver_data is not None:
+                trace_bounds = trace_time_range(paraver_data.trace)
+                if config.paraver_use_semantic_window:
+                    initial_window = provider.window_extent
         else:
             warn("Paraver mode needs --paraver-trace and --paraver-window-csv; running without application points.")
     elif config.results_dir.exists():
@@ -181,11 +181,6 @@ def create_app(config: GUIConfig) -> dash.Dash:
 
     # Build a sensible default roof config from the first available options
     initial_roof = make_default_roof(opts)
-    if mode.show_time_slider:
-        # Paraver mode: preselect every loaded trace record so the plot draws
-        # without a manual application selection (the callback re-assigns all
-        # filtered point ids to each roof on every update).
-        initial_roof.app_ids = list(app_by_id.keys())
 
     # Callable layout: Dash evaluates this on EVERY page request, so the
     # dcc.Store(ROOF_STORE) initial data reflects the latest saved settings.
@@ -207,7 +202,7 @@ def create_app(config: GUIConfig) -> dash.Dash:
 
     app.layout = serve_layout
 
-    _register_callbacks(app, config, records, opts, app_by_id, app_dropdown_options, mode)
+    _register_callbacks(app, config, records, opts, app_by_id, app_dropdown_options, paraver_data, mode)
     return app
 
 
@@ -218,6 +213,7 @@ def _register_callbacks(
     opts: FilterOptions | None = None,
     app_by_id: dict[str, ApplicationRecord] | None = None,
     app_dropdown_options: list[DropdownOption] | None = None,
+    paraver_data: ParaverData | None = None,
     mode: GUIMode = DEFAULT_GUIMODE,
 ) -> None:
     """Register all application callbacks."""
@@ -502,17 +498,21 @@ def _register_callbacks(
         )
         if mode.show_time_slider:
             window = store.paraver_state.time_window
-            points_by_id = filter_points_by_window(app_by_id or {}, window)
-            for roof in resolved_roofs:
-                roof.app_ids = list(points_by_id.keys())
+            filtered_trace = filter_trace_by_window(paraver_data.trace, window) if paraver_data is not None else None
+            figure = build_paraver_figure(
+                resolved_roofs,
+                records or [],
+                paraver_data,
+                filtered_trace,
+                settings=store.settings,
+            )
         else:
-            points_by_id = app_by_id or {}
-        figure = build_roofline_figure(
-            resolved_roofs,
-            records or [],
-            points_by_id,
-            settings=store.settings,
-        )
+            figure = build_roofline_figure(
+                resolved_roofs,
+                records or [],
+                app_by_id or {},
+                settings=store.settings,
+            )
         figure_dict = cast("dict[str, Any]", figure.to_dict())
         _tr(f"_update_plot exit traces={len(figure_dict.get('data', []))}")
         return figure_dict
@@ -639,10 +639,13 @@ def _register_callbacks(
             if not n_clicks:
                 raise PreventUpdate
             store = RoofStore.from_dict(store_data or {})
-            windowed = filter_points_by_window(app_by_id or {}, store.paraver_state.time_window)
-            points = [p for rec in windowed.values() for p in rec.points]
+            windowed = (
+                filter_trace_by_window(paraver_data.trace, store.paraver_state.time_window)
+                if paraver_data is not None
+                else pd.DataFrame()
+            )
             try:
-                content = serialize_paraver_export(points)
+                content = serialize_paraver_export(windowed)
             except NotImplementedError as exc:
                 return None, f"Export not yet implemented: {exc}"
             # Equivalent to dcc.send_string(content, filename=EXPORT_FILENAME) — built

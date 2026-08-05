@@ -19,11 +19,15 @@ from carm_roofline.paraver.counters import (
     memory_names,
 )
 from carm_roofline.paraver.loading import (
+    CODE_WINDOW_MODE,
+    GRADIENT_WINDOW_MODE,
     METRIC_COLUMNS,
     TIME_SCALE_FACTORS,
     TRACE_COLUMNS,
     WINDOW_CSV_COLUMNS,
     ParaverHeader,
+    ParaverWindowMode,
+    default_legend_path,
     load_legend_csv,
     load_window_csv,
     parse_paraver_header,
@@ -43,7 +47,9 @@ from carm_roofline.paraver.pipeline import (
 )
 
 __all__ = [
+    "CODE_WINDOW_MODE",
     "COUNTER_CSV_COLUMNS",
+    "GRADIENT_WINDOW_MODE",
     "INTEL_COUNTERS",
     "METRIC_COLUMNS",
     "TEMPLATE_FILENAME",
@@ -52,12 +58,14 @@ __all__ = [
     "WINDOW_CSV_COLUMNS",
     "CounterSpec",
     "ParaverHeader",
+    "ParaverWindowMode",
     "attach_state_codes",
     "build_trace_table",
     "bytes_weights",
     "compute_trace_metrics",
     "configs_dir",
     "counter_config_template",
+    "default_legend_path",
     "flops_weights",
     "fp_names",
     "load_counter_data",
