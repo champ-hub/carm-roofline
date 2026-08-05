@@ -64,9 +64,7 @@ def test_trace_time_range_empty_returns_none() -> None:
     assert trace_time_range(_trace_frame().iloc[0:0]) is None
 
 
-def test_paraver_provider_loads_code_mode_trace_with_legend(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_paraver_provider_loads_code_mode_trace_with_legend(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """ParaverProvider maps code-mode rows to legend entries on a trace table."""
     # Dummy .prv file — only needs to exist on disk for the provider check.
     trace = tmp_path / "t.prv"
@@ -76,8 +74,7 @@ def test_paraver_provider_loads_code_mode_trace_with_legend(
     # build_trace_table can attach state codes.
     window_csv = tmp_path / "window.csv"
     window_csv.write_text(
-        f"#20260803:CSV:RUNAPP:{trace.resolve()}:nanoseconds:window_in_code_mode\n"
-        "1.1.1\t0.0\t1000000000.0\t1.0\n",
+        f"#20260803:CSV:RUNAPP:{trace.resolve()}:nanoseconds:window_in_code_mode\n1.1.1\t0.0\t1000000000.0\t1.0\n",
         encoding="utf-8",
     )
     (tmp_path / "window.legend.csv").write_text('1.000000 "Running" 0,0,255\n', encoding="utf-8")
@@ -124,9 +121,10 @@ def test_paraver_provider_loads_code_mode_trace_with_legend(
     assert data.time_unit == "nanoseconds"
     assert data.prv_path == str(trace.resolve())
 
-    # Label derives from file stems.
-    assert "t" in data.label
-    assert "window.csv" in data.label
+    # Code-mode label names the trace; the window name stays out (legend entries
+    # already carry the state names, so the label only appears in tooltips).
+    assert data.label == "t"
+    assert "window" not in data.label
 
     # The legend was loaded and matched the single trace row.
     assert len(data.legend) == 1
@@ -203,14 +201,11 @@ def test_paraver_provider_legend_labels_align_to_state_not_position(
     assert data.trace["legend_color"].tolist() == ["rgb(235,0,0)", "rgb(0,0,255)"]
 
 
-def test_paraver_provider_gradient_mode_loads_without_legend(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_paraver_provider_gradient_mode_loads_without_legend(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Gradient-mode windows need no legend and carry no legend columns."""
     window_csv = tmp_path / "window.csv"
     window_csv.write_text(
-        "#20260803:CSV:RUNAPP:/p/t.prv:microseconds:window_in_null_gradient_mode\n"
-        "1.1.1\t0.0\t1000000.0\t1.0\n",
+        "#20260803:CSV:RUNAPP:/p/t.prv:microseconds:window_in_null_gradient_mode\n1.1.1\t0.0\t1000000.0\t1.0\n",
         encoding="utf-8",
     )
     trace = tmp_path / "t.prv"
@@ -234,6 +229,37 @@ def test_paraver_provider_gradient_mode_loads_without_legend(
     assert data.window_mode == ParaverWindowMode.GRADIENT
     assert data.legend is None
     assert "legend_label" not in data.trace.columns
+    # Gradient label falls back to the bare CSV stem (no app suffix to strip).
+    assert data.label == "window"
+
+
+def test_paraver_provider_gradient_label_strips_app_suffix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gradient legend entry drops the app stem wxparaver appends to window CSVs."""
+    trace = tmp_path / "t.prv"
+    trace.write_text("#Paraver dummy\n")
+    window_csv = tmp_path / "Instructions_per_cycle_t.csv"
+    window_csv.write_text(
+        f"#20260803:CSV:RUNAPP:{trace.resolve()}:microseconds:window_in_null_gradient_mode\n"
+        "1.1.1\t0.0\t1000000.0\t1.0\n",
+        encoding="utf-8",
+    )
+
+    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+        out = Path(output_dir)
+        (out / "fp-avx2-dp.csv").write_text(
+            f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_null_gradient_mode\n1.1.1\t0.0\t1000000.0\t4\n",
+            encoding="utf-8",
+        )
+        (out / "mem-loads.csv").write_text(
+            f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_null_gradient_mode\n1.1.1\t0.0\t1000000.0\t2\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", _fake_run_paramedir)
+    monkeypatch.setattr("shutil.which", lambda _x: "/usr/bin/paramedir")
+
+    data = ParaverProvider(trace, window_csv).load()
+    assert data.label == "Instructions_per_cycle"
 
 
 def test_paraver_provider_missing_paramedir_raises_user_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

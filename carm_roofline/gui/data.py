@@ -904,8 +904,12 @@ def _format_paraver_tooltip(label: str, row: Any, state_label: str | None) -> st
     """Rich HTML tooltip for a trace-table row; row is a pandas named tuple."""
     dur = float(row.duration_s)
     parts = [f"<b>{label}</b>", f"<i>{row.thread_id}</i>"]
-    if state_label is not None:
-        parts += ["<b>Paraver State</b>", f"  {state_label}"]
+    value = float(row.state_code)
+    if not math.isnan(value):
+        shown = f"{value:g}" if value.is_integer() else f"{value}"
+        if state_label is not None:
+            shown = f"{shown} ({state_label})"
+        parts += ["<b>Paraver Value</b>", f"  {shown}"]
     parts += [
         "<b>Performance</b>",
         f"  Arithmetic Intensity: {float(row.ai):.3f} OPS/Byte",

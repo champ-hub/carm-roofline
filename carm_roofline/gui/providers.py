@@ -45,7 +45,10 @@ class ParaverData:
     ``trace`` carries TRACE_COLUMNS; in code mode it additionally carries
     ``legend_label`` (str) and ``legend_color`` (str "rgb(r,g,b)") per row, NaN
     for rows whose state_code no legend range covers. ``window_mode`` is a
-    :class:`ParaverWindowMode` member (``CODE`` | ``GRADIENT``).
+    :class:`ParaverWindowMode` member (``CODE`` | ``GRADIENT``). ``label`` is
+    the short display name: the window name with its app suffix stripped
+    (gradient mode, where the legend entry names the counter) or the trace stem
+    (code mode, where the legend already names the states).
     """
 
     trace: pd.DataFrame
@@ -156,15 +159,33 @@ class ParaverProvider:
             )
 
         trace_stem = self._trace_path.stem
-        window_name = self._window_csv_path.name
+        if window_mode == ParaverWindowMode.GRADIENT:
+            # The legend entry names the gradient window's counter; the app is known.
+            label = _window_display_name(self._window_csv_path.name, trace_stem)
+        else:
+            # Legend entries are the state names; the label names the trace in tooltips.
+            label = trace_stem
         return ParaverData(
             trace=trace,
-            label=f"{trace_stem} — {window_name}",
+            label=label,
             window_mode=window_mode,
             time_unit=header.time_unit,
             prv_path=header.prv_path,
             legend=legend,
         )
+
+
+def _window_display_name(window_csv_name: str, trace_stem: str) -> str:
+    """Short window name with wxparaver's app suffix stripped.
+
+    Exported window CSVs are named ``<window name>_<trace stem>.csv``; dropping
+    the suffix keeps the display name free of the app name the user already
+    knows. Falls back to the bare CSV stem when the suffix is absent.
+    """
+    suffix = f"_{trace_stem}.csv"
+    if window_csv_name.endswith(suffix):
+        return window_csv_name[: -len(suffix)]
+    return window_csv_name.removesuffix(".csv")
 
 
 def filter_trace_by_window(trace: pd.DataFrame, window: tuple[float, float] | None) -> pd.DataFrame:

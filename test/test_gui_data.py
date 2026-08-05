@@ -367,6 +367,8 @@ def test_build_paraver_figure_code_mode_groups_by_legend() -> None:
     assert list(markers[0].y) == [100.0 / 1e9]
     assert list(markers[1].x) == [10.0, 10.0]
     assert list(markers[1].y) == [200.0 / 1e9, 300.0 / 1e9]
+    # Tooltip row: raw paraver value (1.0 renders as 1) with the semantic state label in parens.
+    assert "<b>Paraver Value</b><br>  1 (Running)" in markers[0].customdata[0]
 
 
 def test_build_paraver_figure_gradient_mode_single_trace() -> None:
@@ -390,6 +392,28 @@ def test_build_paraver_figure_gradient_mode_single_trace() -> None:
     assert m.marker.colorscale[0] == (0.0, "#440154")
     assert m.marker.colorscale[-1] == (1.0, "#fde725")
     assert m.marker.showscale is False
+    # Gradient tooltips carry the raw value the color encodes (1.0 -> 1, 8.0 -> 8).
+    assert "<b>Paraver Value</b><br>  1" in m.customdata[0]
+    assert "<b>Paraver Value</b><br>  8" in m.customdata[1]
+
+
+def test_build_paraver_figure_tooltip_omits_nan_value() -> None:
+    """Rows with NaN state code omit the Paraver Value row from their tooltip."""
+    trace = _paraver_trace()
+    trace["state_code"] = [1.0, float("nan"), 8.0]
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.GRADIENT,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace)
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert len(markers) == 1
+    assert "<b>Paraver Value</b>" in markers[0].customdata[0]
+    assert "<b>Paraver Value</b>" not in markers[0].customdata[1]
 
 
 def test_build_paraver_figure_skips_unmatched_rows() -> None:
