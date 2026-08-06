@@ -92,8 +92,9 @@ class ParaverID(ID):
 
 
 class ExportPanelID(ID):
-    """IDs for the export-to-paraver panel."""
+    """IDs for the paraver panel (export + filtering controls)."""
 
     BTN_EXPORT_POINTS = "btn-export-points"
     STATUS = "export-panel-status"
     DOWNLOAD = "export-download"
+    SLIDER_AI_THRESHOLD = "slider-ai-threshold"

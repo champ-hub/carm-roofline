@@ -28,6 +28,12 @@ from carm_roofline.gui.ids import (
     SidebarID,
     StoreID,
 )
+from carm_roofline.gui.providers import (
+    AI_FILTER_DEFAULT_AI,
+    AI_FILTER_LOG_STEP,
+    AI_FILTER_MAX_AI,
+    AI_FILTER_OFF_AI,
+)
 from carm_roofline.roofline_assembly import FilterOptions
 
 # Static fallback options for dropdowns (overridden at runtime when data is loaded).
@@ -182,6 +188,20 @@ _SLIDER_CONTROLS: list[tuple[str, str, str, dict[str, Any]]] = [
     ),
 ]
 
+# Paraver AI-filter slider. Positions are log10(ai threshold in OPS/Byte),
+# derived from the canonical filter constants in providers.py so the slider
+# geometry can never drift from the filter semantics.
+AI_FILTER_LOG_MIN = math.log10(AI_FILTER_OFF_AI)  # leftmost position: filtering off
+AI_FILTER_LOG_DEFAULT = math.log10(AI_FILTER_DEFAULT_AI)  # default filter position
+AI_FILTER_LOG_MAX = math.log10(AI_FILTER_MAX_AI)  # rightmost position
+AI_FILTER_MARKS = {
+    AI_FILTER_LOG_MIN: "Off",
+    AI_FILTER_LOG_DEFAULT: "1e-5",
+    -4.0: "1e-4",
+    -3.0: "1e-3",
+    AI_FILTER_LOG_MAX: "1e-2",
+}
+
 
 def _build_settings_switch(label: str, id_: str, value: bool) -> html.Div:
     return html.Div(
@@ -194,6 +214,7 @@ def _build_settings_switch(label: str, id_: str, value: bool) -> html.Div:
 
 
 def _build_settings_slider(label: str, id_: str, value: float, **kwargs: Any) -> html.Div:
+    tooltip = kwargs.pop("tooltip", {"placement": "bottom", "always_visible": False})
     return html.Div(
         className="settings-slider-row",
         children=[
@@ -202,7 +223,7 @@ def _build_settings_slider(label: str, id_: str, value: float, **kwargs: Any) ->
                 id=id_,
                 value=value,
                 **kwargs,
-                tooltip={"placement": "bottom", "always_visible": True},
+                tooltip=tooltip,
             ),
         ],
     )
@@ -241,7 +262,7 @@ def build_navbar(active_panel: ActivePanel, mode: GUIMode = GUIMode.CARM) -> htm
                     *(
                         [
                             html.Button(
-                                "Paraver Export",
+                                "Paraver",
                                 id=NavbarID.BTN_EXPORT,
                                 className=f"navbar-btn{' navbar-btn--active' if export_active else ''}",
                                 n_clicks=0,
@@ -569,20 +590,54 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
 
 
 def build_export_panel(store: RoofStore) -> html.Div:
-    """Export panel: buttons for writing the displayed data back to paraver."""
+    """Paraver panel: export and filtering controls grouped into accordion sections."""
+    ai_log = (
+        round(math.log10(store.paraver_state.ai_threshold), 2)
+        if store.paraver_state.ai_threshold is not None
+        else AI_FILTER_LOG_MIN
+    )
     return html.Div(
         className="export-panel",
         style={"display": "block"} if store.active_panel == ActivePanel.EXPORT else {"display": "none"},
         children=[
-            html.H5("Export to Paraver", className="panel-header"),
-            html.Button(
-                "Export visible points",
-                id=ExportPanelID.BTN_EXPORT_POINTS,
-                className="btn-export-points",
-                n_clicks=0,
+            html.H5("Paraver", className="panel-header"),
+            dbc.Accordion(
+                children=[
+                    dbc.AccordionItem(
+                        title="Export",
+                        item_id="export",
+                        children=[
+                            html.Button(
+                                "Export visible points",
+                                id=ExportPanelID.BTN_EXPORT_POINTS,
+                                className="btn-export-points",
+                                n_clicks=0,
+                            ),
+                            html.Div(id=ExportPanelID.STATUS, className="export-panel-status"),
+                            dcc.Download(id=ExportPanelID.DOWNLOAD),
+                        ],
+                    ),
+                    dbc.AccordionItem(
+                        title="Filtering",
+                        item_id="filtering",
+                        children=[
+                            _build_settings_slider(
+                                "Minimum arithmetic intensity",
+                                ExportPanelID.SLIDER_AI_THRESHOLD,
+                                ai_log,
+                                min=AI_FILTER_LOG_MIN,
+                                max=AI_FILTER_LOG_MAX,
+                                step=AI_FILTER_LOG_STEP,
+                                marks=AI_FILTER_MARKS,
+                                tooltip={"placement": "bottom", "transform": "aiThreshold"},
+                            ),
+                        ],
+                    ),
+                ],
+                always_open=True,
+                active_item=["export", "filtering"],
+                start_collapsed=False,
             ),
-            html.Div(id=ExportPanelID.STATUS, className="export-panel-status"),
-            dcc.Download(id=ExportPanelID.DOWNLOAD),
         ],
     )
 

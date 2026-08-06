@@ -13,6 +13,7 @@ from dash.exceptions import PreventUpdate
 
 from carm_roofline.core.error import UserError
 from carm_roofline.gui.components import (
+    AI_FILTER_LOG_MIN,
     build_carm_view_panel,
     build_export_panel,
     build_layout,
@@ -51,6 +52,7 @@ from carm_roofline.gui.providers import (
     BenchmarkAppsProvider,
     ParaverData,
     ParaverProvider,
+    filter_trace_by_ai,
     filter_trace_by_window,
     trace_time_range,
 )
@@ -498,6 +500,8 @@ def _register_callbacks(
         if mode.show_time_slider:
             window = store.paraver_state.time_window
             filtered_trace = filter_trace_by_window(paraver_data.trace, window) if paraver_data is not None else None
+            if filtered_trace is not None:
+                filtered_trace = filter_trace_by_ai(filtered_trace, store.paraver_state.ai_threshold)
             figure = build_paraver_figure(
                 resolved_roofs,
                 records or [],
@@ -623,6 +627,21 @@ def _register_callbacks(
 
     # 19. Export visible points (paraver mode only)
     if mode.has_export_tab:
+        # 19b. AI-filter slider -> per-session threshold in ROOF_STORE
+        @app.callback(
+            Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
+            Input(ExportPanelID.SLIDER_AI_THRESHOLD, "value"),
+            State(StoreID.ROOF_STORE, "data"),
+            prevent_initial_call=True,
+        )
+        def _update_ai_filter(
+            value: float | None,
+            store_data: dict[str, Any] | None,
+        ) -> dict[str, Any]:
+            store = RoofStore.from_dict(store_data or {})
+            # Leftmost slider position (log10 == AI_FILTER_LOG_MIN) means "off".
+            store.paraver_state.ai_threshold = None if value is None or value <= AI_FILTER_LOG_MIN else 10.0**value
+            return store.to_dict()
 
         @app.callback(
             Output(ExportPanelID.DOWNLOAD, "data"),

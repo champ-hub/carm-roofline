@@ -10,8 +10,11 @@ import pytest
 
 from carm_roofline.core.error import UserError
 from carm_roofline.gui.providers import (
+    AI_FILTER_DEFAULT_AI,
+    AI_FILTER_OFF_AI,
     BenchmarkAppsProvider,
     ParaverProvider,
+    filter_trace_by_ai,
     filter_trace_by_window,
     trace_time_range,
 )
@@ -52,6 +55,50 @@ def test_filter_trace_by_window_empty_window_returns_empty() -> None:
     """A window covering no timestamp yields an empty frame."""
     result = filter_trace_by_window(_trace_frame(), (20.0, 30.0))
     assert result.empty
+
+
+def test_filter_trace_by_ai_keeps_rows_above_threshold() -> None:
+    """Threshold 1e-3 keeps only rows with ai >= 1e-3."""
+    trace = _trace_frame()
+    trace["ai"] = [1e-4, 1e-3, 1e-2]
+    result = filter_trace_by_ai(trace, 1e-3)
+    assert result["ai"].tolist() == [1e-3, 1e-2]
+
+
+def test_filter_trace_by_ai_none_returns_same_trace() -> None:
+    """A None threshold returns the input frame unchanged (same object)."""
+    trace = _trace_frame()
+    assert filter_trace_by_ai(trace, None) is trace
+
+
+def test_filter_trace_by_ai_default_threshold_is_active() -> None:
+    """Threshold == AI_FILTER_DEFAULT_AI (the 1e-5 default) is a real filter, not "off"."""
+    trace = _trace_frame()
+    trace["ai"] = [1e-6, 1e-5, 1e-4]
+    result = filter_trace_by_ai(trace, AI_FILTER_DEFAULT_AI)
+    assert result["ai"].tolist() == [1e-5, 1e-4]
+
+
+def test_filter_trace_by_ai_between_off_and_default_is_active() -> None:
+    """A threshold between the off boundary and the default (e.g. 5e-6) still filters.
+
+    Guards against the off boundary drifting back up to the default: every slider
+    position strictly right of the leftmost one must filter at its own threshold.
+    """
+    trace = _trace_frame()
+    trace["ai"] = [1e-6, 5e-6, 1e-5]
+    result = filter_trace_by_ai(trace, 5e-6)
+    assert result["ai"].tolist() == [5e-6, 1e-5]
+
+
+def test_filter_trace_by_ai_off_threshold_disables() -> None:
+    """Threshold <= AI_FILTER_OFF_AI (slider leftmost, 1e-6) disables filtering.
+
+    Pins "slider = 1e-6 => filtering off": the input frame is returned unchanged.
+    """
+    trace = _trace_frame()
+    assert filter_trace_by_ai(trace, AI_FILTER_OFF_AI) is trace
+    assert filter_trace_by_ai(trace, 5e-7) is trace
 
 
 def test_trace_time_range_spans_timestamps() -> None:

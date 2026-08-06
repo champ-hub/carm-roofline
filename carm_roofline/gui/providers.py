@@ -199,6 +199,22 @@ def filter_trace_by_window(trace: pd.DataFrame, window: tuple[float, float] | No
     return trace[(time_s >= lo) & (time_s <= hi)]
 
 
+# The GUI slider positions are log10(ai threshold in OPS/Byte); components.py
+# derives its slider geometry from these constants.
+AI_FILTER_OFF_AI = 1e-6  # thresholds at or below this disable filtering (slider leftmost)
+AI_FILTER_DEFAULT_AI = 1e-5  # default filter threshold (slider default position)
+AI_FILTER_MAX_AI = 1e-2  # slider rightmost position
+AI_FILTER_LOG_STEP = 0.2  # slider step, in log10 decades
+
+
+def filter_trace_by_ai(trace: pd.DataFrame, ai_threshold: float | None) -> pd.DataFrame:
+    """Keep rows with ai >= *ai_threshold*; None or a threshold <= AI_FILTER_OFF_AI
+    disables filtering and returns *trace* unchanged (same object)."""
+    if ai_threshold is None or ai_threshold <= AI_FILTER_OFF_AI:
+        return trace
+    return trace[trace_metric(trace, "ai") >= ai_threshold]
+
+
 def trace_time_range(trace: pd.DataFrame) -> tuple[float, float] | None:
     """Full timestamp extent of the trace, or None when it is empty."""
     if trace.empty:

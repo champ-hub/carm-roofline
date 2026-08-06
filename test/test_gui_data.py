@@ -89,18 +89,27 @@ def test_roofstore_round_trip_preserves_paraver_state() -> None:
     """ParaverState survives to_dict -> from_dict round trip; default round-trips too."""
     store = RoofStore()
     store.paraver_state.time_window = (1.0, 5.5)
+    store.paraver_state.ai_threshold = 1e-3
     restored = RoofStore.from_dict(store.to_dict())
     assert restored.paraver_state.time_window == (1.0, 5.5)
+    assert restored.paraver_state.ai_threshold == pytest.approx(1e-3)
+
+    # An explicit None (filter off) round-trips as None, not the default.
+    store.paraver_state.ai_threshold = None
+    assert RoofStore.from_dict(store.to_dict()).paraver_state.ai_threshold is None
 
     default_store = RoofStore()
     assert default_store.paraver_state.time_window is None
+    # Default is the minimum active filter (1e-5), not "no filtering".
+    assert default_store.paraver_state.ai_threshold == pytest.approx(1e-5)
     restored_default = RoofStore.from_dict(default_store.to_dict())
     assert restored_default.paraver_state.time_window is None
+    assert restored_default.paraver_state.ai_threshold == pytest.approx(1e-5)
 
-    # Old store JSON without the "paraver" key deserializes to defaults.
-    old_data = default_store.to_dict()
-    del old_data["paraver"]
-    assert RoofStore.from_dict(old_data).paraver_state.time_window is None
+    # An empty dict (e.g. the `store_data or {}` guard) falls back to field defaults.
+    empty = RoofStore.from_dict({})
+    assert empty.paraver_state.time_window is None
+    assert empty.paraver_state.ai_threshold == pytest.approx(1e-5)
 
 
 def test_build_roofline_figure_renders_application_points() -> None:

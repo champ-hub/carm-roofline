@@ -12,7 +12,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from carm_roofline.core.units import Bandwidth, Bytes, Frequency, Operations, Performance, Seconds
-from carm_roofline.gui.providers import ParaverData
+from carm_roofline.gui.providers import AI_FILTER_DEFAULT_AI, ParaverData
 from carm_roofline.output_utils import debug, warn
 from carm_roofline.paraver import ParaverWindowMode, TraceRow, trace_metric, trace_state_code, trace_text
 from carm_roofline.roofline_assembly import (
@@ -149,16 +149,21 @@ class ParaverState:
     """Per-session paraver view state. Not persisted to gui-settings.json."""
 
     time_window: tuple[float, float] | None = None  # (lo, hi) seconds; None = full range
+    ai_threshold: float | None = AI_FILTER_DEFAULT_AI  # OPS/Byte; 1e-5 default; None = filter off (slider at leftmost)
 
     def to_dict(self) -> dict[str, object]:
-        return {"time_window": list(self.time_window) if self.time_window else None}
+        return {
+            "time_window": list(self.time_window) if self.time_window else None,
+            "ai_threshold": self.ai_threshold,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ParaverState:
         window = data.get("time_window")
         if window is not None:
             window = (float(window[0]), float(window[1]))  # dcc.Store JSON round-trips tuples as lists
-        return cls(time_window=window)
+        ai = data.get("ai_threshold", AI_FILTER_DEFAULT_AI)
+        return cls(time_window=window, ai_threshold=float(ai) if ai is not None else None)
 
 
 class RoofStore:

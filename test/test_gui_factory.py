@@ -201,8 +201,10 @@ def test_create_app_paraver_wires_config_and_leaves_app_ids_empty(
     # Paraver points are plotted directly from the trace; no record ids are preselected.
     assert store_data["roofs"][0]["app_ids"] == []
 
-    # Default launch: no semantic window -> time window unset (full range).
+    # Default launch: no semantic window -> time window unset (full range);
+    # the AI filter defaults to its minimum active threshold (1e-5), not "off".
     assert store_data["paraver"]["time_window"] is None
+    assert store_data["paraver"]["ai_threshold"] == pytest.approx(1e-5)
 
 
 def test_create_app_paraver_semantic_window_sets_initial_window(
@@ -242,3 +244,48 @@ def test_create_app_without_trace_uses_carm_layout() -> None:
     from carm_roofline.gui.ids import ParaverID
 
     assert _find_component(app.layout(), ParaverID.SLIDER_TIME_WINDOW) is None
+
+
+def test_navbar_paraver_tab_label_uses_short_name() -> None:
+    """The paraver navbar button is labeled "Paraver", not "Paraver Export"."""
+    from carm_roofline.gui.components import build_navbar
+    from carm_roofline.gui.config import GUIMode
+    from carm_roofline.gui.data import ActivePanel
+    from carm_roofline.gui.ids import NavbarID
+
+    navbar = build_navbar(ActivePanel.CARM_VIEW, GUIMode.PARAVER)
+    button = _find_component(navbar, NavbarID.BTN_EXPORT)
+    assert button is not None
+    assert button.children == "Paraver"
+
+
+def test_export_panel_accordion_groups_export_and_ai_filter() -> None:
+    """The paraver panel shows Export and Filtering accordion items with the AI slider.
+
+    The slider spans log10(AI) from the "Off" limit (1e-6, a decade below 1e-5)
+    to 1e-2 with decade marks; the 1e-5 position is the default (minimum active
+    filter).
+    """
+    import dash_bootstrap_components as dbc
+
+    from carm_roofline.gui.components import build_export_panel
+    from carm_roofline.gui.data import RoofStore
+    from carm_roofline.gui.ids import ExportPanelID
+
+    panel = build_export_panel(RoofStore())
+    accordion = next(child for child in panel.children if isinstance(child, dbc.Accordion))
+    assert isinstance(accordion.children, list) and len(accordion.children) == 2
+    assert [item.title for item in accordion.children] == ["Export", "Filtering"]
+
+    export_item, filtering_item = accordion.children
+    assert _find_component(export_item, ExportPanelID.BTN_EXPORT_POINTS) is not None
+    assert _find_component(export_item, ExportPanelID.DOWNLOAD) is not None
+
+    slider = _find_component(filtering_item, ExportPanelID.SLIDER_AI_THRESHOLD)
+    assert slider is not None
+    assert slider.min == -6.0
+    assert slider.max == -2.0
+    assert slider.step == 0.2
+    # Default store state (filter at 1e-5) puts the slider on the 1e-5 position.
+    assert slider.value == -5.0
+    assert slider.marks == {-6.0: "Off", -5.0: "1e-5", -4.0: "1e-4", -3.0: "1e-3", -2.0: "1e-2"}
