@@ -14,36 +14,38 @@ pytestmark = pytest.mark.unit
 
 
 def test_guimode_carm_returns_all_default_flags() -> None:
-    """GUIMode.from_name('carm') keeps every builder call site unchanged."""
-    mode = GUIMode.from_name("carm")
+    """CARM mode keeps every builder call site unchanged."""
+    mode = GUIMode.CARM
     assert mode.show_app_dropdown is True
     assert mode.show_time_slider is False
     assert mode.has_export_tab is False
 
 
 def test_guimode_paraver_flips_all_flags() -> None:
-    """GUIMode.from_name('paraver') hides the apps dropdown, shows the slider and the export tab."""
-    mode = GUIMode.from_name("paraver")
+    """PARAVER hides the apps dropdown, shows the slider and the export tab."""
+    mode = GUIMode.PARAVER
     assert (mode.show_app_dropdown, mode.show_time_slider, mode.has_export_tab) == (False, True, True)
 
 
-def test_guimode_default_matches_carm() -> None:
-    """The default GUIMode() is identical to the CARM mode."""
-    assert GUIMode() == GUIMode.from_name("carm")
+def test_guimode_covers_exactly_the_valid_flag_combos() -> None:
+    """Every member maps to a distinct valid flag combo (no invalid states)."""
+    assert {(m.show_app_dropdown, m.show_time_slider, m.has_export_tab) for m in GUIMode} == {
+        (True, False, False),
+        (False, True, True),
+    }
 
 
 # -- GUIConfig argument parsing and validation ---------------------------------
 
 
 def _carm_namespace(**overrides: object) -> argparse.Namespace:
-    """Build a minimal CARM-mode Namespace for testing."""
+    """Build a minimal Namespace for GUI config tests."""
     ns = argparse.Namespace(
         verbose=0,
         results_dir=Path("/tmp/carm"),
         gui_host="0.0.0.0",
         gui_port=8050,
         gui_debug=False,
-        gui_mode="carm",
         paraver_trace=None,
         paraver_window_csv=None,
         paraver_use_semantic_window=False,
@@ -56,7 +58,6 @@ def _carm_namespace(**overrides: object) -> argparse.Namespace:
 def test_guiconfig_carm_defaults_do_not_validate_paraver() -> None:
     """CARM mode skips Paraver validation even with missing paraver args."""
     config = GUIConfig(_carm_namespace())
-    assert config.gui_mode == "carm"
     assert config.paraver_trace is None
     assert config.paraver_window_csv is None
 
@@ -68,16 +69,16 @@ def test_guiconfig_paraver_args_default_to_none() -> None:
     assert config.paraver_use_semantic_window is False
 
 
-def test_guiconfig_paraver_missing_trace_raises_user_error() -> None:
-    """Paraver mode with no --paraver-trace raises UserError."""
-    with pytest.raises(UserError, match="--paraver-trace is required"):
-        GUIConfig(_carm_namespace(gui_mode="paraver"))
+def test_guiconfig_trace_enables_paraver_validation() -> None:
+    """--paraver-trace alone flips Paraver validation on (window CSV then required)."""
+    with pytest.raises(UserError, match="--paraver-window-csv is required"):
+        GUIConfig(_carm_namespace(paraver_trace=Path("/tmp/t.prv")))
 
 
 def test_guiconfig_paraver_missing_window_csv_raises_user_error() -> None:
     """Paraver mode with a trace but no window CSV raises UserError."""
     with pytest.raises(UserError, match="--paraver-window-csv is required"):
-        GUIConfig(_carm_namespace(gui_mode="paraver", paraver_trace=Path("/tmp/t.prv")))
+        GUIConfig(_carm_namespace(paraver_trace=Path("/tmp/t.prv")))
 
 
 def test_guiconfig_paraver_trace_not_file_raises(tmp_path: Path) -> None:
@@ -86,7 +87,6 @@ def test_guiconfig_paraver_trace_not_file_raises(tmp_path: Path) -> None:
     with pytest.raises(UserError, match=str(missing)):
         GUIConfig(
             _carm_namespace(
-                gui_mode="paraver",
                 paraver_trace=missing,
                 paraver_window_csv=missing,
             )
@@ -101,7 +101,6 @@ def test_guiconfig_paraver_window_csv_not_file_raises(tmp_path: Path) -> None:
     with pytest.raises(UserError, match=str(window)):
         GUIConfig(
             _carm_namespace(
-                gui_mode="paraver",
                 paraver_trace=trace,
                 paraver_window_csv=window,
             )
@@ -119,7 +118,6 @@ def test_guiconfig_paraver_code_mode_requires_legend(tmp_path: Path) -> None:
     with pytest.raises(UserError, match="legend CSV not found"):
         GUIConfig(
             _carm_namespace(
-                gui_mode="paraver",
                 paraver_trace=trace,
                 paraver_window_csv=window,
             )
@@ -130,7 +128,6 @@ def test_guiconfig_paraver_code_mode_requires_legend(tmp_path: Path) -> None:
     legend.write_text('-1 "idle" 128,128,128\n')
     config = GUIConfig(
         _carm_namespace(
-            gui_mode="paraver",
             paraver_trace=trace,
             paraver_window_csv=window,
         )
@@ -146,7 +143,6 @@ def test_guiconfig_paraver_gradient_mode_skips_legend(tmp_path: Path) -> None:
     window.write_text("#ts:CSV:RUNAPP:/p/t.prv:microseconds:window_in_null_gradient_mode:\n")
     config = GUIConfig(
         _carm_namespace(
-            gui_mode="paraver",
             paraver_trace=trace,
             paraver_window_csv=window,
         )
@@ -163,7 +159,6 @@ def test_guiconfig_paraver_valid_combo_passes(tmp_path: Path) -> None:
     (tmp_path / "window.legend.csv").write_text('-1 "idle" 128,128,128\n')
     config = GUIConfig(
         _carm_namespace(
-            gui_mode="paraver",
             paraver_trace=trace,
             paraver_window_csv=window,
             paraver_use_semantic_window=True,

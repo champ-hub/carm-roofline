@@ -4,10 +4,11 @@ import argparse
 import json
 import os
 import tempfile
-from dataclasses import dataclass
+from enum import Enum, auto
 from pathlib import Path
 
 from carm_roofline.arguments import InsertsArguments, add_verbose_argument
+from carm_roofline.core.error import UserError
 from carm_roofline.gui.data import GUISettings
 from carm_roofline.output_utils import warn
 from carm_roofline.paraver import ParaverWindowMode, default_legend_path, parse_paraver_header
@@ -24,7 +25,6 @@ class GUIConfig(InsertsArguments):
         self.gui_host: str = args.gui_host
         self.gui_port: int = args.gui_port
         self.gui_debug: bool = args.gui_debug
-        self.gui_mode: str = args.gui_mode
         self.paraver_trace: Path | None = args.paraver_trace
 
         # Paraver-mode arguments.
@@ -47,25 +47,16 @@ class GUIConfig(InsertsArguments):
         parser.add_argument("--gui-port", type=int, default=8050, help="Port for the Dash server")
         parser.add_argument("--gui-debug", action="store_true", help="Enable Dash debug mode")
         parser.add_argument(
-            "--gui-mode",
-            choices=("carm", "paraver"),
-            default="carm",
-            help=(
-                "GUI mode: 'carm' (points from benchmarked applications) or "
-                "'paraver' (points from an external paraver trace)"
-            ),
-        )
-        parser.add_argument(
             "--paraver-trace",
             type=Path,
             default=None,
-            help="Path to the paraver trace file (only used with --gui-mode paraver)",
+            help="Path to the paraver trace file; enables Paraver GUI mode when given",
         )
         parser.add_argument(
             "--paraver-window-csv",
             type=Path,
             default=None,
-            help="Path to the Paraver window/mask CSV (required with --gui-mode paraver)",
+            help="Path to the Paraver window/mask CSV (required when --paraver-trace is given)",
         )
         parser.add_argument(
             "--paraver-use-semantic-window",
@@ -75,14 +66,11 @@ class GUIConfig(InsertsArguments):
 
     def _validate_paraver_args(self) -> None:
         """Validate Paraver-only CLI requirements, raising UserError for invalid combos."""
-        if self.gui_mode != "paraver":
-            return
-        from carm_roofline.core.error import UserError
-
         if self.paraver_trace is None:
-            raise UserError("--paraver-trace is required with --gui-mode paraver")
+            return
+
         if self.paraver_window_csv is None:
-            raise UserError("--paraver-window-csv is required with --gui-mode paraver")
+            raise UserError("--paraver-window-csv is required when --paraver-trace is given")
         if not self.paraver_trace.is_file():
             raise UserError(f"paraver trace file not found: {self.paraver_trace}")
         if not self.paraver_window_csv.is_file():
@@ -96,23 +84,26 @@ class GUIConfig(InsertsArguments):
                 raise UserError(f"paraver legend CSV not found: {legend}")
 
 
-@dataclass(frozen=True)
-class GUIMode:
-    """UI deltas of the active mode. CARM defaults keep every builder call site unchanged."""
+class GUIMode(Enum):
+    """Dashboard UI mode: CARM (benchmark points) or PARAVER (external trace)."""
 
-    show_app_dropdown: bool = True
-    show_time_slider: bool = False
-    has_export_tab: bool = False
+    CARM = auto()
+    PARAVER = auto()
 
-    @classmethod
-    def from_name(cls, name: str) -> GUIMode:
-        if name == "paraver":
-            return cls(show_app_dropdown=False, show_time_slider=True, has_export_tab=True)
-        return cls()
+    @property
+    def show_app_dropdown(self) -> bool:
+        """Whether the apps dropdown (benchmark applications) is shown."""
+        return self is GUIMode.CARM
 
+    @property
+    def show_time_slider(self) -> bool:
+        """Whether the Paraver time-window slider is shown."""
+        return self is GUIMode.PARAVER
 
-# Module-level singleton for default argument values (ruff B008).
-DEFAULT_GUIMODE = GUIMode()
+    @property
+    def has_export_tab(self) -> bool:
+        """Whether the Paraver export tab is available."""
+        return self is GUIMode.PARAVER
 
 
 def gui_settings_path() -> Path:

@@ -19,7 +19,6 @@ from carm_roofline.gui.components import (
     build_settings_panel,
 )
 from carm_roofline.gui.config import (
-    DEFAULT_GUIMODE,
     GUIConfig,
     GUIMode,
     gui_settings_path,
@@ -140,7 +139,7 @@ def create_app(config: GUIConfig) -> dash.Dash:
     # set dash logging to show all callbacks
     logging.getLogger("dash").setLevel(logging.DEBUG)
     # Load all benchmark records from results directory
-    mode = GUIMode.from_name(config.gui_mode)
+    mode = GUIMode.PARAVER if config.paraver_trace is not None else GUIMode.CARM
 
     records: list[BenchmarkRecord] = []
     if config.results_dir.exists():
@@ -214,7 +213,7 @@ def _register_callbacks(
     app_by_id: dict[str, ApplicationRecord] | None = None,
     app_dropdown_options: list[DropdownOption] | None = None,
     paraver_data: ParaverData | None = None,
-    mode: GUIMode = DEFAULT_GUIMODE,
+    mode: GUIMode = GUIMode.CARM,
 ) -> None:
     """Register all application callbacks."""
     _cb_seq: int = 0

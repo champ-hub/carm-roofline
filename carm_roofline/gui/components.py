@@ -7,7 +7,7 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html
 
 from carm_roofline.core.units import Frequency
-from carm_roofline.gui.config import DEFAULT_GUIMODE, GUIMode
+from carm_roofline.gui.config import GUIMode
 from carm_roofline.gui.data import (
     COMPUTE_INST_OPTIONS,
     DATA_TYPE_OPTIONS,
@@ -208,7 +208,7 @@ def _build_settings_slider(label: str, id_: str, value: float, **kwargs: Any) ->
     )
 
 
-def build_navbar(active_panel: ActivePanel, mode: GUIMode = DEFAULT_GUIMODE) -> html.Div:
+def build_navbar(active_panel: ActivePanel, mode: GUIMode = GUIMode.CARM) -> html.Div:
     """Black top navbar with logo and panel-toggle buttons."""
     carm_view_active = active_panel == ActivePanel.CARM_VIEW
     settings_active = active_panel == ActivePanel.SETTINGS
@@ -266,7 +266,7 @@ def build_sidebar(
     store: RoofStore,
     roof_options: FilterOptions | None = None,
     per_roof_app_options: list[list[DropdownOption]] | None = None,
-    mode: GUIMode = DEFAULT_GUIMODE,
+    mode: GUIMode = GUIMode.CARM,
 ) -> html.Div:
     """Left sidebar containing settings or data-selection panel."""
     children = [
@@ -587,7 +587,7 @@ def build_export_panel(store: RoofStore) -> html.Div:
     )
 
 
-def build_plot_area(mode: GUIMode = DEFAULT_GUIMODE, trace_bounds: tuple[float, float] | None = None) -> html.Div:
+def build_plot_area(mode: GUIMode = GUIMode.CARM, trace_bounds: tuple[float, float] | None = None) -> html.Div:
     """The main plotting area with a Graph component."""
     from carm_roofline.gui.data import build_roofline_figure
 
@@ -634,7 +634,7 @@ def build_layout(
     store: RoofStore,
     roof_options: FilterOptions | None = None,
     per_roof_app_options: list[list[DropdownOption]] | None = None,
-    mode: GUIMode = DEFAULT_GUIMODE,
+    mode: GUIMode = GUIMode.CARM,
     trace_bounds: tuple[float, float] | None = None,
 ) -> html.Div:
     """Top-level application layout."""

@@ -25,7 +25,6 @@ def _paraver_namespace(trace: Path, window: Path, use_semantic_window: bool = Fa
         gui_host="0.0.0.0",
         gui_port=8050,
         gui_debug=False,
-        gui_mode="paraver",
         paraver_trace=trace,
         paraver_window_csv=window,
         paraver_use_semantic_window=use_semantic_window,
@@ -94,7 +93,7 @@ def test_paraver_time_slider_uses_explicit_step() -> None:
     from carm_roofline.gui.config import GUIMode
     from carm_roofline.gui.ids import ParaverID
 
-    div = build_plot_area(GUIMode.from_name("paraver"), (0.0, 2.0))
+    div = build_plot_area(GUIMode.PARAVER, (0.0, 2.0))
     slider = _find_component(div, ParaverID.SLIDER_TIME_WINDOW)
     assert slider is not None
     assert isinstance(slider.step, float)
@@ -112,7 +111,7 @@ def test_paraver_time_slider_degenerate_range_keeps_positive_step() -> None:
     from carm_roofline.gui.config import GUIMode
     from carm_roofline.gui.ids import ParaverID
 
-    div = build_plot_area(GUIMode.from_name("paraver"), (1.5, 1.5))
+    div = build_plot_area(GUIMode.PARAVER, (1.5, 1.5))
     slider = _find_component(div, ParaverID.SLIDER_TIME_WINDOW)
     assert slider is not None
     assert slider.step == 1.0
@@ -129,7 +128,7 @@ def test_paraver_time_slider_marks_are_readable() -> None:
     from carm_roofline.gui.config import GUIMode
     from carm_roofline.gui.ids import ParaverID
 
-    div = build_plot_area(GUIMode.from_name("paraver"), (0.0, 0.26458415300000004))
+    div = build_plot_area(GUIMode.PARAVER, (0.0, 0.26458415300000004))
     slider = _find_component(div, ParaverID.SLIDER_TIME_WINDOW)
     assert slider is not None
     marks = slider.marks
@@ -225,3 +224,21 @@ def test_create_app_paraver_semantic_window_sets_initial_window(
     store_data = _find_store_data(app.layout(), StoreID.ROOF_STORE)
     assert store_data is not None
     assert store_data["paraver"]["time_window"] == [0.0, 2.0]
+
+
+def test_create_app_without_trace_uses_carm_layout() -> None:
+    """No --paraver-trace means CARM mode: the Paraver time-window slider is absent."""
+    ns = argparse.Namespace(
+        verbose=0,
+        results_dir=Path("/tmp/carm"),
+        gui_host="0.0.0.0",
+        gui_port=8050,
+        gui_debug=False,
+        paraver_trace=None,
+        paraver_window_csv=None,
+        paraver_use_semantic_window=False,
+    )
+    app = create_app(GUIConfig(ns))
+    from carm_roofline.gui.ids import ParaverID
+
+    assert _find_component(app.layout(), ParaverID.SLIDER_TIME_WINDOW) is None
