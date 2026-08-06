@@ -267,6 +267,7 @@ def test_export_panel_accordion_groups_export_and_ai_filter() -> None:
     filter).
     """
     import dash_bootstrap_components as dbc
+    from dash import dcc
 
     from carm_roofline.gui.components import build_export_panel
     from carm_roofline.gui.data import RoofStore
@@ -278,8 +279,26 @@ def test_export_panel_accordion_groups_export_and_ai_filter() -> None:
     assert [item.title for item in accordion.children] == ["Export", "Filtering"]
 
     export_item, filtering_item = accordion.children
-    assert _find_component(export_item, ExportPanelID.BTN_EXPORT_POINTS) is not None
-    assert _find_component(export_item, ExportPanelID.DOWNLOAD) is not None
+    for btn_id, status_id in (
+        (ExportPanelID.BTN_EXPORT_PERFORMANCE, ExportPanelID.STATUS_PERFORMANCE),
+        (ExportPanelID.BTN_EXPORT_AI, ExportPanelID.STATUS_AI),
+        (ExportPanelID.BTN_EXPORT_ROOF_LABELS, ExportPanelID.STATUS_ROOF_LABELS),
+        (ExportPanelID.BTN_EXPORT_REGION, ExportPanelID.STATUS_REGION),
+        (ExportPanelID.BTN_EXPORT_PROXIMITY, ExportPanelID.STATUS_PROXIMITY),
+    ):
+        assert _find_component(export_item, btn_id) is not None
+        assert _find_component(export_item, status_id) is not None
+
+    # Exports are written to disk: the Export item holds exactly the five
+    # button+status rows, with no dcc.Download component left over.
+    def _contains_download(node: Any) -> bool:
+        if isinstance(node, dcc.Download):
+            return True
+        children = getattr(node, "children", None)
+        return isinstance(children, list) and any(_contains_download(c) for c in children)
+
+    assert not _contains_download(export_item)
+    assert len(export_item.children) == 5  # five export rows
 
     slider = _find_component(filtering_item, ExportPanelID.SLIDER_AI_THRESHOLD)
     assert slider is not None

@@ -144,6 +144,26 @@ def make_default_roof(opts: FilterOptions | None = None) -> RoofConfig:
     )
 
 
+def roof_to_filter(roof: RoofConfig) -> RooflineFilter:
+    """The RooflineFilter built from a RoofConfig's user-facing fields."""
+    return RooflineFilter(
+        machine=roof.machine if roof.machine else None,
+        isa=roof.isa if roof.isa else None,
+        num_threads=roof.num_threads,
+        data_type=roof.data_type if roof.data_type else None,
+        operations=frozenset(roof.compute_insts) if roof.compute_insts else None,
+        load_store_ratio=roof.load_store_ratio if roof.load_store_ratio else None,
+        actual_frequency_hz=roof.actual_frequency_hz,
+    )
+
+
+def roof_divisor(roof: RoofConfig, settings: GUISettings) -> int:
+    """roof.num_threads when settings.normalize_by_threads and num_threads > 0 else 1."""
+    if settings.normalize_by_threads and roof.num_threads and roof.num_threads > 0:
+        return roof.num_threads
+    return 1
+
+
 @dataclass
 class ParaverState:
     """Per-session paraver view state. Not persisted to gui-settings.json."""
@@ -358,22 +378,13 @@ def _prepare_roof_figure_data(
     Returns the assembled models plus the log10 axis ranges derived from ridge
     points and peak performances, and ``y_min_gops`` for ceiling drawing.
     """
-    normalize_by_threads = settings.normalize_by_threads
     models: list[AssembledRoofline] = []
     ridge_pairs: list[tuple[float, float]] = []
     peak_perf_values: list[float] = []
 
     for roof in roofs:
-        roof_divisor = roof.num_threads if (normalize_by_threads and roof.num_threads and roof.num_threads > 0) else 1
-        flt = RooflineFilter(
-            machine=roof.machine if roof.machine else None,
-            isa=roof.isa if roof.isa else None,
-            num_threads=roof.num_threads,
-            data_type=roof.data_type if roof.data_type else None,
-            operations=frozenset(roof.compute_insts) if roof.compute_insts else None,
-            load_store_ratio=roof.load_store_ratio if roof.load_store_ratio else None,
-            actual_frequency_hz=roof.actual_frequency_hz,
-        )
+        divisor = roof_divisor(roof, settings)
+        flt = roof_to_filter(roof)
         model = assemble_roofline(records, flt)
         models.append(model)
         debug(
@@ -382,12 +393,12 @@ def _prepare_roof_figure_data(
             f"{len(model.source_timestamps)} run(s)"
         )
         if model.peak_performance_by_op:
-            peak_perf_values.append(max(p.value for p in model.peak_performance_by_op.values()) / roof_divisor)
+            peak_perf_values.append(max(p.value for p in model.peak_performance_by_op.values()) / divisor)
         rp = model.ridge_points()
         for level, ai_obj in rp.items():
             bw = model.bandwidth_by_level.get(level)
             if bw is not None:
-                ridge_pairs.append((ai_obj.value, bw.value / roof_divisor))
+                ridge_pairs.append((ai_obj.value, bw.value / divisor))
 
     # Axis ranges, log10 coordinates (Plotly "log" axis convention).
     if ridge_pairs:
@@ -454,7 +465,7 @@ def build_roofline_figure(
 
     for idx, (roof, model) in enumerate(zip(roofs, models)):
         color = _COLORS[idx % len(_COLORS)]
-        roof_divisor = roof.num_threads if (normalize_by_threads and roof.num_threads and roof.num_threads > 0) else 1
+        divisor = roof_divisor(roof, s)
 
         # Application points (drawn even when no ceiling data)
         if applications_by_id:
@@ -503,7 +514,7 @@ def build_roofline_figure(
                     )
                 )
 
-        _add_roof_ceilings(fig, roof, model, color, roof_divisor, y_min_gops, s)
+        _add_roof_ceilings(fig, roof, model, color, divisor, y_min_gops, s)
     _finalize_axes_and_layout(fig, x_range, y_range, s)
     return fig
 
@@ -806,10 +817,10 @@ def build_paraver_figure(
         x_range, y_range = _extend_ranges_to_points(x_range, y_range, trace)
     for idx, (roof, model) in enumerate(zip(roofs, models)):
         color = _COLORS[idx % len(_COLORS)]
-        roof_divisor = roof.num_threads if (s.normalize_by_threads and roof.num_threads and roof.num_threads > 0) else 1
+        divisor = roof_divisor(roof, s)
         if paraver is not None and trace is not None and not trace.empty:
             _add_paraver_point_traces(fig, paraver, trace, s, runtime_min, runtime_range)
-        _add_roof_ceilings(fig, roof, model, color, roof_divisor, y_min_gops, s)
+        _add_roof_ceilings(fig, roof, model, color, divisor, y_min_gops, s)
     _finalize_axes_and_layout(fig, x_range, y_range, s)
     return fig
 

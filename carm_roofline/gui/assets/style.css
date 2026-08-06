@@ -323,3 +323,34 @@
 .settings-slider-row .dcc-slider {
     margin-top: 8px;
 }
+
+.export-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 8px 8px 0;
+}
+
+.btn-export-mode {
+    display: block;
+    width: 100%;
+    padding: 6px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    text-align: center;
+}
+
+.btn-export-mode:hover {
+    background: #0069d9;
+}
+
+.export-panel-status {
+    font-size: 11px;
+    color: #777;
+    min-height: 0;
+    overflow-wrap: anywhere;
+}

@@ -94,7 +94,14 @@ class ParaverID(ID):
 class ExportPanelID(ID):
     """IDs for the paraver panel (export + filtering controls)."""
 
-    BTN_EXPORT_POINTS = "btn-export-points"
-    STATUS = "export-panel-status"
-    DOWNLOAD = "export-download"
+    BTN_EXPORT_PERFORMANCE = "btn-export-performance"
+    BTN_EXPORT_AI = "btn-export-ai"
+    BTN_EXPORT_ROOF_LABELS = "btn-export-roof-labels"
+    BTN_EXPORT_REGION = "btn-export-region"
+    BTN_EXPORT_PROXIMITY = "btn-export-proximity"
+    STATUS_PERFORMANCE = "export-status-performance"
+    STATUS_AI = "export-status-ai"
+    STATUS_ROOF_LABELS = "export-status-roof-labels"
+    STATUS_REGION = "export-status-region"
+    STATUS_PROXIMITY = "export-status-proximity"
     SLIDER_AI_THRESHOLD = "slider-ai-threshold"

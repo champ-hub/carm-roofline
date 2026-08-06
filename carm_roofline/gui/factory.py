@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, Callable, cast
 
 import dash
 import dash_bootstrap_components as dbc
-import pandas as pd
 from dash import ALL, Input, Output, State, callback_context, html
 from dash.exceptions import PreventUpdate
 
@@ -35,8 +35,18 @@ from carm_roofline.gui.data import (
     build_roofline_figure,
     format_roof_label,
     make_default_roof,
+    roof_divisor,
+    roof_to_filter,
 )
-from carm_roofline.gui.export import EXPORT_FILENAME, serialize_paraver_export
+from carm_roofline.gui.export import (
+    ExportModeExporter,
+    export_ai,
+    export_performance,
+    export_proximity,
+    export_region,
+    export_roof_labels,
+    write_export_files,
+)
 from carm_roofline.gui.ids import (
     CarmViewPanelID,
     ExportPanelID,
@@ -59,12 +69,25 @@ from carm_roofline.gui.providers import (
 from carm_roofline.output_utils import debug, warn
 from carm_roofline.roofline_assembly import (
     ApplicationRecord,
+    AssembledRoofline,
     BenchmarkRecord,
     FilterOptions,
     RooflineFilter,
+    assemble_roofline,
     discover_filter_options,
     load_all_benchmarks,
 )
+
+
+@dataclass(frozen=True)
+class ExportModeSpec:
+    """Wiring for one Paraver export mode: trigger button, status readout, exporter, roof requirement."""
+
+    button: ExportPanelID
+    status: ExportPanelID
+    exporter: ExportModeExporter
+    needs_roof: bool
+
 
 # Helpers
 
@@ -625,7 +648,7 @@ def _register_callbacks(
             store.paraver_state.time_window = (value[0], value[1]) if value else None
             return store.to_dict()
 
-    # 19. Export visible points (paraver mode only)
+    # 19. Export modes (paraver mode only)
     if mode.has_export_tab:
         # 19b. AI-filter slider -> per-session threshold in ROOF_STORE
         @app.callback(
@@ -643,32 +666,65 @@ def _register_callbacks(
             store.paraver_state.ai_threshold = None if value is None or value <= AI_FILTER_LOG_MIN else 10.0**value
             return store.to_dict()
 
-        @app.callback(
-            Output(ExportPanelID.DOWNLOAD, "data"),
-            Output(ExportPanelID.STATUS, "children"),
-            Input(ExportPanelID.BTN_EXPORT_POINTS, "n_clicks"),
-            State(StoreID.ROOF_STORE, "data"),
-            prevent_initial_call=True,
+        # Exports are written next to the .prv trace (legacy os.path.dirname(prv_trace_path)).
+        if config.paraver_trace is not None:
+            output_dir = Path(config.paraver_trace).parent
+        elif config.paraver_window_csv is not None:
+            output_dir = Path(config.paraver_window_csv).parent
+        else:  # pragma: no cover — paraver mode requires a trace
+            output_dir = Path.cwd()
+
+        _EXPORT_MODE_SPECS: tuple[ExportModeSpec, ...] = (
+            ExportModeSpec(
+                ExportPanelID.BTN_EXPORT_PERFORMANCE, ExportPanelID.STATUS_PERFORMANCE, export_performance, False
+            ),
+            ExportModeSpec(ExportPanelID.BTN_EXPORT_AI, ExportPanelID.STATUS_AI, export_ai, False),
+            ExportModeSpec(
+                ExportPanelID.BTN_EXPORT_ROOF_LABELS, ExportPanelID.STATUS_ROOF_LABELS, export_roof_labels, True
+            ),
+            ExportModeSpec(ExportPanelID.BTN_EXPORT_REGION, ExportPanelID.STATUS_REGION, export_region, True),
+            ExportModeSpec(ExportPanelID.BTN_EXPORT_PROXIMITY, ExportPanelID.STATUS_PROXIMITY, export_proximity, True),
         )
-        def _export_points(
-            n_clicks: int | None,
-            store_data: dict[str, Any] | None,
-        ) -> tuple[Any, str]:
-            if not n_clicks:
-                raise PreventUpdate
-            store = RoofStore.from_dict(store_data or {})
-            windowed = (
-                filter_trace_by_window(paraver_data.trace, store.paraver_state.time_window)
-                if paraver_data is not None
-                else pd.DataFrame()
+        for _spec in _EXPORT_MODE_SPECS:
+
+            @app.callback(
+                Output(_spec.status, "children"),
+                Input(_spec.button, "n_clicks"),
+                State(StoreID.ROOF_STORE, "data"),
+                prevent_initial_call=True,
             )
-            try:
-                content = serialize_paraver_export(windowed)
-            except NotImplementedError as exc:
-                return None, f"Export not yet implemented: {exc}"
-            # Equivalent to dcc.send_string(content, filename=EXPORT_FILENAME) — built
-            # as an explicit dict because the Dash stubs do not type dcc.send_string.
-            return {"content": content, "filename": EXPORT_FILENAME}, ""
+            def _export_mode(
+                n_clicks: int | None,
+                store_data: dict[str, Any] | None,
+                _spec: ExportModeSpec = _spec,
+            ) -> str:
+                if not n_clicks:
+                    raise PreventUpdate
+                if paraver_data is None:
+                    return "No paraver trace loaded."
+                store = RoofStore.from_dict(store_data or {})
+                # Exports cover the whole trace, not the filtered view (paraver
+                # needs every timestamp of the loaded window).
+                trace = paraver_data.trace
+                if trace.empty:
+                    return "Nothing to export."
+                model: AssembledRoofline | None = None
+                divisor = 1
+                if _spec.needs_roof:
+                    if not store.roofs:
+                        return "No roof configured."
+                    divisor = roof_divisor(store.roofs[0], store.settings)
+                    model = assemble_roofline(records or [], roof_to_filter(store.roofs[0]))
+                files = _spec.exporter(trace, paraver_data, model, divisor)
+                if not files:
+                    return "Nothing to export (no roof data for this mode)."
+                try:
+                    written = write_export_files(files, output_dir)
+                except OSError as exc:
+                    return f"Failed to write export to {output_dir}: {exc}"
+                for path in written:
+                    print(path, flush=True)  # noqa: T201 — legacy delivery: user pastes the path into Paraver's console
+                return ""
 
     # Collapse toggles (factory-generated)
     _register_collapse_callback(RoofCardID.BTN_COLLAPSE_ROOF, "collapsed", "toggle_collapse_roof")

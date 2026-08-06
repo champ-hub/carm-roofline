@@ -589,6 +589,17 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
     )
 
 
+def _export_row(label: str, btn_id: str, status_id: str) -> html.Div:
+    """Button + per-row status Div (no Download — exports are written to disk)."""
+    return html.Div(
+        className="export-row",
+        children=[
+            html.Button(label, id=btn_id, className="btn-export-mode", n_clicks=0),
+            html.Div(id=status_id, className="export-panel-status"),
+        ],
+    )
+
+
 def build_export_panel(store: RoofStore) -> html.Div:
     """Paraver panel: export and filtering controls grouped into accordion sections."""
     ai_log = (
@@ -607,14 +618,21 @@ def build_export_panel(store: RoofStore) -> html.Div:
                         title="Export",
                         item_id="export",
                         children=[
-                            html.Button(
-                                "Export visible points",
-                                id=ExportPanelID.BTN_EXPORT_POINTS,
-                                className="btn-export-points",
-                                n_clicks=0,
+                            _export_row(
+                                "Performance (GFLOPS)",
+                                ExportPanelID.BTN_EXPORT_PERFORMANCE,
+                                ExportPanelID.STATUS_PERFORMANCE,
                             ),
-                            html.Div(id=ExportPanelID.STATUS, className="export-panel-status"),
-                            dcc.Download(id=ExportPanelID.DOWNLOAD),
+                            _export_row("Arithmetic intensity", ExportPanelID.BTN_EXPORT_AI, ExportPanelID.STATUS_AI),
+                            _export_row(
+                                "Roof labels", ExportPanelID.BTN_EXPORT_ROOF_LABELS, ExportPanelID.STATUS_ROOF_LABELS
+                            ),
+                            _export_row(
+                                "Roofline region", ExportPanelID.BTN_EXPORT_REGION, ExportPanelID.STATUS_REGION
+                            ),
+                            _export_row(
+                                "Roof proximity", ExportPanelID.BTN_EXPORT_PROXIMITY, ExportPanelID.STATUS_PROXIMITY
+                            ),
                         ],
                     ),
                     dbc.AccordionItem(

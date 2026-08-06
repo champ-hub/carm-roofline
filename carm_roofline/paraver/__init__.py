@@ -20,11 +20,13 @@ from carm_roofline.paraver.counters import (
 )
 from carm_roofline.paraver.loading import (
     CODE_WINDOW_MODE,
+    DEFAULT_CSV_PRECISION,
     GRADIENT_WINDOW_MODE,
     METRIC_COLUMNS,
     TIME_SCALE_FACTORS,
     TRACE_COLUMNS,
     WINDOW_CSV_COLUMNS,
+    CsvPrecision,
     MetricColumn,
     ParaverHeader,
     ParaverWindowMode,
@@ -38,6 +40,7 @@ from carm_roofline.paraver.loading import (
     trace_metric,
     trace_state_code,
     trace_text,
+    window_csv_precision,
 )
 from carm_roofline.paraver.pipeline import (
     COUNTER_CSV_COLUMNS,
@@ -55,6 +58,7 @@ from carm_roofline.paraver.pipeline import (
 __all__ = [
     "CODE_WINDOW_MODE",
     "COUNTER_CSV_COLUMNS",
+    "DEFAULT_CSV_PRECISION",
     "GRADIENT_WINDOW_MODE",
     "INTEL_COUNTERS",
     "METRIC_COLUMNS",
@@ -63,6 +67,7 @@ __all__ = [
     "TRACE_COLUMNS",
     "WINDOW_CSV_COLUMNS",
     "CounterSpec",
+    "CsvPrecision",
     "MetricColumn",
     "ParaverHeader",
     "ParaverWindowMode",
@@ -90,5 +95,6 @@ __all__ = [
     "trace_metric",
     "trace_state_code",
     "trace_text",
+    "window_csv_precision",
     "write_counter_configs",
 ]

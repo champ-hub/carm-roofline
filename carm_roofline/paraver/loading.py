@@ -140,6 +140,71 @@ def load_window_csv(path: str | Path) -> pd.DataFrame:
     return frame[list(TRACE_COLUMNS)]
 
 
+@dataclass(frozen=True)
+class CsvPrecision:
+    """Fixed decimal places mirrored from the input window CSV into exported CSVs.
+
+    Paraver writes its window exports with a fixed number of decimals per column
+    (observed: 2 for every data column, 6 for the header vmin/vmax); exported
+    CARM files reproduce the input window's own precision so Paraver re-imports
+    them exactly like its own round-trip files.
+    """
+
+    time: int = 2
+    duration: int = 2
+    value: int = 2
+    header: int = 6
+
+
+DEFAULT_CSV_PRECISION = CsvPrecision()
+
+
+def _decimal_places(cell: str) -> int:
+    """Decimal digits after the last '.' in a numeric CSV cell ('0.00'→2, '15'→0).
+
+    Cells without a '.' (incl. scientific notation, which Paraver never writes)
+    count as 0.
+    """
+    cell = cell.strip()
+    if "." not in cell:
+        return 0
+    return len(cell.rsplit(".", 1)[1])
+
+
+def window_csv_precision(path: str | Path) -> CsvPrecision:
+    """Per-column decimal places of a window CSV.
+
+    Data columns (Timestamp, Duration, value) get the max decimal count over the
+    data rows, per column; the header precision comes from the vmin/vmax fields
+    of the '#' header line (parts[6]/parts[7] after ':'-split). '#'-prefixed
+    lines are never data. A file without data rows falls back to
+    DEFAULT_CSV_PRECISION.
+    """
+    header_dp = DEFAULT_CSV_PRECISION.header
+    time_dp = duration_dp = value_dp = 0
+    saw_data = False
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("#"):
+                parts = stripped.split(":")
+                if len(parts) >= 8:
+                    header_dp = max(_decimal_places(parts[6]), _decimal_places(parts[7]))
+                continue
+            cells = stripped.split("\t")
+            if len(cells) < 4:
+                continue  # malformed line: ignore (load_window_csv would have failed already)
+            saw_data = True
+            time_dp = max(time_dp, _decimal_places(cells[1]))
+            duration_dp = max(duration_dp, _decimal_places(cells[2]))
+            value_dp = max(value_dp, _decimal_places(cells[3]))
+    if not saw_data:
+        return DEFAULT_CSV_PRECISION
+    return CsvPrecision(time=time_dp, duration=duration_dp, value=value_dp, header=header_dp)
+
+
 def load_legend_csv(path: str | Path) -> pd.DataFrame:
     """Legend CSV → DataFrame[code: float64, label: str, r/g/b: int64] sorted by code.
 

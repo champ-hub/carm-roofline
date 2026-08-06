@@ -16,6 +16,8 @@ import pandas as pd
 
 from carm_roofline.core.error import UserError
 from carm_roofline.paraver import (
+    DEFAULT_CSV_PRECISION,
+    CsvPrecision,
     ParaverWindowMode,
     build_trace_table,
     default_legend_path,
@@ -25,6 +27,7 @@ from carm_roofline.paraver import (
     run_paramedir,
     trace_metric,
     trace_state_code,
+    window_csv_precision,
 )
 from carm_roofline.roofline_assembly import ApplicationRecord, load_all_applications
 
@@ -50,7 +53,9 @@ class ParaverData:
     :class:`ParaverWindowMode` member (``CODE`` | ``GRADIENT``). ``label`` is
     the short display name: the window name with its app suffix stripped
     (gradient mode, where the legend entry names the counter) or the trace stem
-    (code mode, where the legend already names the states).
+    (code mode, where the legend already names the states). ``precision``
+    carries the decimal places detected from the window CSV; every export
+    formats its numeric cells with them.
     """
 
     trace: pd.DataFrame
@@ -59,6 +64,7 @@ class ParaverData:
     time_unit: str
     prv_path: str
     legend: pd.DataFrame | None  # code/code_end/label/r/g/b; None in gradient mode
+    precision: CsvPrecision = DEFAULT_CSV_PRECISION
 
 
 class ParaverProvider:
@@ -174,6 +180,7 @@ class ParaverProvider:
             time_unit=header.time_unit,
             prv_path=header.prv_path,
             legend=legend,
+            precision=window_csv_precision(self._window_csv_path),
         )
 
 

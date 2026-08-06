@@ -8,6 +8,8 @@ import pandas as pd
 import pytest
 
 from carm_roofline.paraver.loading import (
+    CsvPrecision,
+    DEFAULT_CSV_PRECISION,
     METRIC_COLUMNS,
     TIME_SCALE_FACTORS,
     TRACE_COLUMNS,
@@ -17,6 +19,7 @@ from carm_roofline.paraver.loading import (
     load_window_csv,
     parse_paraver_header,
     time_unit_to_seconds,
+    window_csv_precision,
 )
 
 pytestmark = pytest.mark.unit
@@ -179,3 +182,48 @@ def test_load_legend_csv_malformed_line_raises(tmp_path: Path, line: str) -> Non
     path = _write(tmp_path, "legend.csv", line)
     with pytest.raises(ValueError, match="malformed legend line 1"):
         load_legend_csv(path)
+
+
+def test_window_csv_precision_reads_paraver_format(tmp_path: Path) -> None:
+    """Real Paraver window: 2 dp data columns, 6 dp header vmin/vmax."""
+    path = _write(
+        tmp_path,
+        "window.csv",
+        "#20260805180157:CSV:RUNAPP:/p/x.prv:Microseconds:window_in_null_gradient_mode:0.055993:4.599730\n"
+        "1.1.1\t0.00\t1.29\t0.00\n"
+        "1.1.1\t134056.45\t11.72\t0.52\n",
+    )
+    assert window_csv_precision(path) == CsvPrecision(2, 2, 2, 6)
+
+
+def test_window_csv_precision_per_column_max(tmp_path: Path) -> None:
+    """Per-column max over the data rows; header dp from vmin/vmax."""
+    path = _write(
+        tmp_path,
+        "window.csv",
+        "#20260805180157:CSV:RUNAPP:/p/x.prv:Microseconds:window_in_null_gradient_mode:0.1:1.5\n"
+        "1.1.1\t0.0\t1.25\t0.0001\n"
+        "1.1.1\t10.5\t1.2\t0.1\n",
+    )
+    assert window_csv_precision(path) == CsvPrecision(1, 2, 4, 1)
+
+
+def test_window_csv_precision_no_data_rows_falls_back(tmp_path: Path) -> None:
+    """A header-only file (no data rows) falls back to the defaults."""
+    path = _write(
+        tmp_path,
+        "window.csv",
+        "#20260805180157:CSV:RUNAPP:/p/x.prv:Microseconds:window_in_null_gradient_mode:0.055993:4.599730\n",
+    )
+    assert window_csv_precision(path) == DEFAULT_CSV_PRECISION
+
+
+def test_window_csv_precision_short_header_defaults(tmp_path: Path) -> None:
+    """A header with <8 ':'-fields leaves header dp at the default 6; data dp from the rows."""
+    path = _write(
+        tmp_path,
+        "window.csv",
+        "#20260805180157:CSV:RUNAPP:/p/x.prv:Microseconds:window_in_null_gradient_mode\n"
+        "1.1.1\t0.00\t1.29\t0.00\n",
+    )
+    assert window_csv_precision(path) == CsvPrecision(2, 2, 2, 6)

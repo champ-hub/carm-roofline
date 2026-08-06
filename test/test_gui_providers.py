@@ -18,7 +18,7 @@ from carm_roofline.gui.providers import (
     filter_trace_by_window,
     trace_time_range,
 )
-from carm_roofline.paraver import ParaverWindowMode
+from carm_roofline.paraver import CsvPrecision, ParaverWindowMode
 
 pytestmark = pytest.mark.unit
 
@@ -167,6 +167,11 @@ def test_paraver_provider_loads_code_mode_trace_with_legend(tmp_path: Path, monk
     assert data.window_mode == ParaverWindowMode.CODE
     assert data.time_unit == "nanoseconds"
     assert data.prv_path == str(trace.resolve())
+
+    # Precision is detected from the window CSV: row '1.1.1\t0.0\t1000000000.0\t1.0'
+    # has 1 dp per data column; the header has 6 ':'-fields so header dp falls
+    # back to 6.
+    assert data.precision == CsvPrecision(1, 1, 1, 6)
 
     # Code-mode label names the trace; the window name stays out (legend entries
     # already carry the state names, so the label only appears in tooltips).
