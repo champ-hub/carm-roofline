@@ -31,6 +31,7 @@ from carm_roofline.paraver.loading import (
     parse_paraver_header,
     time_unit_to_seconds,
 )
+from carm_roofline.paraver.progress import ProgressBar
 
 COUNTER_CSV_COLUMNS = ("thread_id", "time_s", "duration_s", "value")
 
@@ -295,13 +296,21 @@ def _window_header_unit(window_csv: str | Path) -> str:
 
 
 def build_trace_table(
-    window_csv: str | Path, counter_csv_dir: str | Path, time_unit: str | None = None
+    window_csv: str | Path,
+    counter_csv_dir: str | Path,
+    time_unit: str | None = None,
+    progress: ProgressBar | None = None,
 ) -> pd.DataFrame:
     """End-to-end pipeline: load_window_csv → load_counter_data (ValueError when the
     dir yields no counter CSVs) → merge_counter_frames → compute_trace_metrics →
     attach_state_codes → cast state_code to category → return df[TRACE_COLUMNS].
     Counter CSVs are interpreted in ``time_unit`` when given; otherwise in the
     window CSV's header unit (the unit paramedir was asked to write).
+
+    When *progress* is given, its ``total`` (provisional at construction, before
+    paramedir) is fixed to the merged burst count and the bar advances with the
+    rows processed through the metric computation, completing (100% + newline,
+    exactly once) when the metrics are done.
     """
     window = load_window_csv(window_csv)
     if time_unit is None:
@@ -310,6 +319,22 @@ def build_trace_table(
     if not frames:
         raise ValueError(f"no counter CSVs found in {counter_csv_dir}")
     bursts = merge_counter_frames(frames)
-    trace = attach_state_codes(compute_trace_metrics(bursts), window)
+    if progress is None:
+        metrics = compute_trace_metrics(bursts)
+    else:
+        progress.total = len(bursts)
+        step = max(1, len(bursts) // 100) if len(bursts) > 0 else 1
+        processed = 0
+        chunks = []
+        for start in range(0, len(bursts), step):
+            chunk = bursts.iloc[start : start + step]
+            chunks.append(compute_trace_metrics(chunk))
+            processed += len(chunk)
+            progress.update(processed)
+        # compute_trace_metrics is row-wise, so chunked calls are output-identical
+        # (thread_id keeps its category dtype and categories across slices);
+        # pd.concat([]) raises, hence the empty-input fallback.
+        metrics = pd.concat(chunks, ignore_index=True) if chunks else compute_trace_metrics(bursts)
+    trace = attach_state_codes(metrics, window)
     trace["state_code"] = trace["state_code"].astype("category")
     return trace[list(TRACE_COLUMNS)]

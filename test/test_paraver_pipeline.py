@@ -26,6 +26,7 @@ from carm_roofline.paraver.pipeline import (
     run_paramedir,
     write_counter_configs,
 )
+from carm_roofline.paraver.progress import ProgressBar
 
 pytestmark = pytest.mark.unit
 
@@ -429,6 +430,39 @@ def test_build_trace_table_end_to_end(tmp_path: Path) -> None:
     second = trace.iloc[1]
     assert second["flops"] == pytest.approx(16.0)
     assert second["state_code"] == 1.0
+
+
+def test_build_trace_table_with_progress_completes_bar_once(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # fixtures identical to test_build_trace_table_end_to_end (2-burst window/counters)
+    _write(
+        tmp_path,
+        "window.csv",
+        "#20260803170420:CSV:RUNAPP:/p/x.prv:Nanoseconds:window_in_code_mode\n"
+        "1.1.1\t0\t1000\t0.00\n"
+        "1.1.1\t1000\t1000\t1.00\n",
+    )
+    counters = tmp_path / "counters"
+    counters.mkdir()
+    _write(
+        counters,
+        "fp-avx2-dp.csv",
+        _counter_csv("Nanoseconds", "1.1.1\t0\t500\t2\n1.1.1\t1000\t500\t4\n"),
+    )
+    _write(
+        counters,
+        "mem-loads.csv",
+        _counter_csv("Nanoseconds", "1.1.1\t0\t500\t100\n1.1.1\t1000\t500\t200\n"),
+    )
+    bar = ProgressBar(total=1)  # provisional total, as set by the provider
+    trace = build_trace_table(tmp_path / "window.csv", counters, progress=bar)
+    assert bar.total == 2  # fixed to the merged burst count
+    out = capsys.readouterr().out
+    assert out.count("[##############################] 100.0%") == 1
+    assert out.endswith("[##############################] 100.0%\r\n")
+    # chunked-with-progress output is identical to the plain path
+    pd.testing.assert_frame_equal(trace, build_trace_table(tmp_path / "window.csv", counters))
 
 
 def test_build_trace_table_headerless_counters_use_window_unit(tmp_path: Path) -> None:

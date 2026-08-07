@@ -54,6 +54,7 @@ from carm_roofline.paraver.pipeline import (
     run_paramedir,
     write_counter_configs,
 )
+from carm_roofline.paraver.progress import ProgressBar
 
 __all__ = [
     "CODE_WINDOW_MODE",
@@ -71,6 +72,7 @@ __all__ = [
     "MetricColumn",
     "ParaverHeader",
     "ParaverWindowMode",
+    "ProgressBar",
     "TextColumn",
     "TraceRow",
     "attach_state_codes",

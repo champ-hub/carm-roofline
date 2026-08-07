@@ -111,7 +111,9 @@ def test_trace_time_range_empty_returns_none() -> None:
     assert trace_time_range(_trace_frame().iloc[0:0]) is None
 
 
-def test_paraver_provider_loads_code_mode_trace_with_legend(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_paraver_provider_loads_code_mode_trace_with_legend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """ParaverProvider maps code-mode rows to legend entries on a trace table."""
     # Dummy .prv file — only needs to exist on disk for the provider check.
     trace = tmp_path / "t.prv"
@@ -183,6 +185,13 @@ def test_paraver_provider_loads_code_mode_trace_with_legend(tmp_path: Path, monk
     row = data.trace.iloc[0]
     assert row["legend_label"] == "Running"
     assert row["legend_color"] == "rgb(0,0,255)"
+
+    # Progress popup protocol: the 0% line opens it before paramedir; exactly one
+    # full 100% line closes it, and nothing is printed after it.
+    out = capsys.readouterr().out
+    assert out.startswith("[                              ] 0.0%\r")
+    assert out.count("[##############################] 100.0%") == 1
+    assert out.endswith("[##############################] 100.0%\r\n")
 
     # Computed metrics (exact values depend on counter weights, but invariants hold).
     assert row["flops"] > 0

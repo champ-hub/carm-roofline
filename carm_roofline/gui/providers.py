@@ -19,6 +19,7 @@ from carm_roofline.paraver import (
     DEFAULT_CSV_PRECISION,
     CsvPrecision,
     ParaverWindowMode,
+    ProgressBar,
     build_trace_table,
     default_legend_path,
     load_legend_csv,
@@ -115,9 +116,13 @@ class ParaverProvider:
             if not shutil.which("paramedir"):
                 raise UserError("paramedir not found on PATH; install it to load Paraver traces")
 
+            # Progress popup: open at 0% before the paramedir run; build_trace_table then updates and closes it at 100%.
+            progress = ProgressBar(total=1)
+            progress.update(0)
+
             run_paramedir(self._trace_path, work_dir, header.time_unit)
 
-            trace = build_trace_table(self._window_csv_path, work_dir, header.time_unit)
+            trace = build_trace_table(self._window_csv_path, work_dir, header.time_unit, progress=progress)
         except Exception:
             shutil.rmtree(work_dir, ignore_errors=True)
             raise
