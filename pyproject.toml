@@ -54,6 +54,8 @@ all = [
 
 [project.scripts]
 carm = "carm_roofline.carm:main"
+# compatibility shim for legacy paraver entry point
+"Paraver_CARM.py" = "carm_roofline.paraver.shim:main"
 
 [project.urls]
 Homepage = "https://github.com/champ-hub/carm-roofline"
