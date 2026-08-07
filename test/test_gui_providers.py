@@ -12,9 +12,12 @@ from carm_roofline.core.error import UserError
 from carm_roofline.gui.providers import (
     AI_FILTER_DEFAULT_AI,
     AI_FILTER_OFF_AI,
+    DURATION_FILTER_DEFAULT_S,
+    DURATION_FILTER_OFF_S,
     BenchmarkAppsProvider,
     ParaverProvider,
     filter_trace_by_ai,
+    filter_trace_by_duration,
     filter_trace_by_window,
     trace_time_range,
 )
@@ -99,6 +102,38 @@ def test_filter_trace_by_ai_off_threshold_disables() -> None:
     trace = _trace_frame()
     assert filter_trace_by_ai(trace, AI_FILTER_OFF_AI) is trace
     assert filter_trace_by_ai(trace, 5e-7) is trace
+
+
+def test_filter_trace_by_duration_keeps_rows_above_threshold() -> None:
+    """Threshold 1e-3 s keeps only rows with duration_s >= 1e-3."""
+    trace = _trace_frame()
+    trace["duration_s"] = [1e-5, 1e-3, 1e-2]
+    result = filter_trace_by_duration(trace, 1e-3)
+    assert result["duration_s"].tolist() == [1e-3, 1e-2]
+
+
+def test_filter_trace_by_duration_none_returns_same_trace() -> None:
+    """A None threshold returns the input frame unchanged (same object)."""
+    trace = _trace_frame()
+    assert filter_trace_by_duration(trace, None) is trace
+
+
+def test_filter_trace_by_duration_default_threshold_is_active() -> None:
+    """Threshold == DURATION_FILTER_DEFAULT_S (the 100 us default) is a real filter, not "off"."""
+    trace = _trace_frame()
+    trace["duration_s"] = [1e-6, 1e-4, 1e-2]
+    result = filter_trace_by_duration(trace, DURATION_FILTER_DEFAULT_S)
+    assert result["duration_s"].tolist() == [1e-4, 1e-2]
+
+
+def test_filter_trace_by_duration_off_threshold_disables() -> None:
+    """Threshold <= DURATION_FILTER_OFF_S (slider leftmost, 1e-6) disables filtering.
+
+    Pins "slider = 1e-6 => filtering off": the input frame is returned unchanged.
+    """
+    trace = _trace_frame()
+    assert filter_trace_by_duration(trace, DURATION_FILTER_OFF_S) is trace
+    assert filter_trace_by_duration(trace, 5e-7) is trace
 
 
 def test_trace_time_range_spans_timestamps() -> None:

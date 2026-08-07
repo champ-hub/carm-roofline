@@ -18,6 +18,7 @@ from carm_roofline.core.error import UserError
 from carm_roofline.paraver import (
     DEFAULT_CSV_PRECISION,
     CsvPrecision,
+    MetricColumn,
     ParaverWindowMode,
     ProgressBar,
     build_trace_table,
@@ -219,12 +220,34 @@ AI_FILTER_MAX_AI = 1e-2  # slider rightmost position
 AI_FILTER_LOG_STEP = 0.2  # slider step, in log10 decades
 
 
+def _filter_trace_by_threshold(
+    trace: pd.DataFrame, metric: MetricColumn, threshold: float | None, off_boundary: float
+) -> pd.DataFrame:
+    """Keep rows with *metric* >= *threshold*; None or a threshold <= *off_boundary*
+    disables filtering and returns *trace* unchanged (same object)."""
+    if threshold is None or threshold <= off_boundary:
+        return trace
+    return trace[trace_metric(trace, metric) >= threshold]
+
+
 def filter_trace_by_ai(trace: pd.DataFrame, ai_threshold: float | None) -> pd.DataFrame:
     """Keep rows with ai >= *ai_threshold*; None or a threshold <= AI_FILTER_OFF_AI
     disables filtering and returns *trace* unchanged (same object)."""
-    if ai_threshold is None or ai_threshold <= AI_FILTER_OFF_AI:
-        return trace
-    return trace[trace_metric(trace, "ai") >= ai_threshold]
+    return _filter_trace_by_threshold(trace, "ai", ai_threshold, AI_FILTER_OFF_AI)
+
+
+# Duration-filter slider (mirrors the AI filter above): slider positions are
+# log10(minimum duration in seconds). Off at the leftmost position.
+DURATION_FILTER_OFF_S = 1e-6  # 1 us; thresholds at or below this disable filtering (slider leftmost)
+DURATION_FILTER_DEFAULT_S = 1e-4  # 100 us; default filter threshold (slider default position)
+DURATION_FILTER_MAX_S = 1e-1  # 100 ms; slider rightmost position
+DURATION_FILTER_LOG_STEP = 0.2  # slider step, in log10 decades
+
+
+def filter_trace_by_duration(trace: pd.DataFrame, min_duration_s: float | None) -> pd.DataFrame:
+    """Keep rows with duration_s >= *min_duration_s*; None or a threshold <=
+    DURATION_FILTER_OFF_S disables filtering and returns *trace* unchanged (same object)."""
+    return _filter_trace_by_threshold(trace, "duration_s", min_duration_s, DURATION_FILTER_OFF_S)
 
 
 def trace_time_range(trace: pd.DataFrame) -> tuple[float, float] | None:

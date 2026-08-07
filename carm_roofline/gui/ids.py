@@ -105,3 +105,4 @@ class ExportPanelID(ID):
     STATUS_REGION = "export-status-region"
     STATUS_PROXIMITY = "export-status-proximity"
     SLIDER_AI_THRESHOLD = "slider-ai-threshold"
+    SLIDER_DURATION_THRESHOLD = "slider-duration-threshold"

@@ -205,6 +205,8 @@ def test_create_app_paraver_wires_config_and_leaves_app_ids_empty(
     # the AI filter defaults to its minimum active threshold (1e-5), not "off".
     assert store_data["paraver"]["time_window"] is None
     assert store_data["paraver"]["ai_threshold"] == pytest.approx(1e-5)
+    # The duration filter defaults to its minimum active threshold (100 us), not "off".
+    assert store_data["paraver"]["duration_threshold"] == pytest.approx(1e-4)
 
 
 def test_create_app_paraver_semantic_window_sets_initial_window(
@@ -308,3 +310,19 @@ def test_export_panel_accordion_groups_export_and_ai_filter() -> None:
     # Default store state (filter at 1e-5) puts the slider on the 1e-5 position.
     assert slider.value == -5.0
     assert slider.marks == {-6.0: "Off", -5.0: "1e-5", -4.0: "1e-4", -3.0: "1e-3", -2.0: "1e-2"}
+
+    duration_slider = _find_component(filtering_item, ExportPanelID.SLIDER_DURATION_THRESHOLD)
+    assert duration_slider is not None
+    assert duration_slider.min == -6.0
+    assert duration_slider.max == -1.0
+    assert duration_slider.step == 0.2
+    assert duration_slider.value == -4.0  # default store state: 100 us threshold
+    assert duration_slider.marks == {
+        -6.0: "Off",
+        -5.0: "10 us",
+        -4.0: "100 us",
+        -3.0: "1 ms",
+        -2.0: "10 ms",
+        -1.0: "100 ms",
+    }
+    assert duration_slider.tooltip == {"placement": "bottom", "transform": "paraverDuration"}

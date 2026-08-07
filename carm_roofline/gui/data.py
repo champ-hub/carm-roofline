@@ -12,7 +12,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from carm_roofline.core.units import Bandwidth, Bytes, Frequency, Operations, Performance, Seconds
-from carm_roofline.gui.providers import AI_FILTER_DEFAULT_AI, ParaverData
+from carm_roofline.gui.providers import AI_FILTER_DEFAULT_AI, DURATION_FILTER_DEFAULT_S, ParaverData
 from carm_roofline.output_utils import debug, warn
 from carm_roofline.paraver import ParaverWindowMode, TraceRow, trace_metric, trace_state_code, trace_text
 from carm_roofline.roofline_assembly import (
@@ -170,11 +170,13 @@ class ParaverState:
 
     time_window: tuple[float, float] | None = None  # (lo, hi) seconds; None = full range
     ai_threshold: float | None = AI_FILTER_DEFAULT_AI  # OPS/Byte; 1e-5 default; None = filter off (slider at leftmost)
+    duration_threshold: float | None = DURATION_FILTER_DEFAULT_S  # s; 100 us default; None = off (slider at leftmost)
 
     def to_dict(self) -> dict[str, object]:
         return {
             "time_window": list(self.time_window) if self.time_window else None,
             "ai_threshold": self.ai_threshold,
+            "duration_threshold": self.duration_threshold,
         }
 
     @classmethod
@@ -183,7 +185,12 @@ class ParaverState:
         if window is not None:
             window = (float(window[0]), float(window[1]))  # dcc.Store JSON round-trips tuples as lists
         ai = data.get("ai_threshold", AI_FILTER_DEFAULT_AI)
-        return cls(time_window=window, ai_threshold=float(ai) if ai is not None else None)
+        dur = data.get("duration_threshold", DURATION_FILTER_DEFAULT_S)
+        return cls(
+            time_window=window,
+            ai_threshold=float(ai) if ai is not None else None,
+            duration_threshold=float(dur) if dur is not None else None,
+        )
 
 
 class RoofStore:

@@ -6,7 +6,7 @@ from typing import Any, Callable
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
-from carm_roofline.core.units import Frequency
+from carm_roofline.core.units import Frequency, Seconds
 from carm_roofline.gui.config import GUIMode
 from carm_roofline.gui.data import (
     COMPUTE_INST_OPTIONS,
@@ -29,10 +29,12 @@ from carm_roofline.gui.ids import (
     StoreID,
 )
 from carm_roofline.gui.providers import (
-    AI_FILTER_DEFAULT_AI,
     AI_FILTER_LOG_STEP,
     AI_FILTER_MAX_AI,
     AI_FILTER_OFF_AI,
+    DURATION_FILTER_LOG_STEP,
+    DURATION_FILTER_MAX_S,
+    DURATION_FILTER_OFF_S,
 )
 from carm_roofline.roofline_assembly import FilterOptions
 
@@ -114,6 +116,31 @@ def _format_tick_label(value: float, decimals: int) -> str:
     return label
 
 
+def _format_scientific(value: float) -> str:
+    """Scientific notation with one significant digit and no zero-padded exponent (1e-5, not 1e-05)."""
+    mantissa, exponent = f"{value:.0e}".split("e")
+    return f"{mantissa}e{int(exponent)}"
+
+
+def _format_duration_s(seconds: float) -> str:
+    """Human duration label via core Seconds formatting (1e-4 -> "100 us", 1e-1 -> "100 ms")."""
+    return str(Seconds(seconds))
+
+
+def _log_threshold_marks(log_min: float, log_max: float, formatter: Callable[[float], str]) -> dict[float, str]:
+    """Marks for a log-scale threshold filter slider: one label per decade from min
+    through max ("Off" at min), with the max itself always labeled."""
+    marks: dict[float, str] = {}
+    decade = math.ceil(log_min)
+    while decade <= math.floor(log_max) + 1e-9:
+        marks[float(decade)] = formatter(10.0**decade)
+        decade += 1
+    marks[log_min] = "Off"
+    if log_max not in marks:
+        marks[log_max] = formatter(10.0**log_max)
+    return marks
+
+
 _SWITCH_CONTROLS: list[tuple[str, str, str]] = [
     ("Normalize performance by threads", SettingsPanelID.SWITCH_NORMALIZE, "normalize_by_threads"),
     ("2^N axis tick labels", SettingsPanelID.SWITCH_POWER2_TICKS, "power2_ticks"),
@@ -192,15 +219,14 @@ _SLIDER_CONTROLS: list[tuple[str, str, str, dict[str, Any]]] = [
 # derived from the canonical filter constants in providers.py so the slider
 # geometry can never drift from the filter semantics.
 AI_FILTER_LOG_MIN = math.log10(AI_FILTER_OFF_AI)  # leftmost position: filtering off
-AI_FILTER_LOG_DEFAULT = math.log10(AI_FILTER_DEFAULT_AI)  # default filter position
 AI_FILTER_LOG_MAX = math.log10(AI_FILTER_MAX_AI)  # rightmost position
-AI_FILTER_MARKS = {
-    AI_FILTER_LOG_MIN: "Off",
-    AI_FILTER_LOG_DEFAULT: "1e-5",
-    -4.0: "1e-4",
-    -3.0: "1e-3",
-    AI_FILTER_LOG_MAX: "1e-2",
-}
+AI_FILTER_MARKS = _log_threshold_marks(AI_FILTER_LOG_MIN, AI_FILTER_LOG_MAX, _format_scientific)
+
+# Paraver duration-filter slider, same geometry as the AI filter: positions are
+# log10(minimum duration in seconds); leftmost position is filtering off.
+DURATION_FILTER_LOG_MIN = math.log10(DURATION_FILTER_OFF_S)  # leftmost position: filtering off
+DURATION_FILTER_LOG_MAX = math.log10(DURATION_FILTER_MAX_S)  # rightmost position
+DURATION_FILTER_MARKS = _log_threshold_marks(DURATION_FILTER_LOG_MIN, DURATION_FILTER_LOG_MAX, _format_duration_s)
 
 
 def _build_settings_switch(label: str, id_: str, value: bool) -> html.Div:
@@ -226,6 +252,29 @@ def _build_settings_slider(label: str, id_: str, value: float, **kwargs: Any) ->
                 tooltip=tooltip,
             ),
         ],
+    )
+
+
+def _build_threshold_filter_slider(
+    label: str,
+    slider_id: str,
+    log_value: float,
+    log_min: float,
+    log_max: float,
+    log_step: float,
+    marks: dict[float, str],
+    tooltip_transform: str,
+) -> html.Div:
+    """Log-scale threshold filter slider (AI, duration): min position = filtering off."""
+    return _build_settings_slider(
+        label,
+        slider_id,
+        log_value,
+        min=log_min,
+        max=log_max,
+        step=log_step,
+        marks=marks,
+        tooltip={"placement": "bottom", "transform": tooltip_transform},
     )
 
 
@@ -607,6 +656,11 @@ def build_export_panel(store: RoofStore) -> html.Div:
         if store.paraver_state.ai_threshold is not None
         else AI_FILTER_LOG_MIN
     )
+    dur_log = (
+        round(math.log10(store.paraver_state.duration_threshold), 2)
+        if store.paraver_state.duration_threshold is not None
+        else DURATION_FILTER_LOG_MIN
+    )
     return html.Div(
         className="export-panel",
         style={"display": "block"} if store.active_panel == ActivePanel.EXPORT else {"display": "none"},
@@ -639,15 +693,25 @@ def build_export_panel(store: RoofStore) -> html.Div:
                         title="Filtering",
                         item_id="filtering",
                         children=[
-                            _build_settings_slider(
+                            _build_threshold_filter_slider(
                                 "Minimum arithmetic intensity",
                                 ExportPanelID.SLIDER_AI_THRESHOLD,
                                 ai_log,
-                                min=AI_FILTER_LOG_MIN,
-                                max=AI_FILTER_LOG_MAX,
-                                step=AI_FILTER_LOG_STEP,
-                                marks=AI_FILTER_MARKS,
-                                tooltip={"placement": "bottom", "transform": "aiThreshold"},
+                                AI_FILTER_LOG_MIN,
+                                AI_FILTER_LOG_MAX,
+                                AI_FILTER_LOG_STEP,
+                                AI_FILTER_MARKS,
+                                "aiThreshold",
+                            ),
+                            _build_threshold_filter_slider(
+                                "Minimum duration",
+                                ExportPanelID.SLIDER_DURATION_THRESHOLD,
+                                dur_log,
+                                DURATION_FILTER_LOG_MIN,
+                                DURATION_FILTER_LOG_MAX,
+                                DURATION_FILTER_LOG_STEP,
+                                DURATION_FILTER_MARKS,
+                                "paraverDuration",
                             ),
                         ],
                     ),
