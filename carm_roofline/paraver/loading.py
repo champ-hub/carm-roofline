@@ -10,59 +10,11 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Literal, NamedTuple
+from typing import Final, Literal, NamedTuple
 
 import pandas as pd
 
 from carm_roofline.core.error import UserError
-
-# Trace-shaped column schema shared by the window frame and the final trace table.
-TRACE_COLUMNS = (
-    "thread_id",
-    "time_s",
-    "duration_s",
-    "state_code",
-    "flops",
-    "bytes",
-    "ai",
-    "perf",
-    "load_share",
-    "isa_scalar_pct",
-    "isa_sse_pct",
-    "isa_avx2_pct",
-    "isa_avx512_pct",
-)
-METRIC_COLUMNS = (
-    "flops",
-    "bytes",
-    "ai",
-    "perf",
-    "load_share",
-    "isa_scalar_pct",
-    "isa_sse_pct",
-    "isa_avx2_pct",
-    "isa_avx512_pct",
-)
-WINDOW_CSV_COLUMNS = ("thread_id", "time_s", "duration_s", "state_code")
-
-# Type-safe column accessors for trace tables.  pandas-stubs cannot encode a column
-# schema on DataFrame, so every column read funnels through these Literal-keyed
-# accessors: the key is checked statically and the return type declares the Series
-# dtype (column-name typos become static errors instead of runtime KeyErrors).
-MetricColumn = Literal[
-    "time_s",
-    "duration_s",
-    "flops",
-    "bytes",
-    "ai",
-    "perf",
-    "load_share",
-    "isa_scalar_pct",
-    "isa_sse_pct",
-    "isa_avx2_pct",
-    "isa_avx512_pct",
-]
-TextColumn = Literal["legend_label", "legend_color"]
 
 
 class TraceRow(NamedTuple):
@@ -81,6 +33,42 @@ class TraceRow(NamedTuple):
     isa_sse_pct: float
     isa_avx2_pct: float
     isa_avx512_pct: float
+
+
+# Single source of truth: TraceRow's field order and names ARE the trace-table
+# schema.  The runtime tuples below derive from it, so DataFrame columns and
+# NamedTuple attributes cannot drift apart.
+TRACE_COLUMNS: Final[tuple[str, ...]] = TraceRow._fields
+
+# Physical column layout of Paraver window CSVs (external contract); it is exactly
+# the leading TRACE_COLUMNS.
+WINDOW_CSV_COLUMNS: Final[tuple[str, ...]] = ("thread_id", "time_s", "duration_s", "state_code")
+
+# Columns the window CSV does not provide (appended as float64 NaN at load):
+# trace columns minus window columns, by construction.
+METRIC_COLUMNS: Final[tuple[str, ...]] = tuple(name for name in TRACE_COLUMNS if name not in WINDOW_CSV_COLUMNS)
+
+# Type-safe column accessors for trace tables.  pandas-stubs cannot encode a column
+# schema on DataFrame, so every column read funnels through these Literal-keyed
+# accessors: the key is checked statically and the return type declares the Series
+# dtype (column-name typos become static errors instead of runtime KeyErrors).
+# A Literal cannot derive from a runtime tuple before Python 3.11 (PEP 646), so
+# this static duplicate of TRACE_COLUMNS minus {thread_id, state_code} is pinned
+# by test_paraver_loading.
+MetricColumn = Literal[
+    "time_s",
+    "duration_s",
+    "flops",
+    "bytes",
+    "ai",
+    "perf",
+    "load_share",
+    "isa_scalar_pct",
+    "isa_sse_pct",
+    "isa_avx2_pct",
+    "isa_avx512_pct",
+]
+TextColumn = Literal["legend_label", "legend_color"]
 
 
 def trace_metric(trace: pd.DataFrame, column: MetricColumn) -> pd.Series[float]:

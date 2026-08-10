@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import get_args
 
 import pandas as pd
 import pytest
@@ -13,8 +14,11 @@ from carm_roofline.paraver.loading import (
     METRIC_COLUMNS,
     TIME_SCALE_FACTORS,
     TRACE_COLUMNS,
+    MetricColumn,
     ParaverHeader,
     ParaverWindowMode,
+    TraceRow,
+    WINDOW_CSV_COLUMNS,
     load_legend_csv,
     load_window_csv,
     parse_paraver_header,
@@ -34,6 +38,15 @@ def _write(tmp_path: Path, name: str, content: str) -> Path:
     path = tmp_path / name
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def test_trace_schema_single_source_of_truth() -> None:
+    """TraceRow is the schema source; the runtime tuples and MetricColumn agree."""
+    assert TRACE_COLUMNS == TraceRow._fields
+    assert METRIC_COLUMNS == tuple(name for name in TRACE_COLUMNS if name not in WINDOW_CSV_COLUMNS)
+    assert tuple(get_args(MetricColumn)) == tuple(
+        name for name in TRACE_COLUMNS if name not in ("thread_id", "state_code")
+    )
 
 
 def test_time_unit_to_seconds_table() -> None:
