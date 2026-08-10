@@ -96,11 +96,13 @@ class ExportPanelID(ID):
 
     BTN_EXPORT_PERFORMANCE = "btn-export-performance"
     BTN_EXPORT_AI = "btn-export-ai"
+    BTN_EXPORT_LDST_PERCENT = "btn-export-ldst-percent"
     BTN_EXPORT_ROOF_LABELS = "btn-export-roof-labels"
     BTN_EXPORT_REGION = "btn-export-region"
     BTN_EXPORT_PROXIMITY = "btn-export-proximity"
     STATUS_PERFORMANCE = "export-status-performance"
     STATUS_AI = "export-status-ai"
+    STATUS_LDST_PERCENT = "export-status-ldst-percent"
     STATUS_ROOF_LABELS = "export-status-roof-labels"
     STATUS_REGION = "export-status-region"
     STATUS_PROXIMITY = "export-status-proximity"

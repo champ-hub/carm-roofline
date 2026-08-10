@@ -49,6 +49,7 @@ class LegendRow:
 
 
 PERFORMANCE_FILENAME = "carm_gflops.csv"
+LDST_PERCENT_FILENAME = "carm_ldst_percent.csv"
 AI_FILENAME = "carm_ai.csv"
 ROOF_LABELS_FILENAME = "carm_roofs.csv"
 ROOF_LABELS_LEGEND_FILENAME = "carm_roofs.legend.csv"
@@ -262,6 +263,24 @@ def export_ai(
     return (
         _csv_export(
             AI_FILENAME, trace, paraver, values, GRADIENT_WINDOW_MODE, float(values.min()), float(values.max())
+        ),
+    )
+
+
+def export_ldst_percent(
+    trace: pd.DataFrame, paraver: ParaverData, model: AssembledRoofline | None = None, divisor: int = 1
+) -> tuple[ExportFile, ...]:
+    """Load percentage per row (legacy carm_ldst_percent.csv): (loads/(loads+stores))*100,
+    rounded to 1 dp, floored at 0.01; exactly 0 when the burst has no memory ops or no
+    FP activity. GRADIENT window, vmin:vmax from the values, no legend."""
+    if trace.empty:
+        return ()
+    share = trace_metric(trace, "load_share")
+    pct = (share * 100.0).round(1).clip(lower=0.01).fillna(0.0)
+    pct = pct.where(trace_metric(trace, "flops") != 0, 0.0)
+    return (
+        _csv_export(
+            LDST_PERCENT_FILENAME, trace, paraver, pct, GRADIENT_WINDOW_MODE, float(pct.min()), float(pct.max())
         ),
     )
 

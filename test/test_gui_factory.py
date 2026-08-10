@@ -284,6 +284,7 @@ def test_export_panel_accordion_groups_export_and_ai_filter() -> None:
     for btn_id, status_id in (
         (ExportPanelID.BTN_EXPORT_PERFORMANCE, ExportPanelID.STATUS_PERFORMANCE),
         (ExportPanelID.BTN_EXPORT_AI, ExportPanelID.STATUS_AI),
+        (ExportPanelID.BTN_EXPORT_LDST_PERCENT, ExportPanelID.STATUS_LDST_PERCENT),
         (ExportPanelID.BTN_EXPORT_ROOF_LABELS, ExportPanelID.STATUS_ROOF_LABELS),
         (ExportPanelID.BTN_EXPORT_REGION, ExportPanelID.STATUS_REGION),
         (ExportPanelID.BTN_EXPORT_PROXIMITY, ExportPanelID.STATUS_PROXIMITY),
@@ -291,7 +292,7 @@ def test_export_panel_accordion_groups_export_and_ai_filter() -> None:
         assert _find_component(export_item, btn_id) is not None
         assert _find_component(export_item, status_id) is not None
 
-    # Exports are written to disk: the Export item holds exactly the five
+    # Exports are written to disk: the Export item holds exactly the six
     # button+status rows, with no dcc.Download component left over.
     def _contains_download(node: Any) -> bool:
         if isinstance(node, dcc.Download):
@@ -300,7 +301,7 @@ def test_export_panel_accordion_groups_export_and_ai_filter() -> None:
         return isinstance(children, list) and any(_contains_download(c) for c in children)
 
     assert not _contains_download(export_item)
-    assert len(export_item.children) == 5  # five export rows
+    assert len(export_item.children) == 6  # six export rows
 
     slider = _find_component(filtering_item, ExportPanelID.SLIDER_AI_THRESHOLD)
     assert slider is not None

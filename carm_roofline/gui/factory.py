@@ -42,6 +42,7 @@ from carm_roofline.gui.data import (
 from carm_roofline.gui.export import (
     ExportModeExporter,
     export_ai,
+    export_ldst_percent,
     export_performance,
     export_proximity,
     export_region,
@@ -689,6 +690,12 @@ def _register_callbacks(
                 ExportPanelID.BTN_EXPORT_PERFORMANCE, ExportPanelID.STATUS_PERFORMANCE, export_performance, False
             ),
             ExportModeSpec(ExportPanelID.BTN_EXPORT_AI, ExportPanelID.STATUS_AI, export_ai, False),
+            ExportModeSpec(
+                ExportPanelID.BTN_EXPORT_LDST_PERCENT,
+                ExportPanelID.STATUS_LDST_PERCENT,
+                export_ldst_percent,
+                False,
+            ),
             ExportModeSpec(
                 ExportPanelID.BTN_EXPORT_ROOF_LABELS, ExportPanelID.STATUS_ROOF_LABELS, export_roof_labels, True
             ),

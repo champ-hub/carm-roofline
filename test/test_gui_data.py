@@ -428,14 +428,14 @@ def test_build_paraver_figure_tooltip_load_store_percentages() -> None:
     )
     fig = build_paraver_figure([RoofConfig()], [], paraver, trace)
     markers = [t for t in fig.data if t.mode == "markers"]
-    assert "  Loads: 66.7% · Stores: 33.3%" in markers[0].customdata[0]
-    assert "  Loads: 33.3% · Stores: 66.7%" in markers[0].customdata[1]
-    assert "  Loads: 100.0% · Stores: 0.0%" in markers[0].customdata[2]
+    assert "  Loads: 66.7% | Stores: 33.3%" in markers[0].customdata[0]
+    assert "  Loads: 33.3% | Stores: 66.7%" in markers[0].customdata[1]
+    assert "  Loads: 100.0% | Stores: 0.0%" in markers[0].customdata[2]
     # NaN load_share (no loads and no stores) renders placeholders, not 0%.
     trace["load_share"] = [2.0 / 3.0, float("nan"), 1.0]
     fig = build_paraver_figure([RoofConfig()], [], paraver, trace)
     markers = [t for t in fig.data if t.mode == "markers"]
-    assert "  Loads: — · Stores: —" in markers[0].customdata[1]
+    assert "  Loads: - | Stores: -" in markers[0].customdata[1]
 
 
 def test_build_paraver_figure_tooltip_omits_nan_value() -> None:

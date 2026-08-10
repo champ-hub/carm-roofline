@@ -16,6 +16,7 @@ import pytest
 
 from carm_roofline.gui.export import (
     AI_FILENAME,
+    LDST_PERCENT_FILENAME,
     PERFORMANCE_FILENAME,
     REGION_FILENAME,
     REGION_LEGEND_FILENAME,
@@ -25,6 +26,7 @@ from carm_roofline.gui.export import (
     ExportFile,
     build_csv_metadata_line,
     export_ai,
+    export_ldst_percent,
     export_performance,
     export_proximity,
     export_region,
@@ -65,6 +67,7 @@ def _metric_trace() -> pd.DataFrame:
             "bytes": [16.0, 8.0],
             "ai": [2.0, 2.0],
             "perf": [32.0, 16.0],
+            "load_share": [0.5, 0.0],  # 10.0 half-loads; 2.1 store-only
         }
     )
 
@@ -247,9 +250,45 @@ def test_empty_trace_returns_no_files() -> None:
     model = _assembled_roofline()
     assert export_performance(empty, paraver) == ()
     assert export_ai(empty, paraver) == ()
+    assert export_ldst_percent(empty, paraver) == ()
     assert export_roof_labels(empty, paraver, model, 1) == ()
     assert export_region(empty, paraver, model, 1) == ()
     assert export_proximity(empty, paraver, model, 1) == ()
+
+
+def test_ldst_percent_export_contract() -> None:
+    """Full export_ldst_percent file: GRADIENT header with vmin:vmax from the
+    values, exactly one file, 2 dp cells (default precision), natural thread
+    order; store-only burst floored to 0.1, share 0.5 → 50%."""
+    paraver = _paraver_data(_metric_trace())
+    files = export_ldst_percent(paraver.trace, paraver)
+    assert [f.name for f in files] == [LDST_PERCENT_FILENAME]
+    content = files[0].content
+    assert content.split("\n")[0].endswith(":window_in_null_gradient_mode:0.010000:50.000000")
+    rows = [ln for ln in content.split("\n")[1:] if ln]
+    assert len(rows) == 2
+    assert rows[0].split("\t")[3] == "0.01"  # thread 2.1, store-only → floored to 0.01
+    assert rows[1].split("\t")[3] == "50.00"  # thread 10.0, share 0.5 → 50%
+
+
+def test_ldst_percent_zero_rows() -> None:
+    """Exactly 0 (no 0.1 floor, vmin 0.0) when the burst has no memory ops or
+    no FP activity — legacy two-frame masking semantics."""
+    trace = _metric_trace()
+    trace["load_share"] = [0.5, float("nan")]  # thread 2.1 has no memory ops
+    paraver = _paraver_data(trace)
+    files = export_ldst_percent(trace, paraver)
+    content = files[0].content
+    assert content.split("\n")[0].endswith(":window_in_null_gradient_mode:0.000000:50.000000")
+    rows = [ln for ln in content.split("\n")[1:] if ln]
+    assert rows[0].split("\t")[3] == "0.00"  # no memory ops → exactly 0, no floor
+
+    trace2 = _metric_trace()
+    trace2["flops"] = [32.0, 0.0]  # thread 2.1 has no FP activity
+    paraver2 = _paraver_data(trace2)
+    files2 = export_ldst_percent(trace2, paraver2)
+    rows2 = [ln for ln in files2[0].content.split("\n")[1:] if ln]
+    assert rows2[0].split("\t")[3] == "0.00"  # no FP → masked to 0 despite the store-only share
 
 
 # ── Roof-label exports ────────────────────────────────────────────────────────
