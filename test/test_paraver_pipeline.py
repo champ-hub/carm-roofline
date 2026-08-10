@@ -13,6 +13,8 @@ from carm_roofline.paraver.counters import (
     INTEL_COUNTERS,
     CounterSpec,
     counter_config_template,
+    fp_isa,
+    isa_names,
 )
 from carm_roofline.paraver.pipeline import (
     TRACE_COLUMNS,
@@ -95,6 +97,11 @@ def test_intel_counters_registry_entries() -> None:
             assert spec.flops_multiplier > 0
             assert spec.bytes_per_inst > 0.0
             assert spec.is_memory is False
+
+
+def test_counters_isa_grouping_aligned_to_fp_names() -> None:
+    assert isa_names == ("scalar", "sse", "avx2", "avx512")
+    assert fp_isa == ("scalar", "scalar", "sse", "sse", "avx2", "avx2", "avx512", "avx512")
 
 
 def test_counter_config_template_placeholders() -> None:
@@ -320,6 +327,10 @@ def test_compute_trace_metrics_hand_computed() -> None:
     assert row["ai"] == pytest.approx(44.0 / 3600.0)
     assert row["perf"] == pytest.approx(4.4e7)
     assert row["load_share"] == pytest.approx(100.0 / 150.0)  # 100 loads of 150 mem ops
+    assert row["isa_scalar_pct"] == pytest.approx(4.0 / 44.0 * 100.0)  # fp-scalar-sp ×1
+    assert row["isa_avx2_pct"] == pytest.approx(40.0 / 44.0 * 100.0)  # fp-avx2-dp ×4
+    assert row["isa_sse_pct"] == 0.0
+    assert row["isa_avx512_pct"] == 0.0
 
 
 def test_compute_trace_metrics_drops_raw_counters() -> None:
@@ -332,7 +343,20 @@ def test_compute_trace_metrics_drops_raw_counters() -> None:
         }
     )
     metrics = compute_trace_metrics(bursts)
-    assert list(metrics.columns) == ["thread_id", "time_s", "duration_s", "flops", "bytes", "ai", "perf", "load_share"]
+    assert list(metrics.columns) == [
+        "thread_id",
+        "time_s",
+        "duration_s",
+        "flops",
+        "bytes",
+        "ai",
+        "perf",
+        "load_share",
+        "isa_scalar_pct",
+        "isa_sse_pct",
+        "isa_avx2_pct",
+        "isa_avx512_pct",
+    ]
 
 
 def test_compute_trace_metrics_zero_fp_row() -> None:
@@ -353,6 +377,8 @@ def test_compute_trace_metrics_zero_fp_row() -> None:
     assert row["ai"] == row["ai"]  # not NaN
     assert row["perf"] == row["perf"]  # not NaN
     assert row["load_share"] != row["load_share"]  # NaN: no loads and no stores
+    for column in ("isa_scalar_pct", "isa_sse_pct", "isa_avx2_pct", "isa_avx512_pct"):
+        assert row[column] != row[column]  # NaN: no FP activity
 
 
 def test_compute_trace_metrics_load_share_edges() -> None:
@@ -369,6 +395,29 @@ def test_compute_trace_metrics_load_share_edges() -> None:
     metrics = compute_trace_metrics(bursts)
     assert metrics.iloc[0]["load_share"] == 1.0  # load-only burst
     assert metrics.iloc[1]["load_share"] == 0.0  # store-only burst
+
+
+def test_compute_trace_metrics_isa_percent_edges() -> None:
+    """Weighted per-ISA shares: single-ISA rows hit 100.0, precisions combine per ISA,
+    zero-activity rows are NaN."""
+    bursts = pd.DataFrame(
+        {
+            "thread_id": pd.Categorical(["1.1.1", "1.1.1", "1.1.1"]),
+            "time_s": [0.0, 0.0, 0.0],
+            "duration_s": [1e-6, 1e-6, 1e-6],
+            **{name: 0 for name in EXPECTED_NAMES},
+            "fp-avx512-sp": [5, 0, 0],  # 5×16 = 80 ops, all AVX512
+            "fp-sse-dp": [0, 2, 0],  # 2×2 = 4 ops
+            "fp-sse-sp": [0, 1, 0],  # 1×4 = 4 ops → SSE totals 8 of 8
+        }
+    )
+    metrics = compute_trace_metrics(bursts)
+    assert metrics.iloc[0]["isa_avx512_pct"] == pytest.approx(100.0)
+    assert metrics.iloc[0]["isa_scalar_pct"] == 0.0
+    assert metrics.iloc[1]["isa_sse_pct"] == pytest.approx(100.0)
+    assert metrics.iloc[1]["isa_scalar_pct"] == 0.0
+    for column in ("isa_scalar_pct", "isa_sse_pct", "isa_avx2_pct", "isa_avx512_pct"):
+        assert metrics.iloc[2][column] != metrics.iloc[2][column]  # NaN: no FP activity
 
 
 def test_attach_state_codes_backward_and_end_check() -> None:

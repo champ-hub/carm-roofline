@@ -942,6 +942,23 @@ def _load_store_pct_line(load_share: float) -> str:
     return f"  Loads: {loads_pct:.1f}% | Stores: {100.0 - loads_pct:.1f}%"
 
 
+def _isa_pct_line(row: TraceRow) -> str:
+    """Per-ISA operation-share line: only ISAs above 0.1% (legacy display filter),
+    rounded to 1 dp; a '-' placeholder when no ISA qualifies (no FP work in the
+    burst)."""
+    entries = [
+        f"{label} {round(pct, 1):.1f}%"
+        for label, pct in (
+            ("Scalar", row.isa_scalar_pct),
+            ("SSE", row.isa_sse_pct),
+            ("AVX2", row.isa_avx2_pct),
+            ("AVX512", row.isa_avx512_pct),
+        )
+        if pct > 0.1
+    ]
+    return f"  ISA: {' | '.join(entries)}" if entries else "  ISA: -"
+
+
 def _format_paraver_tooltip(label: str, row: TraceRow, state_label: str | None) -> str:
     """Rich HTML tooltip for a trace-table row; row is one TraceRow from ``itertuples()``."""
     dur = float(row.duration_s)
@@ -963,5 +980,6 @@ def _format_paraver_tooltip(label: str, row: TraceRow, state_label: str | None) 
         f"  Total FLOPs: {Operations(int(row.flops))!s}",
         f"  Total Bytes: {Bytes(int(row.bytes))!s}",
         _load_store_pct_line(float(row.load_share)),
+        _isa_pct_line(row),
     ]
     return "<br>".join(parts)

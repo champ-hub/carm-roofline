@@ -349,6 +349,10 @@ def _paraver_trace() -> pd.DataFrame:
             "ai": [10.0, 10.0, 10.0],
             "perf": [100.0, 200.0, 300.0],
             "load_share": [2.0 / 3.0, 1.0 / 3.0, 1.0],
+            "isa_scalar_pct": [100.0 / 3.0, 0.0, 0.0],
+            "isa_sse_pct": [200.0 / 3.0, 0.0, 0.0],
+            "isa_avx2_pct": [0.0, 100.0, 0.0],
+            "isa_avx512_pct": [0.0, 0.0, float("nan")],
         }
     )
 
@@ -436,6 +440,34 @@ def test_build_paraver_figure_tooltip_load_store_percentages() -> None:
     fig = build_paraver_figure([RoofConfig()], [], paraver, trace)
     markers = [t for t in fig.data if t.mode == "markers"]
     assert "  Loads: - | Stores: -" in markers[0].customdata[1]
+
+
+def test_build_paraver_figure_tooltip_isa_percentages() -> None:
+    """Tooltips list ISAs above 0.1% of operations, rounded to 1 dp, fixed order;
+    a '-' placeholder renders when no ISA qualifies (no FP work in the burst)."""
+    trace = _paraver_trace()
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.GRADIENT,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace)
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert "  ISA: Scalar 33.3% | SSE 66.7%" in markers[0].customdata[0]
+    assert "  ISA: AVX2 100.0%" in markers[0].customdata[1]
+    assert "  ISA: -" in markers[0].customdata[2]  # NaN row (no FP work): placeholder
+    # Sub-threshold shares (≤0.1%) are dropped so nothing renders as "0.0%".
+    trace["isa_scalar_pct"] = [0.05, 0.0, 0.0]
+    trace["isa_sse_pct"] = [0.09, 0.0, 0.0]
+    trace["isa_avx2_pct"] = [0.0, 100.0, 0.0]
+    trace["isa_avx512_pct"] = [0.0, float("nan"), float("nan")]
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace)
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert "  ISA: -" in markers[0].customdata[0]  # sub-threshold only: placeholder
+    assert "  ISA: AVX2 100.0%" in markers[0].customdata[1]
 
 
 def test_build_paraver_figure_tooltip_omits_nan_value() -> None:

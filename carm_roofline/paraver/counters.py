@@ -63,3 +63,15 @@ fp_names: tuple[str, ...] = tuple(spec.name for spec in INTEL_COUNTERS if not sp
 memory_names: tuple[str, ...] = tuple(spec.name for spec in INTEL_COUNTERS if spec.is_memory)
 flops_weights: tuple[int, ...] = tuple(spec.flops_multiplier for spec in INTEL_COUNTERS if not spec.is_memory)
 bytes_weights: tuple[float, ...] = tuple(spec.bytes_per_inst for spec in INTEL_COUNTERS if not spec.is_memory)
+
+
+# ISA grouping of the FP counters, derived from INTEL_COUNTERS (each FP counter
+# name is 'fp-<isa>-<precision>'; order = first appearance in INTEL_COUNTERS:
+# scalar, sse, avx2, avx512). Feeds the per-ISA operation percentages.
+def _fp_isa_of(name: str) -> str:
+    """ISA group of one FP counter name ('fp-avx2-dp' → 'avx2')."""
+    return name.split("-", 2)[1]
+
+
+fp_isa: tuple[str, ...] = tuple(_fp_isa_of(spec.name) for spec in INTEL_COUNTERS if not spec.is_memory)
+isa_names: tuple[str, ...] = tuple(dict.fromkeys(fp_isa))

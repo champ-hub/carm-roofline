@@ -21,7 +21,9 @@ from carm_roofline.paraver.counters import (
     bytes_weights,
     counter_config_template,
     flops_weights,
+    fp_isa,
     fp_names,
+    isa_names,
     memory_names,
 )
 from carm_roofline.paraver.loading import (
@@ -230,9 +232,11 @@ def compute_trace_metrics(bursts: pd.DataFrame) -> pd.DataFrame:
         ai        = flops / bytes,   0.0 where bytes == 0
         perf      = flops / duration_s, 0.0 where duration_s == 0
         load_share = loads / (loads + stores), NaN where both == 0
+        isa_*_pct = ops per ISA / flops x 100, NaN where flops == 0
     Rows with fp_inst == 0 get flops=0, bytes=0, ai=0, perf=0 (legacy zero-default).
     Returns columns ('thread_id', 'time_s', 'duration_s', 'flops', 'bytes', 'ai',
-    'perf', 'load_share') — state_code is attached by :func:`attach_state_codes`
+    'perf', 'load_share', 'isa_scalar_pct', 'isa_sse_pct', 'isa_avx2_pct',
+    'isa_avx512_pct') — state_code is attached by :func:`attach_state_codes`
     next.
     """
     fp_cols = list(fp_names)
@@ -244,6 +248,15 @@ def compute_trace_metrics(bursts: pd.DataFrame) -> pd.DataFrame:
     ai = (flops / bytes_.where(bytes_ != 0)).fillna(0.0)
     perf = (flops / bursts["duration_s"].where(bursts["duration_s"] != 0)).fillna(0.0)
     load_share = bursts["mem-loads"] / mem_ops.where(mem_ops != 0)
+    # Per-ISA share of operations (legacy semantics: weighted ops per ISA / total
+    # ops * 100; sum across ISAs == flops). NaN where flops == 0, matching
+    # load_share's no-activity NaN convention.
+    fp_weights = pd.Series(flops_weights, index=fp_names)
+    isa_pcts: dict[str, pd.Series[float]] = {}
+    for isa in isa_names:
+        members = [name for name, group in zip(fp_names, fp_isa) if group == isa]
+        isa_ops = (bursts[members] * fp_weights[members]).sum(axis=1)
+        isa_pcts[f"isa_{isa}_pct"] = isa_ops / flops.where(flops != 0) * 100.0
     return pd.DataFrame(
         {
             "thread_id": bursts["thread_id"],
@@ -254,6 +267,7 @@ def compute_trace_metrics(bursts: pd.DataFrame) -> pd.DataFrame:
             "ai": ai,
             "perf": perf,
             "load_share": load_share,
+            **isa_pcts,
         }
     )
 
