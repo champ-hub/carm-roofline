@@ -17,15 +17,15 @@ import pandas as pd
 from carm_roofline.core.error import UserError
 
 # Trace-shaped column schema shared by the window frame and the final trace table.
-TRACE_COLUMNS = ("thread_id", "time_s", "duration_s", "state_code", "flops", "bytes", "ai", "perf")
-METRIC_COLUMNS = ("flops", "bytes", "ai", "perf")
+TRACE_COLUMNS = ("thread_id", "time_s", "duration_s", "state_code", "flops", "bytes", "ai", "perf", "load_share")
+METRIC_COLUMNS = ("flops", "bytes", "ai", "perf", "load_share")
 WINDOW_CSV_COLUMNS = ("thread_id", "time_s", "duration_s", "state_code")
 
 # Type-safe column accessors for trace tables.  pandas-stubs cannot encode a column
 # schema on DataFrame, so every column read funnels through these Literal-keyed
 # accessors: the key is checked statically and the return type declares the Series
 # dtype (column-name typos become static errors instead of runtime KeyErrors).
-MetricColumn = Literal["time_s", "duration_s", "flops", "bytes", "ai", "perf"]
+MetricColumn = Literal["time_s", "duration_s", "flops", "bytes", "ai", "perf", "load_share"]
 TextColumn = Literal["legend_label", "legend_color"]
 
 
@@ -40,6 +40,7 @@ class TraceRow(NamedTuple):
     bytes: float
     ai: float
     perf: float
+    load_share: float
 
 
 def trace_metric(trace: pd.DataFrame, column: MetricColumn) -> pd.Series[float]:

@@ -934,6 +934,14 @@ def _add_paraver_gradient_trace(
     )
 
 
+def _load_store_pct_line(load_share: float) -> str:
+    """One tooltip line with load/store percentages derived from the load_share fraction."""
+    if math.isnan(load_share):
+        return "  Loads: - | Stores: -"
+    loads_pct = 100.0 * load_share
+    return f"  Loads: {loads_pct:.1f}% | Stores: {100.0 - loads_pct:.1f}%"
+
+
 def _format_paraver_tooltip(label: str, row: TraceRow, state_label: str | None) -> str:
     """Rich HTML tooltip for a trace-table row; row is one TraceRow from ``itertuples()``."""
     dur = float(row.duration_s)
@@ -954,5 +962,6 @@ def _format_paraver_tooltip(label: str, row: TraceRow, state_label: str | None) 
         "<b>Work</b>",
         f"  Total FLOPs: {Operations(int(row.flops))!s}",
         f"  Total Bytes: {Bytes(int(row.bytes))!s}",
+        _load_store_pct_line(float(row.load_share)),
     ]
     return "<br>".join(parts)

@@ -229,9 +229,11 @@ def compute_trace_metrics(bursts: pd.DataFrame) -> pd.DataFrame:
         bytes     = mem_ops x bytes_mod
         ai        = flops / bytes,   0.0 where bytes == 0
         perf      = flops / duration_s, 0.0 where duration_s == 0
+        load_share = loads / (loads + stores), NaN where both == 0
     Rows with fp_inst == 0 get flops=0, bytes=0, ai=0, perf=0 (legacy zero-default).
     Returns columns ('thread_id', 'time_s', 'duration_s', 'flops', 'bytes', 'ai',
-    'perf') — state_code is attached by :func:`attach_state_codes` next.
+    'perf', 'load_share') — state_code is attached by :func:`attach_state_codes`
+    next.
     """
     fp_cols = list(fp_names)
     fp_inst = bursts[fp_cols].sum(axis=1)
@@ -241,6 +243,7 @@ def compute_trace_metrics(bursts: pd.DataFrame) -> pd.DataFrame:
     bytes_ = mem_ops * bytes_mod.fillna(0.0)
     ai = (flops / bytes_.where(bytes_ != 0)).fillna(0.0)
     perf = (flops / bursts["duration_s"].where(bursts["duration_s"] != 0)).fillna(0.0)
+    load_share = bursts["mem-loads"] / mem_ops.where(mem_ops != 0)
     return pd.DataFrame(
         {
             "thread_id": bursts["thread_id"],
@@ -250,6 +253,7 @@ def compute_trace_metrics(bursts: pd.DataFrame) -> pd.DataFrame:
             "bytes": bytes_,
             "ai": ai,
             "perf": perf,
+            "load_share": load_share,
         }
     )
 

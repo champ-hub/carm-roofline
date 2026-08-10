@@ -233,6 +233,7 @@ def test_paraver_provider_loads_code_mode_trace_with_legend(
     assert row["bytes"] > 0
     assert row["ai"] == pytest.approx(row["flops"] / row["bytes"])
     assert row["perf"] == pytest.approx(row["flops"] / row["duration_s"])
+    assert row["load_share"] == 1.0  # 2 loads, no mem-stores.csv → stores zero-filled
 
 
 def test_paraver_provider_code_mode_missing_legend_raises_user_error(

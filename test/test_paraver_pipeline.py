@@ -319,6 +319,7 @@ def test_compute_trace_metrics_hand_computed() -> None:
     assert row["bytes"] == pytest.approx(3600.0)  # 150 × (10×32 + 4×4)/14
     assert row["ai"] == pytest.approx(44.0 / 3600.0)
     assert row["perf"] == pytest.approx(4.4e7)
+    assert row["load_share"] == pytest.approx(100.0 / 150.0)  # 100 loads of 150 mem ops
 
 
 def test_compute_trace_metrics_drops_raw_counters() -> None:
@@ -331,7 +332,7 @@ def test_compute_trace_metrics_drops_raw_counters() -> None:
         }
     )
     metrics = compute_trace_metrics(bursts)
-    assert list(metrics.columns) == ["thread_id", "time_s", "duration_s", "flops", "bytes", "ai", "perf"]
+    assert list(metrics.columns) == ["thread_id", "time_s", "duration_s", "flops", "bytes", "ai", "perf", "load_share"]
 
 
 def test_compute_trace_metrics_zero_fp_row() -> None:
@@ -351,6 +352,23 @@ def test_compute_trace_metrics_zero_fp_row() -> None:
     assert row["perf"] == 0.0
     assert row["ai"] == row["ai"]  # not NaN
     assert row["perf"] == row["perf"]  # not NaN
+    assert row["load_share"] != row["load_share"]  # NaN: no loads and no stores
+
+
+def test_compute_trace_metrics_load_share_edges() -> None:
+    bursts = pd.DataFrame(
+        {
+            "thread_id": pd.Categorical(["1.1.1", "1.1.1"]),
+            "time_s": [0.0, 0.0],
+            "duration_s": [1e-6, 1e-6],
+            **{name: 0 for name in EXPECTED_NAMES},
+            "mem-loads": [5, 0],
+            "mem-stores": [0, 7],
+        }
+    )
+    metrics = compute_trace_metrics(bursts)
+    assert metrics.iloc[0]["load_share"] == 1.0  # load-only burst
+    assert metrics.iloc[1]["load_share"] == 0.0  # store-only burst
 
 
 def test_attach_state_codes_backward_and_end_check() -> None:
@@ -426,6 +444,7 @@ def test_build_trace_table_end_to_end(tmp_path: Path) -> None:
     assert first["bytes"] == pytest.approx(3200.0)  # 100 × (2×32)/2
     assert first["ai"] == pytest.approx(8.0 / 3200.0)
     assert first["perf"] == pytest.approx(8.0 / 500e-9)
+    assert first["load_share"] == 1.0  # no mem-stores.csv: stores zero-filled, load-only
     assert first["state_code"] == 0.0
     second = trace.iloc[1]
     assert second["flops"] == pytest.approx(16.0)

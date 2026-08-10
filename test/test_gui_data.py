@@ -348,6 +348,7 @@ def _paraver_trace() -> pd.DataFrame:
             "bytes": [10.0, 20.0, 30.0],
             "ai": [10.0, 10.0, 10.0],
             "perf": [100.0, 200.0, 300.0],
+            "load_share": [2.0 / 3.0, 1.0 / 3.0, 1.0],
         }
     )
 
@@ -412,6 +413,29 @@ def test_build_paraver_figure_gradient_mode_single_trace() -> None:
     # Gradient tooltips carry the raw value the color encodes (1.0 -> 1, 8.0 -> 8).
     assert "<b>Paraver Value</b><br>  1" in m.customdata[0]
     assert "<b>Paraver Value</b><br>  8" in m.customdata[1]
+
+
+def test_build_paraver_figure_tooltip_load_store_percentages() -> None:
+    """Tooltips derive load/store percentages from the load_share column."""
+    trace = _paraver_trace()
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.GRADIENT,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace)
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert "  Loads: 66.7% · Stores: 33.3%" in markers[0].customdata[0]
+    assert "  Loads: 33.3% · Stores: 66.7%" in markers[0].customdata[1]
+    assert "  Loads: 100.0% · Stores: 0.0%" in markers[0].customdata[2]
+    # NaN load_share (no loads and no stores) renders placeholders, not 0%.
+    trace["load_share"] = [2.0 / 3.0, float("nan"), 1.0]
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace)
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert "  Loads: — · Stores: —" in markers[0].customdata[1]
 
 
 def test_build_paraver_figure_tooltip_omits_nan_value() -> None:
