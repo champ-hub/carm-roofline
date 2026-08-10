@@ -679,7 +679,7 @@ def build_export_panel(store: RoofStore) -> html.Div:
                             ),
                             _export_row("Arithmetic intensity", ExportPanelID.BTN_EXPORT_AI, ExportPanelID.STATUS_AI),
                             _export_row(
-                                "Load/store ratio",
+                                "Load percentage",
                                 ExportPanelID.BTN_EXPORT_LDST_PERCENT,
                                 ExportPanelID.STATUS_LDST_PERCENT,
                             ),
