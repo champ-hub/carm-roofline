@@ -147,7 +147,11 @@ class ParaverProvider:
             # trace with NaN legend_label/legend_color (never plotted, but they keep
             # the slider bounds covering the whole trace).
             codes = trace_state_code(trace).astype(float)
-            left = trace.assign(_code=codes).sort_values("_code")
+            # Bursts whose start falls outside the window's state timeline carry
+            # NaN state_code (a normal case, not corrupted input); merge_asof
+            # rejects null keys, so merge only the coded rows and leave the rest
+            # NaN in the assignments below.
+            left = trace.assign(_code=codes).loc[codes.notna()].sort_values("_code")
             matched = pd.merge_asof(
                 left,
                 legend,

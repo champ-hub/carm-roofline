@@ -460,3 +460,54 @@ def test_load_applications_round_trips_time_s(tmp_path: Path) -> None:
     assert traced.time_s == pytest.approx(12.5)
     assert carm.label == "p_carm"
     assert carm.time_s is None
+
+
+def test_paraver_provider_legend_keeps_nan_state_code_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bursts outside the window's state timeline load and keep NaN legend columns.
+
+    attach_state_codes yields NaN state_code for bursts whose start falls past the
+    window's state timeline (counter CSVs span the whole trace while the window CSV
+    covers only the exported subset). Regression: the code-mode legend merge fed
+    merge_asof those NaN keys, aborting load() with "Merge keys contain null
+    values on left side"; the unmatched row must stay in the trace with NaN
+    legend_label/legend_color (never plotted, keeping the slider bounds).
+    """
+    trace = tmp_path / "t.prv"
+    trace.write_text("#Paraver dummy\n")
+    window_csv = tmp_path / "window.csv"
+    # One state active over [0, 1 s); the second burst starts at t=2 s, past the
+    # state's end, so attach_state_codes gives it NaN state_code.
+    window_csv.write_text(
+        f"#20260803:CSV:RUNAPP:{trace.resolve()}:nanoseconds:window_in_code_mode\n"
+        "1.1.1\t0.0\t1000000000.0\t1.0\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "window.legend.csv").write_text('1.000000 "Running" 0,0,255\n', encoding="utf-8")
+
+    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+        out = Path(output_dir)
+        for name in ("fp-avx2-dp.csv", "mem-loads.csv"):
+            (out / name).write_text(
+                f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_code_mode\n"
+                "1.1.1\t0.0\t1000000000.0\t4\n"
+                "1.1.1\t2000000000.0\t1000000000.0\t4\n",
+                encoding="utf-8",
+            )
+
+    monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", _fake_run_paramedir)
+    monkeypatch.setattr("shutil.which", lambda _x: "/usr/bin/paramedir")
+
+    data = ParaverProvider(trace, window_csv).load()
+
+    # Both bursts survive: the in-window row maps to its legend entry, the
+    # out-of-window row keeps NaN state_code and NaN legend columns.
+    assert len(data.trace) == 2
+    codes = data.trace["state_code"].astype(float).tolist()
+    assert codes[0] == 1.0
+    assert pd.isna(codes[1])
+    assert data.trace["legend_label"].iloc[0] == "Running"
+    assert pd.isna(data.trace["legend_label"].iloc[1])
+    assert data.trace["legend_color"].iloc[0] == "rgb(0,0,255)"
+    assert pd.isna(data.trace["legend_color"].iloc[1])
