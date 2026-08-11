@@ -178,6 +178,30 @@ def load_counter_data(counter_csv_dir: str | Path, time_unit: str | None = None)
     return result
 
 
+def _is_sorted_by_time_thread(frame: pd.DataFrame) -> bool:
+    """True when *frame*'s rows are non-decreasing in ('time_s', 'thread_id').
+
+    The cheap vectorized lexicographic gate behind the skip-redundant-sort
+    optimization (pandas 2.3.3 has no DataFrame.is_monotonic_increasing and a
+    per-column AND would reject every multi-thread frame, whose thread codes
+    repeat). sort_values sorts a categorical by category order, so comparing
+    category codes is equivalent to comparing the values. A missing thread_id
+    (code -1) sorts last but would read as smallest under the code order, and a
+    non-categorical thread_id cannot be code-compared, so both conservatively
+    return False and the caller keeps the sort (output stays identical).
+    """
+    time = frame["time_s"]
+    thread_id = frame["thread_id"]
+    if not isinstance(thread_id.dtype, pd.CategoricalDtype):
+        return False
+    codes = thread_id.cat.codes
+    if codes.lt(0).any():
+        return False
+    # Non-decreasing time_s, and thread codes may only decrease where time_s
+    # strictly increases — i.e. never within a time_s tie.
+    return bool(time.is_monotonic_increasing and not ((time == time.shift()) & (codes < codes.shift())).any())
+
+
 def merge_counter_frames(frames: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
     """Combine counter frames into one burst frame [thread_id, time_s, duration_s,
     <each registry counter>] with every registered counter as a column (registry
@@ -185,7 +209,11 @@ def merge_counter_frames(frames: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
     frames have identical key columns (df[key_cols].equals), column-stack via
     pd.concat(axis=1); else outer-merge on the 3 keys then fillna(0) (legacy
     behavior). Raise ValueError when *frames* is empty. Sort result by
-    ('time_s', 'thread_id').
+    ('time_s', 'thread_id'): counter frames are (time_s, thread_id)-sorted by
+    contract, and the fast path's rows copy the first frame's order, so the sort
+    is skipped when :func:`_is_sorted_by_time_thread` confirms the stack is
+    already sorted; the outer-merge path sorts unconditionally (its row order
+    depends on merge history).
     """
     if not frames:
         raise ValueError("merge_counter_frames: no counter frames to merge")
@@ -205,7 +233,8 @@ def merge_counter_frames(frames: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
         for n in cat_names:
             present[n] = present[n].assign(thread_id=present[n]["thread_id"].cat.set_categories(categories))
     first = present[next(iter(present))]
-    if all(frame[keys].equals(first[keys]) for frame in present.values()):
+    fast_path = all(frame[keys].equals(first[keys]) for frame in present.values())
+    if fast_path:
         combined = pd.concat([first[keys]] + [present[name][[name]] for name in present], axis=1)
     else:
         combined = first[keys].copy()
@@ -216,7 +245,10 @@ def merge_counter_frames(frames: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
     for name in names:
         if name not in combined.columns:
             combined[name] = 0.0
-    return combined[keys + names].sort_values(["time_s", "thread_id"]).reset_index(drop=True)
+    result = combined[keys + names]
+    if fast_path and _is_sorted_by_time_thread(result):
+        return result.reset_index(drop=True)
+    return result.sort_values(["time_s", "thread_id"]).reset_index(drop=True)
 
 
 def compute_trace_metrics(bursts: pd.DataFrame) -> pd.DataFrame:
@@ -237,7 +269,8 @@ def compute_trace_metrics(bursts: pd.DataFrame) -> pd.DataFrame:
     Returns columns ('thread_id', 'time_s', 'duration_s', 'flops', 'bytes', 'ai',
     'perf', 'load_share', 'isa_scalar_pct', 'isa_sse_pct', 'isa_avx2_pct',
     'isa_avx512_pct') — state_code is attached by :func:`attach_state_codes`
-    next.
+    next. Row order is preserved (columns are copied positionally from
+    *bursts*), so a (time_s, thread_id)-sorted input yields a sorted output.
     """
     fp_cols = list(fp_names)
     fp_inst = bursts[fp_cols].sum(axis=1)
@@ -280,8 +313,14 @@ def attach_state_codes(bursts: pd.DataFrame, window: pd.DataFrame) -> pd.DataFra
     state's end (time_s > state_time_s + state_duration_s) get state_code NaN.
     state_code comes out float64 (NaN-safe). Returns bursts plus the state_code
     column.
+
+    *bursts* is expected sorted by ('time_s', 'thread_id') — the
+    :func:`merge_counter_frames` → :func:`compute_trace_metrics` contract
+    (metrics preserve row order) — so the left sort is skipped when
+    :func:`_is_sorted_by_time_thread` confirms it; unsorted input is still
+    sorted, keeping the output identical.
     """
-    left = bursts.sort_values(["time_s", "thread_id"])
+    left = bursts if _is_sorted_by_time_thread(bursts) else bursts.sort_values(["time_s", "thread_id"])
     right = (
         window[["thread_id", "time_s", "duration_s", "state_code"]]
         .astype({"state_code": float})
