@@ -93,13 +93,15 @@ _LEGEND_LINE_RE = re.compile(r'^(-?[\d\.]+)(?:-(-?[\d\.]+))?\s+"([^"]+)"\s+(\d+)
 
 
 def time_unit_to_seconds(unit: str | None) -> float:
-    """Map a Paraver header time-unit string to seconds; missing/empty → 1e-6 (µs,
-    legacy default); a non-empty unit not in :data:`TIME_SCALE_FACTORS` raises
-    ValueError.
+    """Map a Paraver header time-unit string to seconds; missing/empty/'unknown'
+    (any case, the exported form of an empty unit) → 1e-6 (µs, legacy default);
+    any other unit not in :data:`TIME_SCALE_FACTORS` raises ValueError.
     """
     if unit is None or not unit.strip():
         return 1e-6
     key = unit.strip().lower()
+    if key == "unknown":
+        return 1e-6
     if key not in TIME_SCALE_FACTORS:
         raise ValueError(f"unknown time unit {unit!r}; expected one of {sorted(TIME_SCALE_FACTORS)}")
     return TIME_SCALE_FACTORS[key]

@@ -44,6 +44,8 @@ from carm_roofline.paraver import (
     GRADIENT_WINDOW_MODE,
     CsvPrecision,
     ParaverWindowMode,
+    load_window_csv,
+    parse_paraver_header,
 )
 from carm_roofline.roofline_assembly import AssembledRoofline, BenchmarkRecord, RooflineFilter, assemble_roofline
 
@@ -388,3 +390,19 @@ def test_write_export_files(tmp_path: Path) -> None:
     write_export_files([ExportFile(name="a.csv", content="ONE")], tmp_path)
     assert (tmp_path / "a.csv").read_text(encoding="utf-8") == "ONE"
     assert (tmp_path / "b.csv").read_text(encoding="utf-8") == "two"
+
+
+def test_export_unknown_unit_header_round_trips(tmp_path: Path) -> None:
+    """An exported metadata line for an empty-unit window writes ':Unknown:'; the
+    resulting file must re-import (parse_paraver_header + load_window_csv) with
+    the µs legacy default instead of raising."""
+    header = build_csv_metadata_line(
+        "/p/x.prv", "", GRADIENT_WINDOW_MODE, 0.0, 16.0, timestamp="20260803170420"
+    )
+    assert header == "#20260803170420:CSV:RUNAPP:/p/x.prv:Unknown:window_in_null_gradient_mode:0.000000:16.000000"
+    assert parse_paraver_header(header).time_unit == "Unknown"
+    path = tmp_path / "exported.csv"
+    path.write_text(f"{header}\n1.1.1\t0.00\t1294.00\t0.00\n1.1.1\t1294.00\t100.00\t1.00\n", encoding="utf-8")
+    frame = load_window_csv(path)
+    assert frame["time_s"].tolist() == pytest.approx([0.0, 1294e-6])
+    assert frame["duration_s"].tolist() == pytest.approx([1294e-6, 100e-6])

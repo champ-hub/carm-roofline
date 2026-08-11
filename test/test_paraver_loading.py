@@ -240,3 +240,10 @@ def test_window_csv_precision_short_header_defaults(tmp_path: Path) -> None:
         "1.1.1\t0.00\t1.29\t0.00\n",
     )
     assert window_csv_precision(path) == CsvPrecision(2, 2, 2, 6)
+
+
+def test_time_unit_to_seconds_unknown_maps_to_microseconds() -> None:
+    """'Unknown' (any case, the exported form of an empty unit) is the µs default,
+    exactly like the empty string."""
+    assert time_unit_to_seconds("Unknown") == 1e-6
+    assert time_unit_to_seconds("unknown") == 1e-6
