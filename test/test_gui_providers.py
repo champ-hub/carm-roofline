@@ -624,3 +624,62 @@ def test_paraver_provider_legend_keeps_nan_state_code_rows(
     assert pd.isna(data.trace["legend_label"].iloc[1])
     assert data.trace["legend_color"].iloc[0] == "rgb(0,0,255)"
     assert pd.isna(data.trace["legend_color"].iloc[1])
+
+
+def test_paraver_provider_precomputes_tooltips_that_survive_filters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """load() stores per-row tooltip HTML in a _tooltip column the filters keep aligned."""
+    trace = tmp_path / "t.prv"
+    trace.write_text("#Paraver dummy\n")
+    window_csv = tmp_path / "window.csv"
+    window_csv.write_text(
+        f"#20260803:CSV:RUNAPP:{trace.resolve()}:nanoseconds:window_in_code_mode\n"
+        "1.1.1\t0.0\t1000000000.0\t8.0\n"
+        "1.1.1\t1000000000.0\t1000000000.0\t1.0\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "window.legend.csv").write_text(
+        '1.000000 "Running" 0,0,255\n8.000000 "Wait/WaitAll" 235,0,0\n', encoding="utf-8"
+    )
+
+    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+        out = Path(output_dir)
+        # Two bursts with different FP counts (so ai differs) for the AI filter split.
+        (out / "fp-avx2-dp.csv").write_text(
+            f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_code_mode\n"
+            "1.1.1\t0.0\t1000000000.0\t4\n"
+            "1.1.1\t1000000000.0\t1000000000.0\t8\n",
+            encoding="utf-8",
+        )
+        (out / "mem-loads.csv").write_text(
+            f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_code_mode\n"
+            "1.1.1\t0.0\t1000000000.0\t2\n"
+            "1.1.1\t1000000000.0\t1000000000.0\t2\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", _fake_run_paramedir)
+    monkeypatch.setattr("shutil.which", lambda _x: "/usr/bin/paramedir")
+
+    data = ParaverProvider(trace, window_csv).load()
+    loaded = data.trace
+    assert "_tooltip" in loaded.columns
+    assert len(loaded) == 2
+    tooltips = loaded["_tooltip"].tolist()
+    assert all(isinstance(t, str) for t in tooltips)
+    # Each tooltip names the trace and pairs the state code with its own legend label.
+    assert tooltips[0].startswith(f"<b>{data.label}</b>")
+    assert "<b>Paraver Value</b>" in tooltips[0]
+    assert " 8 (Wait/WaitAll)" in tooltips[0]
+    assert " 1 (Running)" in tooltips[1]
+
+    # The three filter helpers preserve the column and keep it aligned to rows.
+    by_window = filter_trace_by_window(loaded, (0.0, 0.5))
+    assert by_window["_tooltip"].tolist() == [tooltips[0]]
+    mid_ai = (float(loaded["ai"].min()) + float(loaded["ai"].max())) / 2.0
+    by_ai = filter_trace_by_ai(loaded, mid_ai)
+    assert len(by_ai) == 1
+    assert by_ai["_tooltip"].tolist() == [tooltips[by_ai.index[0]]]
+    assert filter_trace_by_duration(loaded, 1.5)["_tooltip"].tolist() == []
+    assert filter_trace_by_duration(loaded, None) is loaded

@@ -7,20 +7,25 @@ records keyed by id); paraver mode loads an external Paraver trace into a
 
 from __future__ import annotations
 
+import math
 import shutil
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 
 from carm_roofline.core.error import UserError
+from carm_roofline.core.units import Bandwidth, Bytes, Operations, Performance, Seconds
 from carm_roofline.paraver import (
     DEFAULT_CSV_PRECISION,
     CsvPrecision,
     MetricColumn,
     ParaverWindowMode,
     ProgressBar,
+    TraceRow,
     build_trace_table,
     default_legend_path,
     load_legend_csv,
@@ -29,6 +34,7 @@ from carm_roofline.paraver import (
     run_paramedir,
     trace_metric,
     trace_state_code,
+    trace_text,
     window_csv_precision,
 )
 from carm_roofline.roofline_assembly import ApplicationRecord, load_all_applications
@@ -51,7 +57,9 @@ class ParaverData:
 
     ``trace`` carries TRACE_COLUMNS; in code mode it additionally carries
     ``legend_label`` (str) and ``legend_color`` (str "rgb(r,g,b)") per row, NaN
-    for rows whose state_code no legend range covers. ``window_mode`` is a
+    for rows whose state_code no legend range covers. Every row carries
+    ``_tooltip`` (str): hover HTML formatted once at load so figure builds slice
+    the column instead of rebuilding it per row. ``window_mode`` is a
     :class:`ParaverWindowMode` member (``CODE`` | ``GRADIENT``). ``label`` is
     the short display name: the window name with its app suffix stripped
     (gradient mode, where the legend entry names the counter) or the trace stem
@@ -189,6 +197,9 @@ class ParaverProvider:
         else:
             # Legend entries are the state names; the label names the trace in tooltips.
             label = trace_stem
+        # Precompute per-row tooltip HTML once here: figure callbacks slice the
+        # column instead of rebuilding ~10 f-strings per row on every slider tick.
+        trace["_tooltip"] = paraver_tooltips(trace, label)
         return ParaverData(
             trace=trace,
             label=label,
@@ -297,3 +308,76 @@ def trace_time_range(trace: pd.DataFrame) -> tuple[float, float] | None:
         return None
     time_s = trace_metric(trace, "time_s")
     return (float(time_s.min()), float(time_s.max()))
+
+
+# Per-row tooltip formatting. These run once at load (``paraver_tooltips``) so
+# per-callback figure builds only slice the precomputed ``_tooltip`` column
+# instead of rebuilding ~10 f-strings per row for every slider/filter change.
+
+
+def _load_store_pct_line(load_share: float) -> str:
+    """One tooltip line with load/store percentages derived from the load_share fraction."""
+    if math.isnan(load_share):
+        return "  Loads: - | Stores: -"
+    loads_pct = 100.0 * load_share
+    return f"  Loads: {loads_pct:.1f}% | Stores: {100.0 - loads_pct:.1f}%"
+
+
+def _isa_pct_line(row: TraceRow) -> str:
+    """Per-ISA operation-share line: only ISAs above 0.1% (legacy display filter),
+    rounded to 1 dp; a '-' placeholder when no ISA qualifies (no FP work in the
+    burst)."""
+    entries = [
+        f"{label} {round(pct, 1):.1f}%"
+        for label, pct in (
+            ("Scalar", row.isa_scalar_pct),
+            ("SSE", row.isa_sse_pct),
+            ("AVX2", row.isa_avx2_pct),
+            ("AVX512", row.isa_avx512_pct),
+        )
+        if pct > 0.1
+    ]
+    return f"  ISA: {' | '.join(entries)}" if entries else "  ISA: -"
+
+
+def _format_paraver_tooltip(label: str, row: TraceRow, state_label: str | None) -> str:
+    """Rich HTML tooltip for a trace-table row; row is one TraceRow from ``itertuples()``."""
+    dur = float(row.duration_s)
+    parts = [f"<b>{label}</b>", f"<i>{row.thread_id}</i>"]
+    value = float(row.state_code)
+    if not math.isnan(value):
+        shown = f"{value:g}" if value.is_integer() else f"{value}"
+        if state_label is not None:
+            shown = f"{shown} ({state_label})"
+        parts += ["<b>Paraver Value</b>", f"  {shown}"]
+    parts += [
+        "<b>Performance</b>",
+        f"  Arithmetic Intensity: {float(row.ai):.3f} OPS/Byte",
+        f"  Performance: {Performance(float(row.perf))!s}",
+        f"  Bandwidth: {Bandwidth(float(row.bytes) / dur if dur > 0 else 0.0)!s}",
+        "<b>Execution</b>",
+        f"  Duration: {Seconds(dur)!s}",
+        "<b>Work</b>",
+        f"  Total FLOPs: {Operations(int(row.flops))!s}",
+        f"  Total Bytes: {Bytes(int(row.bytes))!s}",
+        _load_store_pct_line(float(row.load_share)),
+        _isa_pct_line(row),
+    ]
+    return "<br>".join(parts)
+
+
+def paraver_tooltips(trace: pd.DataFrame, label: str) -> list[str]:
+    """Per-row tooltip HTML for a whole trace, formatted once instead of per figure build.
+
+    state_label mirrors the per-call behavior: the row's own ``legend_label``
+    when the column exists and the value is a str (code mode), else None
+    (gradient mode, or rows no legend range covers).
+    """
+    if "legend_label" in trace.columns:
+        state_labels: list[str | None] = [
+            lbl if isinstance(lbl, str) else None for lbl in trace_text(trace, "legend_label")
+        ]
+    else:
+        state_labels = [None] * len(trace)
+    rows = cast(Iterable[TraceRow], trace.itertuples())
+    return [_format_paraver_tooltip(label, row, state_label) for row, state_label in zip(rows, state_labels)]

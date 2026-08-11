@@ -3,19 +3,23 @@ from __future__ import annotations
 import math
 import re
 import uuid
-from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
 
 import pandas as pd
 import plotly.graph_objects as go
 
 from carm_roofline.core.units import Bandwidth, Bytes, Frequency, Operations, Performance, Seconds
 from carm_roofline.gui.colors import COLOR_MODE_PARAVER, point_colors
-from carm_roofline.gui.providers import AI_FILTER_DEFAULT_AI, DURATION_FILTER_DEFAULT_S, ParaverData
+from carm_roofline.gui.providers import (
+    AI_FILTER_DEFAULT_AI,
+    DURATION_FILTER_DEFAULT_S,
+    ParaverData,
+    paraver_tooltips,
+)
 from carm_roofline.output_utils import debug, warn
-from carm_roofline.paraver import ParaverWindowMode, TraceRow, trace_metric, trace_state_code, trace_text
+from carm_roofline.paraver import ParaverWindowMode, trace_metric, trace_state_code, trace_text
 from carm_roofline.roofline_assembly import (
     ApplicationPoint,
     ApplicationRecord,
@@ -881,6 +885,12 @@ def _add_paraver_point_traces(
     Non-paraver color modes draw one marker trace for all rows; paraver-mode
     windows use the legend (code mode) or a colorscale (gradient mode).
     """
+    if "_tooltip" not in trace.columns:
+        # ParaverProvider.load precomputes this column; direct ParaverData
+        # constructions (tests, embedded use) get it built here on a copy so the
+        # caller's frame is left untouched (it may be reused with fresh columns).
+        trace = trace.copy()
+        trace["_tooltip"] = paraver_tooltips(trace, paraver.label)
     if color_mode != COLOR_MODE_PARAVER:
         _add_paraver_single_marker_trace(
             fig, paraver, trace, settings, runtime_min, runtime_range, {"color": point_colors(trace, color_mode)}
@@ -910,8 +920,7 @@ def _add_paraver_code_mode_traces(
         sizes = _paraver_marker_sizes(
             trace_metric(group, "duration_s"), runtime_min, runtime_range, settings.marker_scale_factor
         )
-        rows = cast(Iterable[TraceRow], group.itertuples())
-        customdata = [_format_paraver_tooltip(paraver.label, row, label) for row in rows]
+        customdata = group["_tooltip"].tolist()
         fig.add_trace(
             go.Scatter(
                 x=trace_metric(group, "ai").tolist(),
@@ -969,15 +978,7 @@ def _add_paraver_single_marker_trace(
     sizes = _paraver_marker_sizes(
         trace_metric(trace, "duration_s"), runtime_min, runtime_range, settings.marker_scale_factor
     )
-    rows = cast(Iterable[TraceRow], trace.itertuples())
-    if "legend_label" in trace.columns:
-        labels = list(trace_text(trace, "legend_label"))
-        customdata = [
-            _format_paraver_tooltip(paraver.label, row, label if isinstance(label, str) else None)
-            for row, label in zip(rows, labels)
-        ]
-    else:
-        customdata = [_format_paraver_tooltip(paraver.label, row, None) for row in rows]
+    customdata = trace["_tooltip"].tolist()
     fig.add_trace(
         go.Scatter(
             x=trace_metric(trace, "ai").tolist(),
@@ -990,54 +991,3 @@ def _add_paraver_single_marker_trace(
             hovertemplate="%{customdata}<extra></extra>",
         )
     )
-
-
-def _load_store_pct_line(load_share: float) -> str:
-    """One tooltip line with load/store percentages derived from the load_share fraction."""
-    if math.isnan(load_share):
-        return "  Loads: - | Stores: -"
-    loads_pct = 100.0 * load_share
-    return f"  Loads: {loads_pct:.1f}% | Stores: {100.0 - loads_pct:.1f}%"
-
-
-def _isa_pct_line(row: TraceRow) -> str:
-    """Per-ISA operation-share line: only ISAs above 0.1% (legacy display filter),
-    rounded to 1 dp; a '-' placeholder when no ISA qualifies (no FP work in the
-    burst)."""
-    entries = [
-        f"{label} {round(pct, 1):.1f}%"
-        for label, pct in (
-            ("Scalar", row.isa_scalar_pct),
-            ("SSE", row.isa_sse_pct),
-            ("AVX2", row.isa_avx2_pct),
-            ("AVX512", row.isa_avx512_pct),
-        )
-        if pct > 0.1
-    ]
-    return f"  ISA: {' | '.join(entries)}" if entries else "  ISA: -"
-
-
-def _format_paraver_tooltip(label: str, row: TraceRow, state_label: str | None) -> str:
-    """Rich HTML tooltip for a trace-table row; row is one TraceRow from ``itertuples()``."""
-    dur = float(row.duration_s)
-    parts = [f"<b>{label}</b>", f"<i>{row.thread_id}</i>"]
-    value = float(row.state_code)
-    if not math.isnan(value):
-        shown = f"{value:g}" if value.is_integer() else f"{value}"
-        if state_label is not None:
-            shown = f"{shown} ({state_label})"
-        parts += ["<b>Paraver Value</b>", f"  {shown}"]
-    parts += [
-        "<b>Performance</b>",
-        f"  Arithmetic Intensity: {float(row.ai):.3f} OPS/Byte",
-        f"  Performance: {Performance(float(row.perf))!s}",
-        f"  Bandwidth: {Bandwidth(float(row.bytes) / dur if dur > 0 else 0.0)!s}",
-        "<b>Execution</b>",
-        f"  Duration: {Seconds(dur)!s}",
-        "<b>Work</b>",
-        f"  Total FLOPs: {Operations(int(row.flops))!s}",
-        f"  Total Bytes: {Bytes(int(row.bytes))!s}",
-        _load_store_pct_line(float(row.load_share)),
-        _isa_pct_line(row),
-    ]
-    return "<br>".join(parts)
