@@ -65,9 +65,7 @@ from carm_roofline.gui.providers import (
     BenchmarkAppsProvider,
     ParaverData,
     ParaverProvider,
-    filter_trace_by_ai,
-    filter_trace_by_duration,
-    filter_trace_by_window,
+    filter_trace,
     trace_time_range,
 )
 from carm_roofline.output_utils import debug, warn
@@ -526,10 +524,16 @@ def _register_callbacks(
         )
         if mode.show_time_slider:
             window = store.paraver_state.time_window
-            filtered_trace = filter_trace_by_window(paraver_data.trace, window) if paraver_data is not None else None
-            if filtered_trace is not None:
-                filtered_trace = filter_trace_by_ai(filtered_trace, store.paraver_state.ai_threshold)
-                filtered_trace = filter_trace_by_duration(filtered_trace, store.paraver_state.duration_threshold)
+            filtered_trace = (
+                filter_trace(
+                    paraver_data.trace,
+                    window,
+                    store.paraver_state.ai_threshold,
+                    store.paraver_state.duration_threshold,
+                )
+                if paraver_data is not None
+                else None
+            )
             figure = build_paraver_figure(
                 resolved_roofs,
                 records or [],

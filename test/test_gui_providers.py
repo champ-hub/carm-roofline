@@ -16,6 +16,7 @@ from carm_roofline.gui.providers import (
     DURATION_FILTER_OFF_S,
     BenchmarkAppsProvider,
     ParaverProvider,
+    filter_trace,
     filter_trace_by_ai,
     filter_trace_by_duration,
     filter_trace_by_window,
@@ -135,6 +136,66 @@ def test_filter_trace_by_duration_off_threshold_disables() -> None:
     trace = _trace_frame()
     assert filter_trace_by_duration(trace, DURATION_FILTER_OFF_S) is trace
     assert filter_trace_by_duration(trace, 5e-7) is trace
+
+
+def test_filter_trace_all_disabled_returns_same_trace() -> None:
+    """No active term (None window and thresholds) returns the input frame unchanged."""
+    trace = _trace_frame()
+    assert filter_trace(trace, None, None, None) is trace
+
+
+def test_filter_trace_window_only() -> None:
+    """A window with no thresholds keeps rows with time_s inside [lo, hi]."""
+    result = filter_trace(_trace_frame(), (2.0, 8.0), None, None)
+    assert result["time_s"].tolist() == [5.0]
+
+
+def test_filter_trace_ai_only() -> None:
+    """An ai threshold with no window keeps rows with ai >= threshold."""
+    trace = _trace_frame()
+    trace["ai"] = [1e-4, 1e-3, 1e-2]
+    result = filter_trace(trace, None, 1e-3, None)
+    assert result["ai"].tolist() == [1e-3, 1e-2]
+
+
+def test_filter_trace_duration_only() -> None:
+    """A duration threshold with no window keeps rows with duration_s >= threshold."""
+    trace = _trace_frame()
+    trace["duration_s"] = [1e-5, 1e-3, 1e-2]
+    result = filter_trace(trace, None, None, 1e-3)
+    assert result["duration_s"].tolist() == [1e-3, 1e-2]
+
+
+def test_filter_trace_combined_keeps_rows_passing_all_terms() -> None:
+    """A row failing ANY active term is dropped; only rows passing all are kept."""
+    trace = pd.DataFrame(
+        {
+            "thread_id": ["0", "0", "0", "0"],
+            "time_s": [1.0, 5.0, 5.0, 5.0],
+            "duration_s": [1e-2, 1e-2, 1e-5, 1e-2],
+            "state_code": [1.0, 1.0, 1.0, 1.0],
+            "flops": [0.0, 0.0, 0.0, 0.0],
+            "bytes": [0.0, 0.0, 0.0, 0.0],
+            "ai": [1e-2, 1e-4, 1e-2, 1e-2],
+            "perf": [0.0, 0.0, 0.0, 0.0],
+        }
+    )
+    result = filter_trace(trace, (2.0, 8.0), 1e-3, 1e-3)
+    assert result["time_s"].tolist() == [5.0]
+    assert result["ai"].tolist() == [1e-2]
+    assert result["duration_s"].tolist() == [1e-2]
+
+
+def test_filter_trace_off_boundary_threshold_disables_term() -> None:
+    """A threshold <= its OFF constant disables that term, like a None threshold."""
+    trace = _trace_frame()
+    trace["ai"] = [1e-6, 1e-3, 1e-2]
+    result = filter_trace(trace, (2.0, 8.0), AI_FILTER_OFF_AI, DURATION_FILTER_OFF_S)
+    assert result["time_s"].tolist() == [5.0]
+    assert result["ai"].tolist() == [1e-3]
+    below = filter_trace(trace, (2.0, 8.0), 5e-7, 5e-7)
+    assert below["time_s"].tolist() == [5.0]
+    assert below["ai"].tolist() == [1e-3]
 
 
 def test_trace_time_range_spans_timestamps() -> None:

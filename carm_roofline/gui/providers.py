@@ -260,6 +260,37 @@ def filter_trace_by_duration(trace: pd.DataFrame, min_duration_s: float | None) 
     return _filter_trace_by_threshold(trace, "duration_s", min_duration_s, DURATION_FILTER_OFF_S)
 
 
+def filter_trace(
+    trace: pd.DataFrame,
+    window: tuple[float, float] | None,
+    ai_threshold: float | None,
+    duration_threshold: float | None,
+) -> pd.DataFrame:
+    """Filter *trace* by time window, ai and duration through a single boolean mask.
+
+    Applies the same boundary rules as the individual helpers: the window is
+    inclusive [lo, hi]; ai/duration keep rows with metric >= threshold; a threshold
+    of None or <= its OFF constant disables that term; a None window disables the
+    time term. The frame is indexed exactly once; when no term is active, *trace*
+    is returned unchanged (same object).
+    """
+    terms: list[pd.Series[bool]] = []
+    if window is not None:
+        lo, hi = window
+        time_s = trace_metric(trace, "time_s")
+        terms.append((time_s >= lo) & (time_s <= hi))
+    if ai_threshold is not None and ai_threshold > AI_FILTER_OFF_AI:
+        terms.append(trace_metric(trace, "ai") >= ai_threshold)
+    if duration_threshold is not None and duration_threshold > DURATION_FILTER_OFF_S:
+        terms.append(trace_metric(trace, "duration_s") >= duration_threshold)
+    if not terms:
+        return trace
+    mask = terms[0]
+    for term in terms[1:]:
+        mask = mask & term
+    return trace[mask]
+
+
 def trace_time_range(trace: pd.DataFrame) -> tuple[float, float] | None:
     """Full timestamp extent of the trace, or None when it is empty."""
     if trace.empty:
