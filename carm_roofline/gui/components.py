@@ -7,6 +7,7 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html
 
 from carm_roofline.core.units import Frequency, Seconds
+from carm_roofline.gui.colors import COLOR_MODE_OPTIONS
 from carm_roofline.gui.config import GUIMode
 from carm_roofline.gui.data import (
     COMPUTE_INST_OPTIONS,
@@ -650,7 +651,7 @@ def _export_row(label: str, btn_id: str, status_id: str) -> html.Div:
 
 
 def build_export_panel(store: RoofStore) -> html.Div:
-    """Paraver panel: export and filtering controls grouped into accordion sections."""
+    """Paraver panel: export, filtering, and color controls grouped into accordion sections."""
     ai_log = (
         round(math.log10(store.paraver_state.ai_threshold), 2)
         if store.paraver_state.ai_threshold is not None
@@ -720,9 +721,28 @@ def build_export_panel(store: RoofStore) -> html.Div:
                             ),
                         ],
                     ),
+                    dbc.AccordionItem(
+                        title="Color",
+                        item_id="color",
+                        children=[
+                            html.Div(
+                                className="settings-slider-row",
+                                children=[
+                                    html.Span("Color points based on", className="settings-toggle-label"),
+                                    dbc.RadioItems(
+                                        id=ExportPanelID.RADIO_COLOR_MODE,
+                                        options=[
+                                            {"label": label, "value": value} for label, value in COLOR_MODE_OPTIONS
+                                        ],
+                                        value=store.paraver_state.color_mode,
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
                 ],
                 always_open=True,
-                active_item=["export", "filtering"],
+                active_item=["export", "filtering", "color"],
                 start_collapsed=False,
             ),
         ],

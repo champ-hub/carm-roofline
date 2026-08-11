@@ -261,8 +261,8 @@ def test_navbar_paraver_tab_label_uses_short_name() -> None:
     assert button.children == "Paraver"
 
 
-def test_export_panel_accordion_groups_export_and_ai_filter() -> None:
-    """The paraver panel shows Export and Filtering accordion items with the AI slider.
+def test_export_panel_accordion_groups_export_filter_and_color() -> None:
+    """The paraver panel shows Export, Filtering, and Color accordion items with the AI slider.
 
     The slider spans log10(AI) from the "Off" limit (1e-6, a decade below 1e-5)
     to 1e-2 with decade marks; the 1e-5 position is the default (minimum active
@@ -277,10 +277,10 @@ def test_export_panel_accordion_groups_export_and_ai_filter() -> None:
 
     panel = build_export_panel(RoofStore())
     accordion = next(child for child in panel.children if isinstance(child, dbc.Accordion))
-    assert isinstance(accordion.children, list) and len(accordion.children) == 2
-    assert [item.title for item in accordion.children] == ["Export", "Filtering"]
+    assert isinstance(accordion.children, list) and len(accordion.children) == 3
+    assert [item.title for item in accordion.children] == ["Export", "Filtering", "Color"]
 
-    export_item, filtering_item = accordion.children
+    export_item, filtering_item, color_item = accordion.children
     for btn_id, status_id in (
         (ExportPanelID.BTN_EXPORT_PERFORMANCE, ExportPanelID.STATUS_PERFORMANCE),
         (ExportPanelID.BTN_EXPORT_AI, ExportPanelID.STATUS_AI),
@@ -291,6 +291,18 @@ def test_export_panel_accordion_groups_export_and_ai_filter() -> None:
     ):
         assert _find_component(export_item, btn_id) is not None
         assert _find_component(export_item, status_id) is not None
+
+    radio = _find_component(color_item, ExportPanelID.RADIO_COLOR_MODE)
+    assert radio is not None
+    assert radio.value == "paraver"
+    assert [option["label"] for option in radio.options] == [
+        "Paraver colors",
+        "Age",
+        "Thread ID",
+        "Load/store ratio",
+        "ISA",
+    ]
+    assert [option["value"] for option in radio.options] == ["paraver", "age", "thread", "ldst", "isa"]
 
     # Exports are written to disk: the Export item holds exactly the six
     # button+status rows, with no dcc.Download component left over.

@@ -92,7 +92,7 @@ class ParaverID(ID):
 
 
 class ExportPanelID(ID):
-    """IDs for the paraver panel (export + filtering controls)."""
+    """IDs for the paraver panel (export, filtering, and color controls)."""
 
     BTN_EXPORT_PERFORMANCE = "btn-export-performance"
     BTN_EXPORT_AI = "btn-export-ai"
@@ -108,3 +108,4 @@ class ExportPanelID(ID):
     STATUS_PROXIMITY = "export-status-proximity"
     SLIDER_AI_THRESHOLD = "slider-ai-threshold"
     SLIDER_DURATION_THRESHOLD = "slider-duration-threshold"
+    RADIO_COLOR_MODE = "radio-color-mode"

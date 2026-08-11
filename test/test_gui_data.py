@@ -91,10 +91,12 @@ def test_roofstore_round_trip_preserves_paraver_state() -> None:
     store.paraver_state.time_window = (1.0, 5.5)
     store.paraver_state.ai_threshold = 1e-3
     store.paraver_state.duration_threshold = 1e-3
+    store.paraver_state.color_mode = "isa"
     restored = RoofStore.from_dict(store.to_dict())
     assert restored.paraver_state.time_window == (1.0, 5.5)
     assert restored.paraver_state.ai_threshold == pytest.approx(1e-3)
     assert restored.paraver_state.duration_threshold == pytest.approx(1e-3)
+    assert restored.paraver_state.color_mode == "isa"
 
     # An explicit None (filter off) round-trips as None, not the default.
     store.paraver_state.ai_threshold = None
@@ -112,12 +114,14 @@ def test_roofstore_round_trip_preserves_paraver_state() -> None:
     assert restored_default.paraver_state.time_window is None
     assert restored_default.paraver_state.ai_threshold == pytest.approx(1e-5)
     assert restored_default.paraver_state.duration_threshold == pytest.approx(1e-4)
+    assert restored_default.paraver_state.color_mode == "paraver"
 
     # An empty dict (e.g. the `store_data or {}` guard) falls back to field defaults.
     empty = RoofStore.from_dict({})
     assert empty.paraver_state.time_window is None
     assert empty.paraver_state.ai_threshold == pytest.approx(1e-5)
     assert empty.paraver_state.duration_threshold == pytest.approx(1e-4)
+    assert empty.paraver_state.color_mode == "paraver"
 
 
 def test_build_roofline_figure_renders_application_points() -> None:
@@ -417,6 +421,79 @@ def test_build_paraver_figure_gradient_mode_single_trace() -> None:
     # Gradient tooltips carry the raw value the color encodes (1.0 -> 1, 8.0 -> 8).
     assert "<b>Paraver Value</b><br>  1" in m.customdata[0]
     assert "<b>Paraver Value</b><br>  8" in m.customdata[1]
+
+
+def test_build_paraver_figure_color_mode_age() -> None:
+    """Age mode replaces the mode-specific traces with one light-to-dark trace."""
+    trace = _paraver_trace()
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.CODE,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace, color_mode="age")
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert len(markers) == 1
+    m = markers[0]
+    assert m.name == "t — w.csv"
+    assert list(m.marker.color) == ["#c6dbef", "#6785ad", "#08306b"]
+    assert "<b>Paraver Value</b><br>  1" in m.customdata[0]
+
+
+def test_build_paraver_figure_color_mode_thread() -> None:
+    """Thread mode colors one trace deterministically per thread_id."""
+    trace = _paraver_trace()
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.GRADIENT,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace, color_mode="thread")
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert len(markers) == 1
+    assert list(markers[0].marker.color) == ["#2d5be5", "#b7e52d", "#2de56e"]
+
+
+def test_build_paraver_figure_color_mode_ldst() -> None:
+    """LD/ST mode colors from load_share; no-memory bursts gray."""
+    trace = _paraver_trace()
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.CODE,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace, color_mode="ldst")
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert list(markers[0].marker.color) == ["#6464b9", "#b96464", "#0000ff"]
+    trace["load_share"] = [2.0 / 3.0, math.nan, 1.0]
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace, color_mode="ldst")
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert list(markers[0].marker.color) == ["#6464b9", "#999999", "#0000ff"]
+
+
+def test_build_paraver_figure_color_mode_isa() -> None:
+    """ISA mode blends per-ISA shares; a no-FP burst is gray."""
+    trace = _paraver_trace()
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.GRADIENT,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace, color_mode="isa")
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert list(markers[0].marker.color) == ["#b47c45", "#2ca02c", "#999999"]
 
 
 def test_build_paraver_figure_tooltip_load_store_percentages() -> None:

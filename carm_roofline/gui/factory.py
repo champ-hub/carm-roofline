@@ -12,6 +12,7 @@ from dash import ALL, Input, Output, State, callback_context, html
 from dash.exceptions import PreventUpdate
 
 from carm_roofline.core.error import UserError
+from carm_roofline.gui.colors import COLOR_MODE_PARAVER
 from carm_roofline.gui.components import (
     AI_FILTER_LOG_MIN,
     DURATION_FILTER_LOG_MIN,
@@ -535,6 +536,7 @@ def _register_callbacks(
                 paraver_data,
                 filtered_trace,
                 settings=store.settings,
+                color_mode=store.paraver_state.color_mode,
             )
         else:
             figure = build_roofline_figure(
@@ -676,6 +678,18 @@ def _register_callbacks(
         _register_threshold_filter_callback(
             ExportPanelID.SLIDER_DURATION_THRESHOLD, "duration_threshold", DURATION_FILTER_LOG_MIN
         )
+
+        # 19c. Point-color mode radio -> per-session state in ROOF_STORE
+        @app.callback(
+            Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
+            Input(ExportPanelID.RADIO_COLOR_MODE, "value"),
+            State(StoreID.ROOF_STORE, "data"),
+            prevent_initial_call=True,
+        )
+        def _update_color_mode(value: str | None, store_data: dict[str, Any] | None) -> dict[str, Any]:
+            store = RoofStore.from_dict(store_data or {})
+            store.paraver_state.color_mode = value or COLOR_MODE_PARAVER
+            return store.to_dict()
 
         # Exports are written next to the .prv trace (legacy os.path.dirname(prv_trace_path)).
         if config.paraver_trace is not None:

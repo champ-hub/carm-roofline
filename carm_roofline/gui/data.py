@@ -12,6 +12,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from carm_roofline.core.units import Bandwidth, Bytes, Frequency, Operations, Performance, Seconds
+from carm_roofline.gui.colors import COLOR_MODE_PARAVER, point_colors
 from carm_roofline.gui.providers import AI_FILTER_DEFAULT_AI, DURATION_FILTER_DEFAULT_S, ParaverData
 from carm_roofline.output_utils import debug, warn
 from carm_roofline.paraver import ParaverWindowMode, TraceRow, trace_metric, trace_state_code, trace_text
@@ -171,12 +172,14 @@ class ParaverState:
     time_window: tuple[float, float] | None = None  # (lo, hi) seconds; None = full range
     ai_threshold: float | None = AI_FILTER_DEFAULT_AI  # OPS/Byte; 1e-5 default; None = filter off (slider at leftmost)
     duration_threshold: float | None = DURATION_FILTER_DEFAULT_S  # s; 100 us default; None = off (slider at leftmost)
+    color_mode: str = COLOR_MODE_PARAVER
 
     def to_dict(self) -> dict[str, object]:
         return {
             "time_window": list(self.time_window) if self.time_window else None,
             "ai_threshold": self.ai_threshold,
             "duration_threshold": self.duration_threshold,
+            "color_mode": self.color_mode,
         }
 
     @classmethod
@@ -190,6 +193,7 @@ class ParaverState:
             time_window=window,
             ai_threshold=float(ai) if ai is not None else None,
             duration_threshold=float(dur) if dur is not None else None,
+            color_mode=data.get("color_mode", COLOR_MODE_PARAVER),
         )
 
 
@@ -801,6 +805,7 @@ def build_paraver_figure(
     paraver: ParaverData | None,
     trace: pd.DataFrame | None,
     settings: GUISettings | None = None,
+    color_mode: str = COLOR_MODE_PARAVER,
 ) -> go.Figure:
     """Build the roofline figure from a paraver trace table directly.
 
@@ -808,7 +813,9 @@ def build_paraver_figure(
     legend entry colored by the legend; gradient mode adds a single trace colored
     by a continuous colorscale over state_code. Axes are widened to include the
     points' positive-metric extents. ``paraver``/``trace`` None (failed load)
-    yields ceilings only.
+    yields ceilings only. ``color_mode`` selects per-point coloring:
+    ``COLOR_MODE_PARAVER`` (the default) keeps the legend/colorscale behavior;
+    other modes color every point from the trace's metrics.
     """
     s = settings or GUISettings()
     fig = go.Figure()
@@ -826,7 +833,7 @@ def build_paraver_figure(
         color = _COLORS[idx % len(_COLORS)]
         divisor = roof_divisor(roof, s)
         if paraver is not None and trace is not None and not trace.empty:
-            _add_paraver_point_traces(fig, paraver, trace, s, runtime_min, runtime_range)
+            _add_paraver_point_traces(fig, paraver, trace, s, runtime_min, runtime_range, color_mode)
         _add_roof_ceilings(fig, roof, model, color, divisor, y_min_gops, s)
     _finalize_axes_and_layout(fig, x_range, y_range, s)
     return fig
@@ -866,10 +873,34 @@ def _add_paraver_point_traces(
     settings: GUISettings,
     runtime_min: float,
     runtime_range: float,
+    color_mode: str = COLOR_MODE_PARAVER,
 ) -> None:
+    """Dispatch point traces by color mode and window mode.
+
+    Non-paraver color modes draw one marker trace for all rows; paraver-mode
+    windows use the legend (code mode) or a colorscale (gradient mode).
+    """
+    if color_mode != COLOR_MODE_PARAVER:
+        _add_paraver_single_marker_trace(
+            fig, paraver, trace, settings, runtime_min, runtime_range, {"color": point_colors(trace, color_mode)}
+        )
+        return
     if paraver.window_mode == ParaverWindowMode.GRADIENT:
         _add_paraver_gradient_trace(fig, paraver, trace, settings, runtime_min, runtime_range)
         return
+    # otherwise, window is in code mode
+    _add_paraver_code_mode_traces(fig, paraver, trace, settings, runtime_min, runtime_range)
+
+
+def _add_paraver_code_mode_traces(
+    fig: go.Figure,
+    paraver: ParaverData,
+    trace: pd.DataFrame,
+    settings: GUISettings,
+    runtime_min: float,
+    runtime_range: float,
+) -> None:
+    """One marker trace per legend entry, colored by the legend (code mode)."""
     labelled = trace[trace_text(trace, "legend_label").notna()]
     if labelled.empty:
         return
@@ -908,11 +939,44 @@ def _add_paraver_gradient_trace(
     runtime_range: float,
 ) -> None:
     """Single trace, one legend entry (paraver.label), colorscale over state_code."""
+    _add_paraver_single_marker_trace(
+        fig,
+        paraver,
+        trace,
+        settings,
+        runtime_min,
+        runtime_range,
+        {
+            "color": trace_state_code(trace).astype(float).tolist(),
+            "colorscale": "Viridis",
+            "showscale": False,
+        },
+    )
+
+
+def _add_paraver_single_marker_trace(
+    fig: go.Figure,
+    paraver: ParaverData,
+    trace: pd.DataFrame,
+    settings: GUISettings,
+    runtime_min: float,
+    runtime_range: float,
+    marker: dict[str, object],
+) -> None:
+    """One marker trace for all trace rows; *marker* adds mode-specific marker
+    fields (per-point colors, or a colorscale) over size/sizemode/opacity."""
     sizes = _paraver_marker_sizes(
         trace_metric(trace, "duration_s"), runtime_min, runtime_range, settings.marker_scale_factor
     )
     rows = cast(Iterable[TraceRow], trace.itertuples())
-    customdata = [_format_paraver_tooltip(paraver.label, row, None) for row in rows]
+    if "legend_label" in trace.columns:
+        labels = list(trace_text(trace, "legend_label"))
+        customdata = [
+            _format_paraver_tooltip(paraver.label, row, label if isinstance(label, str) else None)
+            for row, label in zip(rows, labels)
+        ]
+    else:
+        customdata = [_format_paraver_tooltip(paraver.label, row, None) for row in rows]
     fig.add_trace(
         go.Scatter(
             x=trace_metric(trace, "ai").tolist(),
@@ -920,14 +984,7 @@ def _add_paraver_gradient_trace(
             mode="markers",
             name=paraver.label,
             showlegend=True,
-            marker={
-                "color": trace_state_code(trace).astype(float).tolist(),
-                "colorscale": "Viridis",
-                "showscale": False,
-                "size": sizes,
-                "sizemode": "area",
-                "opacity": 0.6,
-            },
+            marker={"size": sizes, "sizemode": "area", "opacity": 0.6, **marker},
             customdata=customdata,
             hovertemplate="%{customdata}<extra></extra>",
         )
