@@ -610,3 +610,67 @@ def test_build_paraver_figure_none_paraver_draws_ceilings_only() -> None:
     """paraver=None/trace=None (failed load) draws ceilings only, without exception."""
     fig = build_paraver_figure([RoofConfig()], [], None, None)
     assert all(t.mode != "markers" for t in fig.data)
+
+
+def test_build_paraver_figure_multi_roof_draws_points_once() -> None:
+    """Points are drawn once regardless of roof count (regression: they were drawn per roof)."""
+    trace = _paraver_trace()
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.GRADIENT,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    fig = build_paraver_figure([RoofConfig(), RoofConfig()], [], paraver, trace)
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert len(markers) == 1
+    assert markers[0].name == "t — w.csv"
+    assert list(markers[0].marker.color) == [1.0, 8.0, 8.0]
+
+
+def test_build_paraver_figure_multi_roof_code_mode_legend_once() -> None:
+    """Code mode adds each legend entry once even with several roofs."""
+    trace = _paraver_trace()
+    trace["legend_label"] = ["Running", "Wait/WaitAll", "Wait/WaitAll"]
+    trace["legend_color"] = ["rgb(0,0,255)", "rgb(235,0,0)", "rgb(235,0,0)"]
+    legend = pd.DataFrame(
+        {
+            "code": [1.0, 8.0],
+            "code_end": [1.0, 8.0],
+            "label": ["Running", "Wait/WaitAll"],
+            "r": [0, 235],
+            "g": [0, 0],
+            "b": [255, 0],
+        }
+    )
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.CODE,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=legend,
+    )
+    fig = build_paraver_figure([RoofConfig(), RoofConfig()], [], paraver, trace)
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert [m.name for m in markers] == ["Running", "Wait/WaitAll"]
+
+
+def test_build_paraver_figure_no_roofs_still_draws_points() -> None:
+    """With all roofs removed the trace points are still drawn and widen the axes."""
+    trace = _paraver_trace()
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.GRADIENT,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    fig = build_paraver_figure([], [], paraver, trace)
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert len(markers) == 1
+    # perf in GOPS (100..300) pulls the y-axis bottom below the [0, 3.5] fallback.
+    assert fig.layout.yaxis.range[0] < 0

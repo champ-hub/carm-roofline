@@ -829,11 +829,12 @@ def build_paraver_figure(
         runtime_max = float(duration_s.max())
         runtime_range = runtime_max - runtime_min
         x_range, y_range = _extend_ranges_to_points(x_range, y_range, trace)
+    if has_points:
+        assert trace is not None and paraver is not None
+        _add_paraver_point_traces(fig, paraver, trace, s, runtime_min, runtime_range, color_mode)
     for idx, (roof, model) in enumerate(zip(roofs, models)):
         color = _COLORS[idx % len(_COLORS)]
         divisor = roof_divisor(roof, s)
-        if paraver is not None and trace is not None and not trace.empty:
-            _add_paraver_point_traces(fig, paraver, trace, s, runtime_min, runtime_range, color_mode)
         _add_roof_ceilings(fig, roof, model, color, divisor, y_min_gops, s)
     _finalize_axes_and_layout(fig, x_range, y_range, s)
     return fig
