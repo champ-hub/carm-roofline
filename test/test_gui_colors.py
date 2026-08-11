@@ -56,6 +56,24 @@ def test_point_colors_ldst_ratio_endpoints_mid_and_no_data() -> None:
     assert point_colors(trace, COLOR_MODE_LDST) == ["#0000ff", "#ff0000", "#969696", "#999999"]
 
 
+def test_point_colors_ldst_intermediate_factors() -> None:
+    """Mid-gradient shares interpolate both branches toward the gray midpoint."""
+    trace = _trace(n=3, load_share=[0.25, 0.75, math.nan])
+    assert point_colors(trace, COLOR_MODE_LDST) == ["#ca4b4b", "#4b4bca", "#999999"]
+
+
+def test_point_colors_isa_nan_excluded_and_normalized() -> None:
+    """NaN shares are ignored (not a weight); partial totals normalize per row."""
+    trace = _trace(
+        n=2,
+        isa_scalar_pct=[50.0, 0.0],
+        isa_sse_pct=[math.nan, 100.0 / 3.0],
+        isa_avx2_pct=[50.0, 100.0 / 3.0],
+        isa_avx512_pct=[0.0, 100.0 / 3.0],
+    )
+    assert point_colors(trace, COLOR_MODE_ISA) == ["#268c70", "#ab7020"]
+
+
 def test_point_colors_isa_blend_and_no_data() -> None:
     """Weights blend the active ISAs; no FP work (all shares 0/NaN) -> gray."""
     trace = _trace(

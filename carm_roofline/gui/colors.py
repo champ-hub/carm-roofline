@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import colorsys
 import hashlib
-import math
 
+import numpy as np
 import pandas as pd
 
 from carm_roofline.paraver import trace_metric
@@ -61,16 +61,6 @@ def _interpolate_hex(start: tuple[int, int, int], end: tuple[int, int, int], fac
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
-def _blend_hex(weights: dict[str, float], colors: dict[str, tuple[int, int, int]]) -> str:
-    """Weighted per-channel RGB average, as #rrggbb; empty weights -> gray."""
-    if not weights:
-        return _NO_DATA_COLOR
-
-    total = sum(weights.values())
-    r, g, b = (round(sum(w * colors[key][i] for key, w in weights.items()) / total) for i in range(3))
-    return f"#{r:02x}{g:02x}{b:02x}"
-
-
 def _hash_to_color(thread_id: str) -> str:
     """Deterministic per-thread color: sha256 -> hue, saturation 0.8 / value 0.9, converted with stdlib colorsys.
     `% 360` keeps the hue in [0, 1), so it always falls inside the six HSV sectors."""
@@ -88,7 +78,10 @@ def point_colors(trace: pd.DataFrame, color_mode: str) -> list[str]:
     if color_mode == COLOR_MODE_AGE:
         return _age_colors(len(trace))
     if color_mode == COLOR_MODE_THREAD:
-        return [_hash_to_color(str(thread_id)) for thread_id in trace["thread_id"]]
+        by_thread: dict[str, str] = {
+            str(thread_id): _hash_to_color(str(thread_id)) for thread_id in trace["thread_id"].unique()
+        }
+        return [by_thread[str(thread_id)] for thread_id in trace["thread_id"]]
     if color_mode == COLOR_MODE_LDST:
         return _ldst_colors(trace_metric(trace, "load_share"))
     if color_mode == COLOR_MODE_ISA:
@@ -107,29 +100,59 @@ def _age_colors(n_points: int) -> list[str]:
 
 def _ldst_colors(load_share: pd.Series[float]) -> list[str]:
     """Blue at 100% loads, red at 0%, gray at 50/50; NaN (no memory ops) gray."""
-    colors = []
-    for share in load_share:
-        if math.isnan(share):
-            colors.append(_NO_DATA_COLOR)
-        elif share <= 0.5:
-            colors.append(_interpolate_hex(_LDST_STORE, _LDST_MID, share * 2.0))
-        else:
-            colors.append(_interpolate_hex(_LDST_MID, _LDST_LOAD, (share - 0.5) * 2.0))
+    shares = np.asarray(load_share, dtype=float)
+    no_data = np.isnan(shares)
+    # NaN rows take the <= 0.5 branch (factor 1.0) and are overwritten below.
+    shares = np.where(no_data, 0.5, shares)
+    factor = np.where(shares <= 0.5, shares * 2.0, (shares - 0.5) * 2.0)
+    lo = shares <= 0.5
+    red = np.where(
+        lo,
+        _LDST_STORE[0] + factor * (_LDST_MID[0] - _LDST_STORE[0]),
+        _LDST_MID[0] + factor * (_LDST_LOAD[0] - _LDST_MID[0]),
+    )
+    green = np.where(
+        lo,
+        _LDST_STORE[1] + factor * (_LDST_MID[1] - _LDST_STORE[1]),
+        _LDST_MID[1] + factor * (_LDST_LOAD[1] - _LDST_MID[1]),
+    )
+    blue = np.where(
+        lo,
+        _LDST_STORE[2] + factor * (_LDST_MID[2] - _LDST_STORE[2]),
+        _LDST_MID[2] + factor * (_LDST_LOAD[2] - _LDST_MID[2]),
+    )
+    rgb = np.stack([red, green, blue], axis=1).astype(int)
+    colors = [f"#{int(r):02x}{int(g):02x}{int(b):02x}" for r, g, b in rgb]
+    for i in np.nonzero(no_data)[0]:
+        colors[i] = _NO_DATA_COLOR
     return colors
 
 
 def _isa_colors(trace: pd.DataFrame) -> list[str]:
     """Weighted blend of the active ISAs' colors by per-ISA op share; no FP work (all shares 0 or NaN) gray."""
-    scalar = trace_metric(trace, "isa_scalar_pct")
-    sse = trace_metric(trace, "isa_sse_pct")
-    avx2 = trace_metric(trace, "isa_avx2_pct")
-    avx512 = trace_metric(trace, "isa_avx512_pct")
-    colors = []
-    for row in zip(scalar, sse, avx2, avx512):
-        active = {
-            key: float(value)
-            for key, value in zip(("scalar", "sse", "avx2", "avx512"), row)
-            if not math.isnan(value) and value > 0
-        }
-        colors.append(_blend_hex(active, _ISA_COLORS))
+    pcts = np.stack(
+        [
+            np.asarray(trace_metric(trace, "isa_scalar_pct"), dtype=float),
+            np.asarray(trace_metric(trace, "isa_sse_pct"), dtype=float),
+            np.asarray(trace_metric(trace, "isa_avx2_pct"), dtype=float),
+            np.asarray(trace_metric(trace, "isa_avx512_pct"), dtype=float),
+        ],
+        axis=1,
+    )
+    # Per-row weights: each ISA's share where not NaN and > 0, zero otherwise (matches the old active-dict filter).
+    weights = np.where(~np.isnan(pcts) & (pcts > 0.0), pcts, 0.0)
+    totals = weights.sum(axis=1)
+    no_data = totals == 0.0
+    isa_rgb = np.asarray([_ISA_COLORS[name] for name in _ISA_COLORS], dtype=float)
+    # Per-channel weighted average, left-folded in the same order as the old sum(); rows with no active ISA divide by 1
+    # and are overwritten with the no-data color below.
+    blended = (
+        weights[:, 0:1] * isa_rgb[0]
+        + weights[:, 1:2] * isa_rgb[1]
+        + weights[:, 2:3] * isa_rgb[2]
+        + weights[:, 3:4] * isa_rgb[3]
+    ) / np.where(no_data, 1.0, totals)[:, None]
+    colors = [f"#{int(r):02x}{int(g):02x}{int(b):02x}" for r, g, b in np.rint(blended).astype(int)]
+    for i in np.nonzero(no_data)[0]:
+        colors[i] = _NO_DATA_COLOR
     return colors
