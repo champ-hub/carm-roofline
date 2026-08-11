@@ -406,3 +406,14 @@ def test_export_unknown_unit_header_round_trips(tmp_path: Path) -> None:
     frame = load_window_csv(path)
     assert frame["time_s"].tolist() == pytest.approx([0.0, 1294e-6])
     assert frame["duration_s"].tolist() == pytest.approx([1294e-6, 100e-6])
+
+
+def test_proximity_guard_missing_compute_peaks() -> None:
+    """Memory-only model (bandwidth present, no arithmetic records) refuses the
+    proximity export with () instead of raising on the empty peak sequence."""
+    records = [r for r in _roof_records() if r.get("type") == "memory"]
+    model = assemble_roofline(records, RooflineFilter(isa="x86", num_threads=1, data_type="f32"))
+    assert model.bandwidth_by_level  # bandwidths present...
+    assert not model.peak_performance_by_op  # ...but no compute peaks
+    paraver = _paraver_data(_metric_trace())
+    assert export_proximity(paraver.trace, paraver, model, 1) == ()

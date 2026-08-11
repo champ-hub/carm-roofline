@@ -328,7 +328,7 @@ def export_proximity(
     """
     if trace.empty:
         return ()
-    if model is None or not model.bandwidth_by_level:
+    if model is None or not model.bandwidth_by_level or not model.peak_performance_by_op:
         return ()
     ai = trace_metric(trace, "ai")
     perf = trace_metric(trace, "perf")
