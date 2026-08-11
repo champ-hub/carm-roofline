@@ -141,7 +141,7 @@ class ApplicationRecord:
     aggregation: str
     metadata: dict[str, Any]
     points: list[ApplicationPoint]
-    machine: str
+    machine: str = ""  # matches load_applications' default; "" never matches a roof machine
 
 
 # ── JSONL loading ─────────────────────────────────────────────────────────────
@@ -269,6 +269,7 @@ def load_applications(path: Path, machine: str = "") -> list[ApplicationRecord]:
                         arithmetic_intensity=float(p.get("arithmetic_intensity", 0)),
                         flops_per_second=float(p.get("flops_per_second", 0)),
                         bandwidth=float(p.get("bandwidth", 0)),
+                        time_s=float(p["time_s"]) if p.get("time_s") is not None else None,
                     )
                 )
             records.append(

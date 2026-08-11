@@ -22,6 +22,7 @@ from carm_roofline.gui.providers import (
     trace_time_range,
 )
 from carm_roofline.paraver import CsvPrecision, ParaverWindowMode
+from carm_roofline.roofline_assembly import load_applications
 
 pytestmark = pytest.mark.unit
 
@@ -409,3 +410,53 @@ def test_benchmark_apps_provider_loads_applications_jsonl(tmp_path: Path) -> Non
     rec = next(iter(app_by_id.values()))
     assert rec.id.startswith("app_")
     assert rec.machine == "machine-a"
+
+
+def test_load_applications_round_trips_time_s(tmp_path: Path) -> None:
+    """A point's time_s survives the JSONL round trip; absent time_s loads as None."""
+    path = tmp_path / "applications.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "format_version": "2.0",
+                "metadata": {"name": "app", "date": "2026-01-01", "command": "run"},
+                "aggregation": "avg",
+                "points": [
+                    {
+                        "label": "p_traced",
+                        "total_flops": 1,
+                        "total_bytes": 1,
+                        "runtime_s": 1,
+                        "num_ranks": 1,
+                        "num_threads": 1,
+                        "num_regions": 1,
+                        "arithmetic_intensity": 1,
+                        "flops_per_second": 1,
+                        "bandwidth": 1,
+                        "time_s": 12.5,
+                    },
+                    {
+                        "label": "p_carm",
+                        "total_flops": 1,
+                        "total_bytes": 1,
+                        "runtime_s": 1,
+                        "num_ranks": 1,
+                        "num_threads": 1,
+                        "num_regions": 1,
+                        "arithmetic_intensity": 1,
+                        "flops_per_second": 1,
+                        "bandwidth": 1,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    records = load_applications(path)
+    assert len(records) == 1
+    traced, carm = records[0].points
+    assert traced.label == "p_traced"
+    assert traced.time_s == pytest.approx(12.5)
+    assert carm.label == "p_carm"
+    assert carm.time_s is None
