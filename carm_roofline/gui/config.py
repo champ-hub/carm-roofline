@@ -44,7 +44,12 @@ class GUIConfig(InsertsArguments):
             help="Results directory root (default: <user-data-directory>/carm)",
         )
         parser.add_argument("--gui-host", default="0.0.0.0", help="Host address for the Dash server")
-        parser.add_argument("--gui-port", type=int, default=8050, help="Port for the Dash server")
+        parser.add_argument(
+            "--gui-port",
+            type=int,
+            default=8050,
+            help="Base port for the Dash server; the next free port is used if this one is busy",
+        )
         parser.add_argument("--gui-debug", action="store_true", help="Enable Dash debug mode")
         parser.add_argument(
             "--paraver-trace",
