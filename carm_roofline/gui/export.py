@@ -102,8 +102,8 @@ def natural_sort_key(thread_id: str) -> tuple[int, ...]:
 
 
 def serialize_legend(rows: Sequence[LegendRow]) -> str:
-    """'<code> "<label>",<r>,<g>,<b>\\n' per row, trailing newline on every line."""
-    return "".join(f'{row.code} "{row.label}",{row.r},{row.g},{row.b}\n' for row in rows)
+    """'<code> "<label>" <r>,<g>,<b>\\n' per row, trailing newline on every line."""
+    return "".join(f'{row.code} "{row.label}" {row.r},{row.g},{row.b}\n' for row in rows)
 
 
 def write_export_files(files: Sequence[ExportFile], output_dir: str | Path) -> list[Path]:

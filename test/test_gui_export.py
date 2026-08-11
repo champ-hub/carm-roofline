@@ -44,6 +44,7 @@ from carm_roofline.paraver import (
     GRADIENT_WINDOW_MODE,
     CsvPrecision,
     ParaverWindowMode,
+    load_legend_csv,
     load_window_csv,
     parse_paraver_header,
 )
@@ -191,12 +192,12 @@ def test_natural_sort_key() -> None:
 def test_legend_serialization() -> None:
     """Exact §3.3.1 legend: quoted labels, comma colors, trailing newline per row."""
     expected = (
-        '1 "L1",0,255,0\n'
-        '2 "L2",0,0,255\n'
-        '3 "L3",255,165,0\n'
-        '4 "DRAM",255,0,0\n'
-        '5 "No Floating Point Operations Found",75,0,130\n'
-        '6 "Above L1",255,192,203\n'
+        '1 "L1" 0,255,0\n'
+        '2 "L2" 0,0,255\n'
+        '3 "L3" 255,165,0\n'
+        '4 "DRAM" 255,0,0\n'
+        '5 "No Floating Point Operations Found" 75,0,130\n'
+        '6 "Above L1" 255,192,203\n'
     )
     assert serialize_legend(ROOF_LABEL_LEGEND) == expected
 
@@ -417,3 +418,23 @@ def test_proximity_guard_missing_compute_peaks() -> None:
     assert not model.peak_performance_by_op  # ...but no compute peaks
     paraver = _paraver_data(_metric_trace())
     assert export_proximity(paraver.trace, paraver, model, 1) == ()
+
+
+def test_legend_export_round_trip(tmp_path: Path) -> None:
+    """serialize_legend → file → load_legend_csv round-trips losslessly.
+
+    The exported legend must be parseable by the project's own legend parser
+    (regression: the exporter once wrote no whitespace before the RGB triple,
+    which _LEGEND_LINE_RE rejects), preserving code/label/r/g/b per row.
+    """
+    path = tmp_path / "carm_roofs.legend.csv"
+    path.write_text(serialize_legend(ROOF_LABEL_LEGEND), encoding="utf-8")
+    legend = load_legend_csv(path)
+    assert len(legend) == len(ROOF_LABEL_LEGEND)
+    for expected, actual in zip(ROOF_LABEL_LEGEND, legend.itertuples(index=False)):
+        assert actual.code == expected.code
+        assert actual.code_end == expected.code
+        assert actual.label == expected.label
+        assert actual.r == expected.r
+        assert actual.g == expected.g
+        assert actual.b == expected.b
