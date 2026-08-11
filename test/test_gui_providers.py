@@ -376,6 +376,58 @@ def test_paraver_provider_missing_paramedir_raises_user_error(tmp_path: Path, mo
         ParaverProvider(trace, window_csv).load()
 
 
+def test_paraver_provider_no_counter_csvs_raises_user_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A paramedir output dir with no counter CSVs raises UserError, not ValueError.
+
+    Traces without the registered Intel counters (e.g. ARM/GPU) make paramedir
+    write no counter files; build_trace_table's ValueError must surface as
+    UserError so the GUI can warn and continue instead of crashing startup.
+    """
+    window_csv = tmp_path / "window.csv"
+    window_csv.write_text(
+        "#20260803:CSV:RUNAPP:/p/t.prv:microseconds:window_in_null_gradient_mode\n1.1.1\t0.0\t1000000.0\t1.0\n",
+        encoding="utf-8",
+    )
+    trace = tmp_path / "t.prv"
+    trace.write_text("#dummy\n")
+
+    # paramedir "succeeds" but writes no counter CSVs into its output dir.
+    monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", lambda *args: None)
+    monkeypatch.setattr("shutil.which", lambda _x: "/usr/bin/paramedir")
+
+    with pytest.raises(UserError, match="counter CSVs"):
+        ParaverProvider(trace, window_csv).load()
+
+
+def test_paraver_provider_paramedir_failure_raises_user_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-zero paramedir exit raises UserError, not RuntimeError.
+
+    Corrupt/unsupported .prv traces make paramedir exit non-zero; the
+    RuntimeError must surface as UserError so the GUI can warn and continue
+    instead of crashing startup.
+    """
+    window_csv = tmp_path / "window.csv"
+    window_csv.write_text(
+        "#20260803:CSV:RUNAPP:/p/t.prv:microseconds:window_in_null_gradient_mode\n1.1.1\t0.0\t1000000.0\t1.0\n",
+        encoding="utf-8",
+    )
+    trace = tmp_path / "t.prv"
+    trace.write_text("#dummy\n")
+
+    def _failing_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+        raise RuntimeError("paramedir failed (exit 1): corrupt trace")
+
+    monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", _failing_paramedir)
+    monkeypatch.setattr("shutil.which", lambda _x: "/usr/bin/paramedir")
+
+    with pytest.raises(UserError, match="paramedir failed"):
+        ParaverProvider(trace, window_csv).load()
+
+
 def test_benchmark_apps_provider_loads_applications_jsonl(tmp_path: Path) -> None:
     """BenchmarkAppsProvider loads records keyed by id from applications.jsonl."""
     machine_dir = tmp_path / "machine-a"

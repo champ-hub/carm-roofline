@@ -124,6 +124,12 @@ class ParaverProvider:
             run_paramedir(self._trace_path, work_dir, header.time_unit)
 
             trace = build_trace_table(self._window_csv_path, work_dir, header.time_unit, progress=progress)
+        except (ValueError, RuntimeError) as exc:
+            # Pipeline failures (no counter CSVs, paramedir non-zero exit, empty
+            # legend merge — MergeError is a ValueError) surface as UserError so
+            # the GUI degrades gracefully instead of crashing startup.
+            shutil.rmtree(work_dir, ignore_errors=True)
+            raise UserError(str(exc)) from exc
         except Exception:
             shutil.rmtree(work_dir, ignore_errors=True)
             raise
