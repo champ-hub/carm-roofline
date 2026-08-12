@@ -120,6 +120,14 @@ Custom results location and port:
 carm gui --results-dir ./carm_results --gui-port 8050
 ```
 
+Paraver traces can be analyzed on the roofline too:
+
+```bash
+carm gui --paraver-trace trace.prv
+```
+
+See the [documentation](https://champ-hub.github.io/carm-roofline/) for details.
+
 ## Publications and Citation
 
 If you use the CARM and the CARM Tool in papers or reports, please cite:

@@ -58,7 +58,7 @@ Run (metadata)
 
 **`PAPIHLBackend`** (`papi_backend.py`):
 - Runs user command with `PAPI_HL_OUTPUT_DIR` set.
-- Checks for PAPI availability (via `papi_hl_read` or `libpapi.so`).
+- Checks for PAPI availability: locates `libpapi.so` via `ldconfig -p` / `pkg-config`, verifies the `PAPI_hl_region_begin` symbol via `nm`, and falls back to the `papi_hl_output_writer` utility.
 - Parses `rank_{N}.json` files from `papi_hl_output/` subdirectory.
 
 **`PerfBackend`** (`perf_backend.py`):
@@ -91,8 +91,8 @@ Each backend has its own metric definitions registry (built at module load time)
 
 ### Output (`output.py`)
 
-**CSV**: Writes to ``<output-dir>/applications/{name}_applications.csv`` in the legacy applications format consumed by the GUI.
-**JSONL**: Writes to ``<output_dir>/<name>/applications.jsonl`` — one appended JSON line per run, embedding run metadata and the list of aggregated roofline points (threads / ranks / regions / a single global point, per aggregation mode).
+**CSV**: Appends to ``<output_dir>/<machine_name>/applications.csv`` in the legacy applications format (kept for compatibility).
+**JSONL**: Appends to ``<output_dir>/<machine_name>/applications.jsonl`` (``format_version "2.0"``) — one appended JSON line per run, embedding run metadata and the list of aggregated roofline points (threads / ranks / regions / a single global point, per aggregation mode). This is the file the GUI consumes (``load_applications`` requires ``format_version >= "2.0"``).
 
 ### Entry Point
 
@@ -114,7 +114,8 @@ carm profile --help
 usage: carm profile [-h] [--backend {papi,perf}] [--papi-events PAPI_EVENTS]
   [--perf-events PERF_EVENTS] [--perf-interval PERF_INTERVAL]
   [--aggregation {global,rank,thread,region_merged,region_per_thread}]
-  [--name NAME] [--output-dir OUTPUT_DIR] [--keep-artifacts]
+  [--machine-name MACHINE_NAME] [--app-name APP_NAME] [--output-dir OUTPUT_DIR]
+  [--keep-artifacts]
   [--data-type {f32,f64}] [--isa ISA [ISA ...]]
   [--verbose [{0,1,2,3,4}]]
   [command ...]
@@ -133,7 +134,7 @@ carm profile -- ./my_app
 
 **MPI application with PAPI:**
 ```bash
-carm profile --name my_simulation -- mpirun -np 8 ./my_app
+carm profile --app-name my_simulation -- mpirun -np 8 ./my_app
 ```
 
 **Perf profiling (full-run):**
@@ -160,15 +161,34 @@ Users instrument their own code with PAPI HL and emit per-rank output files. Exp
 **Per-rank JSON** (`rank_{N}.json`):
 ```json
 {
-  "rank": 0,
-  "threads": [
-    {"thread_id": 0, "event_definitions": {...}, "regions": [...]},
+  "papi_version": "...",
+  "cpu_info": "...",
+  "max_cpu_rate_mhz": "...",
+  "min_cpu_rate_mhz": "...",
+  "event_definitions": {
+    "PAPI_FP_OPS": {"component": "perf_event", "type": "delta"},
     ...
-  ]
+  },
+  "threads": {
+    "0": {
+      "regions": {
+        "0": {
+          "name": "...",
+          "parent_region_id": "-1",
+          "cycles": "...",
+          "real_time_nsec": "...",
+          "PAPI_FP_OPS": "20971520",
+          ...
+        },
+        ...
+      }
+    },
+    ...
+  }
 }
 ```
 
-Per-region structure includes `name`, `parent_region_id`, `cycles`, `time_nsec`, and raw counter values.
+Per-region structure includes `name`, `parent_region_id`, `cycles`, `real_time_nsec`, and raw counter values. `threads` and `regions` are dicts keyed by id string; `event_definitions` sits at the top level of the file.
 
 For MPI rank identification in user code, recommended environment variables:
 - Open MPI: `OMPI_COMM_WORLD_RANK`

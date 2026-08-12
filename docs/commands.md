@@ -7,7 +7,7 @@ has_children: true
 
 # CARM subcommands
 
-The CARM tool provides three main subcommands covering benchmarking, profiling, and visualization. See each subcommand's page for detailed usage instructions and examples.
+The CARM tool provides three main subcommands covering benchmarking, profiling, and visualization, plus a Paraver trace-analysis mode inside the GUI. See each page for detailed usage instructions and examples.
 
 ---
 
@@ -38,3 +38,15 @@ Profile instrumented applications (MPI, threaded, hybrid) to compute roofline me
 ```bash
 carm profile [options] -- <command>
 ```
+
+---
+
+## [Paraver](paraver)
+
+Analyze Paraver traces on the roofline — a mode of the GUI (not a separate subcommand) that plots every traced burst and exports the metrics back as Paraver-importable windows.
+
+```bash
+carm gui --paraver-trace trace.prv --paraver-window-csv window.csv
+```
+
+See the [Paraver section](paraver) for trace requirements, usage, GUI features, and performance guidance.

@@ -14,6 +14,7 @@ The toolkit provides:
 - **Benchmarking**: generates roofline plots by measuring peak performance (FLOP/s) and peak memory bandwidth for each cache level
 - **Profiling**: profiles instrumented applications to compute roofline metrics (arithmetic intensity, FLOP/s)
 - **GUI**: interactive Dash + Plotly dashboard for exploring roofline plots and application data
+- **Paraver**: plots Paraver trace bursts on the roofline and exports metrics back to Paraver
 
 ## Quick Start
 
@@ -35,3 +36,4 @@ See the [Installation](installation) page for detailed setup instructions.
 |------|-------------|
 | [Installation](installation) | Requirements, pip install, virtual environment, from-source install |
 | [Commands](commands) | Subcommand reference — benchmarking, GUI, profiling |
+| [Paraver](paraver) | Paraver trace analysis — trace requirements, usage, GUI features, performance |

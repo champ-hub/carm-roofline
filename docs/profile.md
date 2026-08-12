@@ -1,6 +1,7 @@
 ---
 title: Profiling
 parent: Commands
+nav_order: 3
 ---
 
 # `carm profile`
@@ -150,7 +151,8 @@ If you annotated correctly, you should see one line per thread. If only one thre
 
 ## Output
 
-Profiling results are written to the output directory. Key outputs:
+Profiling results are written to `<output_dir>/<machine_name>/` (the machine name is auto-detected or set with `--machine-name`). Key outputs:
 
-- **CSV/JSONL files** with per-region metrics (arithmetic intensity, FLOP/s, bandwidth)
-- **Roofline-compatible data** for `carm gui` interactive exploration
+- **`applications.jsonl`** — one appended JSON line per run, embedding run metadata and the aggregated roofline points. **This is the file `carm gui` reads.**
+- **`machine.json`** — machine-signature debug file written on the first run.
+- **Console summary** — one line per aggregated point: `label: AI=… FLOP/Byte, … GFLOP/s, … GB/s, …s`

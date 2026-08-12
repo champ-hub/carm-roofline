@@ -1,6 +1,7 @@
 ---
 title: Benchmarking
 parent: Commands
+nav_order: 1
 ---
 
 # `carm benchmark`

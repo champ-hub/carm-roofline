@@ -6,7 +6,7 @@ CARM (Cache-Aware Roofline Model) is a micro-benchmarking toolkit that construct
 
 - **License**: Apache-2.0
 - **Language**: Python ≥3.9 (primary), C (measurement harness), inline assembly (ISA-specific benchmarks)
-- **Outputs**: CSV, JSON, table, plots in platform user data dir for `carm`, or `--output-file`
+- **Outputs**: CSV, JSON, table, plots in platform user data dir for `carm`; output location/format controlled by `--output-dir` / `--output-fmt`
 - **Entry point**: `carm` console script → `carm_roofline.carm:main`
 - **Install**: `pip install -e .` or `pip install -e ".[all]"`
 - **C compiler**: gcc ≥4.9
@@ -61,8 +61,11 @@ carm_roofline/            Main Python package
 │   ├── counters.py       Intel counter registry, config template, flops/bytes weights
 │   ├── loading.py        Window/legend CSV + '#' header parsing; time-unit scaling
 │   ├── pipeline.py       run_paramedir, config rendering, counter CSV merge, trace table
+│   ├── shim.py           Paraver_CARM.py console script: legacy Paraver CLI -> `carm gui`
 │   └── configs/          counter_template.cfg
 ├── gui/                  Dash+Plotly interactive roofline dashboard
+│                         (CARM mode + Paraver mode via --paraver-trace / --paraver-window-csv;
+│                         see docs/paraver.md)
 ├── carm.py               Entry point, CLI parser, subcommand dispatch
 ├── context.py            CARMContext dataclass (architecture, benchmarking, exec_interface, run_config)
 ├── arguments.py          InsertsArguments, validators, enum_action, TopLevelHelpFormatter
