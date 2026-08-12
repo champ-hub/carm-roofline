@@ -62,7 +62,7 @@ class GUIConfig(InsertsArguments):
             "--paraver-window-csv",
             type=Path,
             default=None,
-            help="Path to the Paraver window/mask CSV (required when --paraver-trace is given)",
+            help="Path to the Paraver window/mask CSV (optional; when omitted, bursts are plotted in a single color)",
         )
         parser.add_argument(
             "--paraver-use-semantic-window",
@@ -75,10 +75,10 @@ class GUIConfig(InsertsArguments):
         if self.paraver_trace is None:
             return
 
-        if self.paraver_window_csv is None:
-            raise UserError("--paraver-window-csv is required when --paraver-trace is given")
         if not self.paraver_trace.is_file():
             raise UserError(f"paraver trace file not found: {self.paraver_trace}")
+        if self.paraver_window_csv is None:
+            return  # trace-only mode is valid; no window CSV required
         if not self.paraver_window_csv.is_file():
             raise UserError(f"paraver window CSV not found: {self.paraver_window_csv}")
         # Code-mode windows require the derived legend CSV; gradient mode needs none.

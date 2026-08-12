@@ -298,6 +298,45 @@ def test_paraver_provider_loads_code_mode_trace_with_legend(
     assert row["load_share"] == 1.0  # 2 loads, no mem-stores.csv → stores zero-filled
 
 
+def test_paraver_provider_trace_only_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Trace without window CSV: CODE mode, single constant legend entry, µs unit."""
+    trace = tmp_path / "t.prv"
+    trace.write_text("#Paraver dummy\n")
+    captured: list[str] = []
+
+    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+        captured.append(time_unit)
+        out = Path(output_dir)
+        # One FP counter row: thread 1.1.1, 0-1 s, value=4 instructions
+        (out / "fp-avx2-dp.csv").write_text(
+            f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_code_mode\n1.1.1\t0.0\t1000000.0\t4\n",
+            encoding="utf-8",
+        )
+        # One memory counter row: same burst, value=2 loads
+        (out / "mem-loads.csv").write_text(
+            f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_code_mode\n1.1.1\t0.0\t1000000.0\t2\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", _fake_run_paramedir)
+    monkeypatch.setattr("shutil.which", lambda _x: "/usr/bin/paramedir")
+
+    provider = ParaverProvider(trace, None)
+    data = provider.load()
+
+    assert captured == ["Microseconds"]
+    assert provider.window_extent is None
+    assert data.window_mode == ParaverWindowMode.CODE
+    assert data.time_unit == "Microseconds"
+    assert data.label == "t"
+    assert data.prv_path == str(trace.resolve())
+    assert data.legend is None
+    assert data.precision == CsvPrecision(2, 2, 2, 6)  # DEFAULT_CSV_PRECISION
+    assert data.trace["legend_label"].tolist() == ["t"] * len(data.trace)
+    assert data.trace["legend_color"].tolist() == ["rgb(128,128,128)"] * len(data.trace)
+    assert data.trace["state_code"].astype(float).isna().all()
+
+
 def test_paraver_provider_code_mode_missing_legend_raises_user_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

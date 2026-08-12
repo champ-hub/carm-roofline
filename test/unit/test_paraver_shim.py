@@ -47,6 +47,11 @@ def test_translate_minimal() -> None:
     ]
 
 
+def test_translate_trace_only() -> None:
+    """A trace alone (no --csv) maps to gui without --paraver-window-csv."""
+    assert _translate(["t.prv"]) == ["gui", "--paraver-trace", "t.prv"]
+
+
 @pytest.mark.parametrize("debug_flag", ["-d", "--debug"])
 def test_translate_debug_appends_verbose(debug_flag: str) -> None:
     """Both -d and --debug map to a trailing -v (carm gui's debug verbosity)."""

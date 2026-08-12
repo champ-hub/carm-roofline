@@ -32,7 +32,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--color_csv", action="store_true")
     parser.add_argument("--mask_csv", action="store_true")
     parser.add_argument("-ac", action="store_true")
-    parser.add_argument("--csv", required=True, help="Path to the mask CSV")
+    parser.add_argument("--csv", default=None, help="Path to the mask CSV (optional)")
     parser.add_argument("trace_path", help="Path to the .prv file")
     parser.add_argument("-d", "--debug", action="store_true")
     return parser
@@ -40,7 +40,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def translate_args(args: argparse.Namespace) -> list[str]:
     """Translate legacy Paraver argv into ``carm gui`` argv."""
-    translated = ["gui", "--paraver-trace", args.trace_path, "--paraver-window-csv", args.csv]
+    translated = ["gui", "--paraver-trace", args.trace_path]
+    if args.csv:
+        translated += ["--paraver-window-csv", args.csv]
     if args.mask_csv:
         translated.append("--paraver-use-semantic-window")
     if args.debug:

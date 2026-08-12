@@ -21,6 +21,7 @@ from carm_roofline.core.error import UserError
 from carm_roofline.core.units import Bandwidth, Bytes, Operations, Performance, Seconds
 from carm_roofline.paraver import (
     DEFAULT_CSV_PRECISION,
+    DEFAULT_TIME_UNIT,
     CsvPrecision,
     MetricColumn,
     ParaverWindowMode,
@@ -63,9 +64,12 @@ class ParaverData:
     :class:`ParaverWindowMode` member (``CODE`` | ``GRADIENT``). ``label`` is
     the short display name: the window name with its app suffix stripped
     (gradient mode, where the legend entry names the counter) or the trace stem
-    (code mode, where the legend already names the states). ``precision``
-    carries the decimal places detected from the window CSV; every export
-    formats its numeric cells with them.
+    (code mode, where the legend already names the states). In trace-only mode
+    (no window CSV) the trace additionally carries a constant ``legend_label``
+    (the trace stem) and ``legend_color`` (gray) on every row, and
+    ``window_mode`` is ``CODE``. ``precision`` carries the decimal places
+    detected from the window CSV; every export formats its numeric cells with
+    them.
     """
 
     trace: pd.DataFrame
@@ -77,22 +81,27 @@ class ParaverData:
     precision: CsvPrecision = DEFAULT_CSV_PRECISION
 
 
+TRACE_ONLY_LEGEND_COLOR = "rgb(128,128,128)"  # single color for trace-only mode
+
+
 class ParaverProvider:
     """Paraver trace table via the paramedir pipeline.
 
     The provider runs ``paramedir`` over the ``.prv`` trace, loads counter CSVs,
     builds a trace table, and (in code mode) maps each state code to its legend
-    entry. Returns a :class:`ParaverData` ready for direct plotting.
+    entry. With no window CSV it runs in trace-only mode: no legend, CODE
+    window mode, a single constant legend entry (trace stem, gray). Returns a
+    :class:`ParaverData` ready for direct plotting.
     """
 
     def __init__(
         self,
         trace_path: Path,
-        window_csv_path: Path,
+        window_csv_path: Path | None,
         legend_csv_path: Path | None = None,
     ) -> None:
         self._trace_path = trace_path.resolve()
-        self._window_csv_path = window_csv_path.resolve()
+        self._window_csv_path = window_csv_path.resolve() if window_csv_path else None
         self._legend_csv_path = legend_csv_path.resolve() if legend_csv_path else None
         self._window_extent: tuple[float, float] | None = None
 
@@ -105,6 +114,9 @@ class ParaverProvider:
         return self._window_extent
 
     def load(self) -> ParaverData:
+        if self._window_csv_path is None:
+            return self._load_trace_only()
+
         # Parse the window CSV header to learn the mode, time unit, and prv path.
         with open(self._window_csv_path, encoding="utf-8") as fh:
             header = parse_paraver_header(fh.readline().strip())
@@ -119,34 +131,7 @@ class ParaverProvider:
                 raise UserError(f"paraver legend CSV not found: {legend_path}")
             legend = load_legend_csv(legend_path)
 
-        # Create a temporary working directory for paramedir counter outputs.
-        work_dir = Path(tempfile.mkdtemp(prefix="carm-paraver-"))
-        try:
-            if not shutil.which("paramedir"):
-                raise UserError("paramedir not found on PATH; install it to load Paraver traces")
-
-            # Progress popup: open at 0% before the paramedir run; build_trace_table then updates and closes it at 100%.
-            progress = ProgressBar(total=1)
-            progress.update(0)
-
-            run_paramedir(self._trace_path, work_dir, header.time_unit)
-
-            trace = build_trace_table(self._window_csv_path, work_dir, header.time_unit, progress=progress)
-        except (ValueError, RuntimeError) as exc:
-            # Pipeline failures (no counter CSVs, paramedir non-zero exit, empty
-            # legend merge — MergeError is a ValueError) surface as UserError so
-            # the GUI degrades gracefully instead of crashing startup.
-            shutil.rmtree(work_dir, ignore_errors=True)
-            raise UserError(str(exc)) from exc
-        except Exception:
-            shutil.rmtree(work_dir, ignore_errors=True)
-            raise
-
-        if trace.empty:
-            shutil.rmtree(work_dir, ignore_errors=True)
-            raise UserError(
-                f"trace table is empty after processing {self._trace_path} with window {self._window_csv_path}"
-            )
+        trace = self._load_trace_table(header.time_unit)
 
         # Loaded window extent (min start, max end) in seconds for the semantic window.
         window_frame = load_window_csv(self._window_csv_path)
@@ -208,6 +193,54 @@ class ParaverProvider:
             prv_path=header.prv_path,
             legend=legend,
             precision=window_csv_precision(self._window_csv_path),
+        )
+
+    def _load_trace_table(self, time_unit: str) -> pd.DataFrame:
+        """Run paramedir and build the trace table in a temp dir; UserError on failure."""
+        work_dir = Path(tempfile.mkdtemp(prefix="carm-paraver-"))
+        try:
+            if not shutil.which("paramedir"):
+                raise UserError("paramedir not found on PATH; install it to load Paraver traces")
+
+            # Progress popup: open at 0% before the paramedir run; build_trace_table then updates and closes it at 100%.
+            progress = ProgressBar(total=1)
+            progress.update(0)
+
+            run_paramedir(self._trace_path, work_dir, time_unit)
+
+            trace = build_trace_table(self._window_csv_path, work_dir, time_unit, progress=progress)
+        except (ValueError, RuntimeError) as exc:
+            # Pipeline failures (no counter CSVs, paramedir non-zero exit, empty
+            # legend merge — MergeError is a ValueError) surface as UserError so
+            # the GUI degrades gracefully instead of crashing startup.
+            shutil.rmtree(work_dir, ignore_errors=True)
+            raise UserError(str(exc)) from exc
+        except Exception:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            raise
+
+        if trace.empty:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            suffix = f" with window {self._window_csv_path}" if self._window_csv_path is not None else ""
+            raise UserError(f"trace table is empty after processing {self._trace_path}{suffix}")
+        return trace
+
+    def _load_trace_only(self) -> ParaverData:
+        """Trace-only mode (no window CSV): one legend entry named after the trace,
+        every point in TRACE_ONLY_LEGEND_COLOR, CODE window mode."""
+        time_unit = DEFAULT_TIME_UNIT
+        trace = self._load_trace_table(time_unit)
+        label = self._trace_path.stem
+        trace = trace.assign(legend_label=label, legend_color=TRACE_ONLY_LEGEND_COLOR)
+        trace["_tooltip"] = paraver_tooltips(trace, label)
+        return ParaverData(
+            trace=trace,
+            label=label,
+            window_mode=ParaverWindowMode.CODE,
+            time_unit=time_unit,
+            prv_path=str(self._trace_path),
+            legend=None,
+            precision=DEFAULT_CSV_PRECISION,
         )
 
 

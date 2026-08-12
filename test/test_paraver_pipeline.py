@@ -500,6 +500,24 @@ def test_build_trace_table_end_to_end(tmp_path: Path) -> None:
     assert second["state_code"] == 1.0
 
 
+def test_build_trace_table_without_window(tmp_path: Path) -> None:
+    """window_csv=None: bursts from counter CSVs, all-NaN state_code, µs default."""
+    (tmp_path / "fp-avx2-dp.csv").write_text(
+        "#ts:CSV:RUNAPP:/p/t.prv:Microseconds:window_in_code_mode\n1.1.1\t0.0\t1000000.0\t4\n"
+    )
+    (tmp_path / "mem-loads.csv").write_text(
+        "#ts:CSV:RUNAPP:/p/t.prv:Microseconds:window_in_code_mode\n1.1.1\t0.0\t1000000.0\t2\n"
+    )
+    trace = build_trace_table(None, tmp_path)
+    assert list(trace.columns) == list(TRACE_COLUMNS)
+    assert trace["state_code"].dtype.name == "category"
+    assert trace["state_code"].astype(float).isna().all()
+    assert trace["time_s"].iloc[0] == pytest.approx(0.0)
+    assert trace["duration_s"].iloc[0] == pytest.approx(1.0)  # 1e6 µs -> 1 s
+    assert trace["flops"].iloc[0] == pytest.approx(16.0)  # fp-avx2-dp x 4
+    assert trace["load_share"].iloc[0] == 1.0
+
+
 def test_build_trace_table_with_progress_completes_bar_once(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

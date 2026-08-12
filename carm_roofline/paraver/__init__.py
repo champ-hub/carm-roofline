@@ -44,6 +44,7 @@ from carm_roofline.paraver.loading import (
 )
 from carm_roofline.paraver.pipeline import (
     COUNTER_CSV_COLUMNS,
+    DEFAULT_TIME_UNIT,
     attach_state_codes,
     build_trace_table,
     compute_trace_metrics,
@@ -60,6 +61,7 @@ __all__ = [
     "CODE_WINDOW_MODE",
     "COUNTER_CSV_COLUMNS",
     "DEFAULT_CSV_PRECISION",
+    "DEFAULT_TIME_UNIT",
     "GRADIENT_WINDOW_MODE",
     "INTEL_COUNTERS",
     "METRIC_COLUMNS",

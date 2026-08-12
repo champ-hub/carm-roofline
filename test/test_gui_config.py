@@ -69,16 +69,13 @@ def test_guiconfig_paraver_args_default_to_none() -> None:
     assert config.paraver_use_semantic_window is False
 
 
-def test_guiconfig_trace_enables_paraver_validation() -> None:
-    """--paraver-trace alone flips Paraver validation on (window CSV then required)."""
-    with pytest.raises(UserError, match="--paraver-window-csv is required"):
-        GUIConfig(_carm_namespace(paraver_trace=Path("/tmp/t.prv")))
-
-
-def test_guiconfig_paraver_missing_window_csv_raises_user_error() -> None:
-    """Paraver mode with a trace but no window CSV raises UserError."""
-    with pytest.raises(UserError, match="--paraver-window-csv is required"):
-        GUIConfig(_carm_namespace(paraver_trace=Path("/tmp/t.prv")))
+def test_guiconfig_paraver_trace_only_passes(tmp_path: Path) -> None:
+    """A trace alone (no window CSV) is a valid Paraver launch."""
+    trace = tmp_path / "t.prv"
+    trace.write_text("#dummy\n")
+    config = GUIConfig(_carm_namespace(paraver_trace=trace))
+    assert config.paraver_trace == trace
+    assert config.paraver_window_csv is None
 
 
 def test_guiconfig_paraver_trace_not_file_raises(tmp_path: Path) -> None:

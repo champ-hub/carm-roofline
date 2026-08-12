@@ -18,7 +18,7 @@ from carm_roofline.paraver import ParaverWindowMode
 pytestmark = pytest.mark.unit
 
 
-def _paraver_namespace(trace: Path, window: Path, use_semantic_window: bool = False) -> argparse.Namespace:
+def _paraver_namespace(trace: Path, window: Path | None, use_semantic_window: bool = False) -> argparse.Namespace:
     return argparse.Namespace(
         verbose=0,
         results_dir=Path("/tmp/carm"),
@@ -207,6 +207,30 @@ def test_create_app_paraver_wires_config_and_leaves_app_ids_empty(
     assert store_data["paraver"]["ai_threshold"] == pytest.approx(1e-5)
     # The duration filter defaults to its minimum active threshold (100 us), not "off".
     assert store_data["paraver"]["duration_threshold"] == pytest.approx(1e-4)
+
+
+def test_create_app_paraver_trace_only_loads_provider(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A trace without a window CSV still loads the provider (no warn-and-skip)."""
+    trace = tmp_path / "t.prv"
+    trace.write_text("#dummy\n", encoding="utf-8")
+
+    calls: list[tuple[Path, Path | None]] = []
+
+    class _RecordingProvider(_FakeProvider):
+        def __init__(self, trace_path: Path, window_csv_path: Path | None, **kwargs: Any) -> None:
+            calls.append((trace_path, window_csv_path))
+            super().__init__(trace_path, window_csv_path, **kwargs)
+
+    monkeypatch.setattr("carm_roofline.gui.factory.ParaverProvider", _RecordingProvider)
+
+    app = create_app(GUIConfig(_paraver_namespace(trace, None)))
+    store_data = _find_store_data(app.layout(), StoreID.ROOF_STORE)
+    assert store_data is not None
+
+    # The provider was constructed with the trace and a None window CSV, and
+    # its points are plotted directly (no record ids preselected).
+    assert calls == [(trace, None)]
+    assert store_data["roofs"][0]["app_ids"] == []
 
 
 def test_create_app_paraver_semantic_window_sets_initial_window(

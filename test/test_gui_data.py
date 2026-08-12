@@ -397,6 +397,27 @@ def test_build_paraver_figure_code_mode_groups_by_legend() -> None:
     assert "<b>Paraver Value</b><br>  1 (Running)" in markers[0].customdata[0]
 
 
+def test_paraver_figure_trace_only_single_legend_entry() -> None:
+    """Trace-only ParaverData draws one gray scatter with the trace stem as its name."""
+    trace = _paraver_trace()
+    trace["state_code"] = [float("nan")] * len(trace)
+    trace["legend_label"] = ["t"] * len(trace)
+    trace["legend_color"] = ["rgb(128,128,128)"] * len(trace)
+    paraver = ParaverData(
+        trace=trace,
+        label="t",
+        window_mode=ParaverWindowMode.CODE,
+        time_unit="Microseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    fig = build_paraver_figure([], [], paraver, trace)
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert len(markers) == 1
+    assert markers[0].name == "t"
+    assert markers[0].marker.color == "rgb(128,128,128)"
+
+
 def test_build_paraver_figure_gradient_mode_single_trace() -> None:
     """Gradient mode adds a single Viridis-colored trace named by paraver.label."""
     trace = _paraver_trace()

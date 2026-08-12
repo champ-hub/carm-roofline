@@ -180,7 +180,7 @@ def create_app(config: GUIConfig) -> dash.Dash:
 
     if mode.show_time_slider:
         # Paraver mode: application points come from an external trace.
-        if config.paraver_trace is not None and config.paraver_window_csv is not None:
+        if config.paraver_trace is not None:
             provider = ParaverProvider(config.paraver_trace, config.paraver_window_csv)
             try:
                 paraver_data = provider.load()
@@ -190,8 +190,6 @@ def create_app(config: GUIConfig) -> dash.Dash:
                 trace_bounds = trace_time_range(paraver_data.trace)
                 if config.paraver_use_semantic_window:
                     initial_window = provider.window_extent
-        else:
-            warn("Paraver mode needs --paraver-trace and --paraver-window-csv; running without application points.")
     elif config.results_dir.exists():
         app_by_id = BenchmarkAppsProvider(config.results_dir).load()
         app_dropdown_options = [{"label": a.label, "value": a.id} for a in app_by_id.values()]
