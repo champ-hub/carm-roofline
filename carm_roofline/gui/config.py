@@ -4,12 +4,13 @@ import argparse
 import json
 import os
 import tempfile
+from dataclasses import asdict, dataclass, fields
 from enum import Enum, auto
 from pathlib import Path
+from typing import Any
 
 from carm_roofline.arguments import InsertsArguments, add_verbose_argument
 from carm_roofline.core.error import UserError
-from carm_roofline.gui.data import GUISettings
 from carm_roofline.output_utils import warn
 from carm_roofline.paraver import ParaverWindowMode, default_legend_path, parse_paraver_header
 from carm_roofline.results_paths import default_results_root
@@ -109,6 +110,29 @@ class GUIMode(Enum):
     def has_export_tab(self) -> bool:
         """Whether the Paraver export tab is available."""
         return self is GUIMode.PARAVER
+
+
+@dataclass
+class GUISettings:
+    """Persistent user preferences for the GUI."""
+
+    normalize_by_threads: bool = False
+    marker_scale_factor: float = 50.0
+    power2_ticks: bool = False
+    show_roof_fills: bool = True
+    line_width: float = 1.5
+    axis_label_font_size: int = 14
+    axis_tick_font_size: int = 12
+    tooltip_font_size: int = 12
+    legend_font_size: int = 10
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> GUISettings:
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
 
 
 def gui_settings_path() -> Path:

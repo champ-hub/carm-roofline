@@ -7,8 +7,8 @@ import math
 import pandas as pd
 import pytest
 
+from carm_roofline.gui.config import GUISettings
 from carm_roofline.gui.data import (
-    GUISettings,
     RoofConfig,
     RoofStore,
     build_paraver_figure,

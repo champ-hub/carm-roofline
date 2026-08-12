@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import re
 import uuid
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, TypedDict
 
@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 
 from carm_roofline.core.units import Bandwidth, Bytes, Frequency, Operations, Performance, Seconds
 from carm_roofline.gui.colors import COLOR_MODE_PARAVER, point_colors
+from carm_roofline.gui.config import GUISettings
 from carm_roofline.gui.providers import (
     AI_FILTER_DEFAULT_AI,
     DURATION_FILTER_DEFAULT_S,
@@ -283,29 +284,6 @@ class RoofStore:
         store.settings = GUISettings.from_dict(data.get("settings", {}))
         store.paraver_state = ParaverState.from_dict(data.get("paraver", {}))
         return store
-
-
-@dataclass
-class GUISettings:
-    """Persistent user preferences for the GUI."""
-
-    normalize_by_threads: bool = False
-    marker_scale_factor: float = 50.0
-    power2_ticks: bool = False
-    show_roof_fills: bool = True
-    line_width: float = 1.5
-    axis_label_font_size: int = 14
-    axis_tick_font_size: int = 12
-    tooltip_font_size: int = 12
-    legend_font_size: int = 10
-
-    def to_dict(self) -> dict[str, object]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> GUISettings:
-        known = {f.name for f in fields(cls)}
-        return cls(**{k: v for k, v in data.items() if k in known})
 
 
 # Plot data builder
