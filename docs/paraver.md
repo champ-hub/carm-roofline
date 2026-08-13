@@ -1,6 +1,7 @@
 ---
 title: Paraver
-nav_order: 2
+nav_order: 5
+parent: Home
 has_children: true
 ---
 
