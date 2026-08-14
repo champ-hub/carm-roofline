@@ -1,0 +1,162 @@
+easyblock = "PythonBundle"
+
+name = "carm-roofline"
+version = "1.0.7"
+
+homepage = "https://github.com/champ-hub/carm-roofline"
+
+description = """
+The CARM Tool - benchmark, visualize and profile Intel, AMD, ARM, RISC-V CPUs
+with the Cache-Aware Roofline Model
+"""
+
+# LUMI has no gfbf toolchain; cpeGNU is the available GNU toolchain.
+toolchain = {"name": "cpeGNU", "version": "25.03"}
+
+builddependencies = [
+    ("buildtools-python", "25.03", "-cray-python3.11", True),
+]
+
+dependencies = [
+    ("cray-python", EXTERNAL_MODULE),
+]
+
+use_pip = True
+sanity_pip_check = True
+# uv and uvx are standalone tools pulled in by pip; they don't have RPATH set
+check_readelf_rpath = False
+
+# Let pip install transitive dependencies from PyPI (default is --no-deps).
+exts_default_options = {
+    "use_pip_for_deps": True,
+    "download_dep_fail": False,
+}
+
+# Python packages from PyPI; order matters: dependencies first.
+exts_list = [
+    # Keep numpy < 1.27 to match cray-python's scipy.
+    (
+        "matplotlib",
+        "3.10.1",
+        {
+            "source_tmpl": "matplotlib-%(version)s-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "checksums": ["0f69dc9713e4ad2fb21a1c30e37bd445d496524257dfda40ff4a8efb3604ab5c"],
+            "preinstallopts": "printf 'numpy<1.27\\n' > %(installdir)s/pip-constraints.txt && export PIP_CONSTRAINT=%(installdir)s/pip-constraints.txt && ",
+            "download_dep_fail": False,
+        },
+    ),
+    # carm runtime dependency
+    (
+        "platformdirs",
+        "4.3.7",
+        {
+            "source_tmpl": "platformdirs-%(version)s-py3-none-any.whl",
+            "checksums": ["a03875334331946f13c549dbd8f4bac7a13a50a895a0eb1e8c6a8ace80d40a94"],
+        },
+    ),
+    # preinstall build backends first
+    (
+        "rich",
+        "14.3.2",
+        {
+            "checksums": ["e712f11c1a562a11843306f5ed999475f09ac31ffb64281f73ab29ffdda8b3b8"],
+            "preinstallopts": "pip install --no-build-isolation --ignore-installed --prefix=%(installdir)s 'poetry-core>=1.9.0' 'hatchling>=1.11.0' 'flit_core>=3.12,<4' 'hatch-vcs>=0.4' && ",
+            "download_dep_fail": False,
+        },
+    ),
+    (
+        "rich-argparse",
+        "1.8.0",
+        {
+            "source_tmpl": "rich_argparse-%(version)s.tar.gz",
+            "checksums": ["679df3d832fa94ad6e4bdb07ded088cd7ea2dddc58ae9b2b46346a40b06cbc0c"],
+            "download_dep_fail": False,
+        },
+    ),
+    (
+        "tomli",
+        "2.4.1",
+        {
+            "checksums": ["7c7e1a961a0b2f2472c1ac5b69affa0ae1132c39adcb67aba98568702b9cc23f"],
+            "download_dep_fail": False,
+            "preinstallopts": "pip install --no-build-isolation --ignore-installed --prefix=%(installdir)s 'flit_core>=3.8' && ",
+        },
+    ),
+    (
+        "argcomplete",
+        "3.7.0",
+        {
+            "checksums": ["afde224f753f874807b1dc1414e883ab8fe0cda9c04807b6047dcb8e1ac23913"],
+            "preinstallopts": "export PYTHONPATH=%(installdir)s/lib/python3.11/site-packages:$PYTHONPATH && ",
+            "download_dep_fail": False,
+        },
+    ),
+    # preinstall runtime dependencies first
+    (
+        "dash",
+        "4.4.1",
+        {
+            "checksums": ["9356ca7856bc496c12c5b6de5978aaf783e090d07450ee395ade1c0c2cbdf816"],
+            "preinstallopts": "pip install --no-build-isolation --ignore-installed --prefix=%(installdir)s 'flask>=3.1' 'pydantic>=2' 'comm>=0.2' 'janus>=1.0' 'nest-asyncio>=1.6' 'retrying>=1.3' && ",
+            "download_dep_fail": False,
+        },
+    ),
+    (
+        "dash-bootstrap-components",
+        "2.0.4",
+        {
+            "source_tmpl": "dash_bootstrap_components-%(version)s.tar.gz",
+            "checksums": ["c3206c0923774bbc6a6ddaa7822b8d9aa5326b0d3c1e7cd795cc975025fe2484"],
+            "download_dep_fail": False,
+        },
+    ),
+    # plotly and its dependencies
+    (
+        "tenacity",
+        "9.1.2",
+        {
+            "checksums": ["1169d376c297e7de388d18b4481760d478b0e99a777cad3a9c86e556f4b697cb"],
+            "preinstallopts": "export SETUPTOOLS_SCM_PRETEND_VERSION=%(version)s && ",
+            "download_dep_fail": False,
+        },
+    ),
+    (
+        "narwhals",
+        "2.0.1",
+        {
+            "checksums": ["235e61ca807bc21110ca36a4d53888ecc22c42dcdf50a7c886e10dde3fd7f38c"],
+            "download_dep_fail": False,
+        },
+    ),
+    (
+        "plotly",
+        "6.3.1",
+        {
+            "checksums": ["dd896e3d940e653a7ce0470087e82c2bd903969a55e30d1b01bb389319461bb0"],
+            "preinstallopts": "pip install --no-build-isolation --ignore-installed --prefix=%(installdir)s 'hatch' 'jupyter_packaging~=0.10.0' && ",
+            "download_dep_fail": False,
+        },
+    ),
+    # carm itself: --no-deps, deps are the extensions above
+    (
+        name,
+        version,
+        {
+            "source_urls": ["https://github.com/champ-hub/carm-roofline/archive/refs/tags"],
+            "source_tmpl": "v%(version)s.tar.gz",
+            "checksums": ["62a390b1a295fae3b5b25cbd256a8451b6e457e74c3537c70446329aa3ff6960"],
+            "preinstallopts": "pip install --no-build-isolation --ignore-installed --prefix=%(installdir)s 'setuptools>=64.0' 'wheel' && ",
+            "download_dep_fail": False,
+            "use_pip_for_deps": False,
+        },
+    ),
+]
+
+sanity_check_paths = {
+    "files": ["bin/carm"],
+    "dirs": [],
+}
+
+sanity_check_commands = ["carm --help"]
+
+moduleclass = "perf"
