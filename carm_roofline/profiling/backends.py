@@ -100,7 +100,12 @@ def create_backend(
     if config.backend == BackendType.PAPI:
         from .papi_backend import PAPIHLBackend
 
-        return PAPIHLBackend(workspace, resolution_config=resolution_cfg, events_override=config.papi_events)
+        return PAPIHLBackend(
+            workspace,
+            resolution_config=resolution_cfg,
+            events_override=config.papi_events,
+            use_cache=config.use_papi_cache,
+        )
     elif config.backend == BackendType.PERF:
         from .perf_backend import PerfBackend
 

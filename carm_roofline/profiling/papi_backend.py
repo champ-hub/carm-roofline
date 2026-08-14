@@ -88,8 +88,8 @@ class PAPIHLBackend(ProfilerBackend):
     Runs the user's command with ``PAPI_HL_OUTPUT_DIR`` set so that PAPI HL writes per-rank output files to a known
     location.
 
-    Uses ``papi_decode -a`` at startup to discover available PAPI events, then resolves the best metric implementations
-    for the current system.
+    Uses ``papi_xml_event_info`` at startup (cached per machine configuration) to discover available PAPI events, then
+    resolves the best metric implementations for the current system.
     """
 
     def __init__(
@@ -97,11 +97,13 @@ class PAPIHLBackend(ProfilerBackend):
         output_dir: Path,
         resolution_config: MetricResolutionConfig,
         events_override: str | None = None,
+        use_cache: bool = True,
     ) -> None:
         self._output_dir = output_dir
         self._output_dir.mkdir(parents=True, exist_ok=True)
         self._resolution_config = resolution_config or MetricResolutionConfig()
         self._events_override = events_override
+        self._use_cache = use_cache
         self._available_events: frozenset[str] = frozenset()
         self._resolved_metrics: dict[MetricType, MetricDefinition] = {}
 
@@ -155,7 +157,7 @@ class PAPIHLBackend(ProfilerBackend):
                 )
 
         # Build registry with ISA tailoring baked in at construction time
-        self._available_events = parse_available_events()
+        self._available_events = parse_available_events(use_cache=self._use_cache)
         self._registry = PAPIMetricRegistry(self._resolution_config)
         self._resolved_metrics = self._registry.resolve(self._available_events)
 

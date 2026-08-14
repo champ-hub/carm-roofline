@@ -16,15 +16,24 @@ Shared types (:class:`MetricType`, :class:`MetricDefinition`,
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import platform
 import shutil
 import subprocess
+import tempfile
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable
 
+from carm_roofline.architecture.identity import read_cpuinfo
 from carm_roofline.core import DataType
 from carm_roofline.isa import BaseISA
 from carm_roofline.isa.x86 import X86AVX, X86AVX2, X86AVX512, X86SSE, X86Scalar
-from carm_roofline.output_utils import warn
+from carm_roofline.output_utils import debug, detail, warn
+from carm_roofline.results_paths import user_cache_dir_for_carm
 
 from .shared import (
     MetricContext,
@@ -391,8 +400,109 @@ _DEFAULT_REGISTRY = PAPIMetricRegistry()
 # Available events discovery
 # ---------------------------------------------------------------------------
 
+_PAPI_EVENT_CACHE_PREFIX = "papi_events_"
+_PAPI_EVENT_CACHE_VERSION = 1
 
-def parse_available_events() -> frozenset[str]:
+
+def _papi_cache_dir() -> Path:
+    """Cache directory for PAPI event catalogs (created on first write)."""
+    return user_cache_dir_for_carm()
+
+
+def _papi_cache_probes() -> dict[str, str]:
+    """Cheap identity probes; every failure yields 'unknown' so the key always computes."""
+    cpu = read_cpuinfo()
+    probes = {
+        "model": cpu.model_name or "unknown",
+        "vendor": cpu.vendor or "unknown",
+        "family": cpu.family or "unknown",
+        "cpu_model": cpu.model or "unknown",
+        "stepping": cpu.stepping or "unknown",
+        "arch": platform.machine() or "unknown",
+    }
+    # papi_version: canonical library version string (fast, ~0.07s)
+    papi_version_bin = shutil.which("papi_version")
+    probes["papi_version"] = "unknown"
+    if papi_version_bin is not None:
+        try:
+            result = subprocess.run([papi_version_bin], capture_output=True, text=True, timeout=5, check=False)
+            if result.returncode == 0:
+                probes["papi_version"] = result.stdout.strip() or "unknown"
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+    # No papi_xml_event_info binary path/mtime/size probe: module systems can
+    # re-link or move the wrapper binary between loads even when the underlying
+    # PAPI library (and therefore the catalog) is unchanged. papi_version above
+    # is the stable build identity.
+    probes["kernel"] = platform.release() or "unknown"
+    try:
+        probes["perf_event_paranoid"] = Path("/proc/sys/kernel/perf_event_paranoid").read_text().strip() or "unknown"
+    except OSError:
+        probes["perf_event_paranoid"] = "unknown"
+    return probes
+
+
+def _papi_cache_key() -> str:
+    """Full SHA-256 hex of sorted 'name=value' probe lines."""
+    payload = "\n".join(f"{k}={v}" for k, v in sorted(_papi_cache_probes().items()))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _papi_event_cache_path(key: str) -> Path:
+    return _papi_cache_dir() / f"{_PAPI_EVENT_CACHE_PREFIX}{key[:16]}.json"
+
+
+def _load_papi_event_cache(key: str) -> frozenset[str] | None:
+    """Return cached events for *key*, or None; emits exactly one detail-status line."""
+    path = _papi_event_cache_path(key)
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = None
+        if (
+            isinstance(data, dict)
+            and data.get("version") == _PAPI_EVENT_CACHE_VERSION
+            and data.get("key") == key
+            and isinstance(data.get("events"), list)
+        ):
+            detail("PAPI event cache: hit, using cached event catalog")
+            return frozenset(data["events"])
+        detail("PAPI event cache: miss, cached events are for a different configuration")
+        return None
+    if any(_papi_cache_dir().glob(f"{_PAPI_EVENT_CACHE_PREFIX}*.json")):
+        detail("PAPI event cache: miss, cached events are for a different configuration")
+        return None
+    detail("PAPI event cache: miss, no cached events")
+    return None
+
+
+def _store_papi_event_cache(key: str, events: frozenset[str]) -> None:
+    """Atomically write events for *key*; any failure is debug-logged, never fatal."""
+    try:
+        directory = _papi_cache_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "version": _PAPI_EVENT_CACHE_VERSION,
+            "key": key,
+            "probes": _papi_cache_probes(),
+            "events": sorted(events),
+            "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        fd, tmp = tempfile.mkstemp(prefix=".papi_events_tmp", dir=directory)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2, sort_keys=True)
+            os.replace(tmp, _papi_event_cache_path(key))
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        detail(f"PAPI event cache: stored {len(events)} events for this configuration")
+    except OSError as exc:
+        debug(f"Failed to write PAPI event cache: {exc}")
+
+
+def parse_available_events(use_cache: bool = True) -> frozenset[str]:
     """Run ``papi_xml_event_info`` and parse event names (base + modifiers) from its XML output.
 
     The command outputs an XML document containing both base event names
@@ -400,10 +510,21 @@ def parse_available_events() -> frozenset[str]:
     (e.g. ``FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE``) across all component
     event sets (NATIVE and PRESET).
 
+    The catalog is cached per machine configuration under the XDG cache
+    directory: a matching entry skips the (potentially slow) command, a
+    stale or absent entry runs it and stores the result. ``use_cache=False``
+    bypasses both the read and the write.
+
     Returns:
         frozenset of available PAPI event name strings. Empty set if
         the ``papi_xml_event_info`` tool is not found or fails.
     """
+    key = _papi_cache_key() if use_cache else None
+    if key is not None:
+        cached = _load_papi_event_cache(key)
+        if cached is not None:
+            return cached
+
     papi_xml = shutil.which("papi_xml_event_info")
     if papi_xml is None:
         warn("papi_xml_event_info not found - cannot determine available PAPI events")
@@ -424,7 +545,10 @@ def parse_available_events() -> frozenset[str]:
         warn(f"papi_xml_event_info exited with code {result.returncode}: {result.stderr.strip()}")
         return frozenset()
 
-    return _parse_papi_xml_output(result.stdout)
+    events = _parse_papi_xml_output(result.stdout)
+    if key is not None:
+        _store_papi_event_cache(key, events)
+    return events
 
 
 def _parse_papi_xml_output(output: str) -> frozenset[str]:

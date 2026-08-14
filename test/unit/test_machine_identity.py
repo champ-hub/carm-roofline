@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -134,6 +135,59 @@ def test_detect_machine_signature(monkeypatch: pytest.MonkeyPatch) -> None:
     assert sig.vendor == "AuthenticAMD"
     assert sig.memory_levels == ()
     assert isinstance(sig.arch, str) and sig.arch
+
+
+# ---------------------------------------------------------------------------
+# read_cpuinfo
+# ---------------------------------------------------------------------------
+
+
+def test_read_cpuinfo_parses_family_model_stepping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import carm_roofline.architecture.identity as identity
+
+    cpuinfo = tmp_path / "cpuinfo"
+    cpuinfo.write_text(
+        "processor : 0\n"
+        "vendor_id : AuthenticAMD\n"
+        "cpu family : 25\n"
+        "model : 68\n"
+        "model name : AMD Ryzen 7 7735HS with Radeon Graphics\n"
+        "stepping : 1\n"
+        "\n"
+        "processor : 1\n"
+        "vendor_id : AuthenticAMD\n"
+    )
+    target = cpuinfo
+
+    class _RedirectingPath:
+        def __new__(cls, *_args: object, **_kwargs: object) -> Path:
+            return target
+
+    monkeypatch.setattr(identity, "Path", _RedirectingPath)
+
+    info = identity.read_cpuinfo()
+    assert info == CpuInfo(
+        model_name="AMD Ryzen 7 7735HS with Radeon Graphics",
+        vendor="AuthenticAMD",
+        family="25",
+        model="68",
+        stepping="1",
+    )
+
+
+def test_read_cpuinfo_missing_file_returns_none_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import carm_roofline.architecture.identity as identity
+
+    target = tmp_path / "nonexistent-cpuinfo"
+
+    class _RedirectingPath:
+        def __new__(cls, *_args: object, **_kwargs: object) -> Path:
+            return target
+
+    monkeypatch.setattr(identity, "Path", _RedirectingPath)
+
+    info = identity.read_cpuinfo()
+    assert info == CpuInfo(model_name=None, vendor=None, family=None, model=None, stepping=None)
 
 
 # ---------------------------------------------------------------------------

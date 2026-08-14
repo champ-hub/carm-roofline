@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from carm_roofline.core import DataType
+
+import carm_roofline.profiling.papi_metrics as papi_metrics
 
 from carm_roofline.profiling.aggregation import (
     AggregatedPoint,
@@ -29,9 +32,13 @@ from carm_roofline.profiling.papi_loader import (
 from carm_roofline.profiling.papi_metrics import (
     METRICS,
     _parse_papi_xml_output,
+    _papi_cache_key,
+    _papi_event_cache_path,
+    _store_papi_event_cache,
     build_isa_custom_metrics,
     fp_arith_counters_for_isas,
     PAPIMetricRegistry,
+    parse_available_events,
     resolve_metrics,
 )
 from carm_roofline.profiling.shared import (
@@ -803,6 +810,115 @@ def test_parse_papi_xml_output_empty() -> None:
 def test_parse_papi_xml_output_malformed() -> None:
     events = _parse_papi_xml_output("not xml at all")
     assert events == frozenset()
+
+
+# ---------------------------------------------------------------------------
+# PAPI event catalog cache tests
+# ---------------------------------------------------------------------------
+
+SAMPLE_PAPI_EVENTS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<eventinfo>
+<component index="0" type="CPU" id="perf_event">
+  <eventset type="NATIVE">
+    <event index="0" name="PAPI_L1_DCM" desc="L1D cache misses"></event>
+    <event index="1" name="PAPI_TOT_CYC" desc="Total cycles"></event>
+  </eventset>
+</component>
+</eventinfo>"""
+
+
+def _patch_cache_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    """Point the PAPI event cache at *tmp_path* with a deterministic key."""
+    monkeypatch.setattr(papi_metrics, "_papi_cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(papi_metrics, "_papi_cache_key", lambda: "k" * 64)
+    return "k" * 64
+
+
+def _patch_xml_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make papi_xml_event_info discovery succeed and return the sample XML."""
+    monkeypatch.setattr(papi_metrics.shutil, "which", lambda name: f"/fake/bin/{name}")
+    result = SimpleNamespace(stdout=SAMPLE_PAPI_EVENTS_XML, stderr="", returncode=0)
+    monkeypatch.setattr(papi_metrics.subprocess, "run", lambda *args, **kwargs: result)
+
+
+def test_parse_available_events_cache_hit_skips_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    key = _patch_cache_env(monkeypatch, tmp_path)
+    _store_papi_event_cache(key, frozenset({"PAPI_L1_DCM", "PAPI_TOT_CYC"}))
+
+    def _must_not_run(*args: object, **kwargs: object) -> object:
+        raise AssertionError("papi_xml_event_info must not run on cache hit")
+
+    monkeypatch.setattr(papi_metrics.subprocess, "run", _must_not_run)
+
+    events = parse_available_events()
+    assert events == frozenset({"PAPI_L1_DCM", "PAPI_TOT_CYC"})
+
+
+def test_parse_available_events_cache_miss_runs_and_stores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    key = _patch_cache_env(monkeypatch, tmp_path)
+    _patch_xml_command(monkeypatch)
+
+    events = parse_available_events()
+    assert events == frozenset({"PAPI_L1_DCM", "PAPI_TOT_CYC"})
+
+    cache_file = _papi_event_cache_path(key)
+    assert cache_file.is_file()
+    data = json.loads(cache_file.read_text(encoding="utf-8"))
+    assert data["key"] == key
+    assert data["events"] == sorted({"PAPI_L1_DCM", "PAPI_TOT_CYC"})
+
+
+def test_parse_available_events_cache_stale_key_runs_and_stores_new(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key = _patch_cache_env(monkeypatch, tmp_path)
+    _store_papi_event_cache("a" * 64, frozenset({"PAPI_TOT_CYC"}))
+    _patch_xml_command(monkeypatch)
+
+    events = parse_available_events()
+    assert events == frozenset({"PAPI_L1_DCM", "PAPI_TOT_CYC"})
+    assert _papi_event_cache_path(key).is_file()
+
+
+def test_parse_available_events_use_cache_false_ignores_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key = _patch_cache_env(monkeypatch, tmp_path)
+    _store_papi_event_cache(key, frozenset({"PAPI_L1_DCM", "PAPI_TOT_CYC"}))
+
+    calls: list[list[str]] = []
+    result = SimpleNamespace(stdout=SAMPLE_PAPI_EVENTS_XML, stderr="", returncode=0)
+
+    def _recording_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        calls.append(args)
+        return result
+
+    monkeypatch.setattr(papi_metrics.subprocess, "run", _recording_run)
+
+    events = parse_available_events(use_cache=False)
+    assert events == frozenset({"PAPI_L1_DCM", "PAPI_TOT_CYC"})
+    assert calls, "papi_xml_event_info must run when the cache is disabled"
+
+
+def test_parse_available_events_cache_corrupt_file_runs_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key = _patch_cache_env(monkeypatch, tmp_path)
+    _papi_event_cache_path(key).write_bytes(b"not json at all")
+    _patch_xml_command(monkeypatch)
+
+    events = parse_available_events()
+    assert events == frozenset({"PAPI_L1_DCM", "PAPI_TOT_CYC"})
+
+
+def test_papi_cache_key_changes_when_probe_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(papi_metrics, "_papi_cache_probes", lambda: {"a": "1", "b": "2"})
+    key1 = _papi_cache_key()
+    monkeypatch.setattr(papi_metrics, "_papi_cache_probes", lambda: {"a": "1", "b": "3"})
+    key2 = _papi_cache_key()
+    assert key1 != key2
+    assert len(key1) == 64
+    assert len(key2) == 64
 
 
 # ---------------------------------------------------------------------------

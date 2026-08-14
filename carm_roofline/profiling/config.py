@@ -58,6 +58,7 @@ class ProfileConfig(InsertsArguments):
         app_name: Application name recorded in the output metadata.
         keep_artifacts: Whether to keep raw profiling output files.
         papi_events: Optional comma-separated PAPI event override.
+        use_papi_cache: Whether to read/write the cached PAPI event catalog.
         perf_events: Optional comma-separated perf event override.
         perf_interval: Sampling interval in ms for perf interval mode (None = full-run).
         isas: ISA(s) the application exercises, as a tuple of BaseISA classes (empty when unspecified).
@@ -78,6 +79,7 @@ class ProfileConfig(InsertsArguments):
         self.app_name: str = args.app_name if args.app_name is not None else _default_app_name(args.command)
         self.keep_artifacts: bool = args.keep_artifacts
         self.papi_events: str | None = args.papi_events
+        self.use_papi_cache: bool = not args.no_papi_cache
         self.perf_events: str | None = args.perf_events
         self.perf_interval: int | None = args.perf_interval
         self.isas: tuple[type[BaseISA], ...]
@@ -134,7 +136,12 @@ class ProfileConfig(InsertsArguments):
             "--papi-events",
             default=None,
             type=str,
-            help="Comma-separated PAPI event list override (default: auto-resolved from papi_decode -a)",
+            help="Comma-separated PAPI event list override (default: auto-resolved from papi_xml_event_info)",
+        )
+        parser.add_argument(
+            "--no-papi-cache",
+            action="store_true",
+            help="Do not read or write the cached PAPI event catalog (default: cache per machine configuration)",
         )
         parser.add_argument(
             "--perf-events",

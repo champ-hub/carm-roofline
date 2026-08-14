@@ -33,6 +33,9 @@ class CpuInfo:
 
     model_name: str | None
     vendor: str | None
+    family: str | None = None
+    model: str | None = None
+    stepping: str | None = None
 
 
 @dataclass(frozen=True)
@@ -108,13 +111,14 @@ class MachineSignature:
 
 
 def read_cpuinfo() -> CpuInfo:
-    """Read (model_name, vendor) from /proc/cpuinfo.
+    """Read CPU identification fields from /proc/cpuinfo.
 
     Parses the first processor block. Returns ``CpuInfo(None, None)`` if
     /proc/cpuinfo is unavailable or cannot be parsed.
 
     Recognized keys:
-        - x86: "model name" (model), "vendor_id" (vendor)
+        - x86: "model name" (model), "vendor_id" (vendor), "cpu family" (family),
+          "model" (model), "stepping" (stepping)
         - ARM 32-bit: "Hardware" (fallback model name)
         - ARM 64-bit: "CPU implementer" (vendor)
     """
@@ -138,7 +142,16 @@ def read_cpuinfo() -> CpuInfo:
 
     model_name = first_block.get("model name") or first_block.get("Hardware")
     vendor = first_block.get("vendor_id") or first_block.get("CPU implementer")
-    return CpuInfo(model_name=model_name, vendor=vendor)
+    family = first_block.get("cpu family")
+    model = first_block.get("model")
+    stepping = first_block.get("stepping")
+    return CpuInfo(
+        model_name=model_name,
+        vendor=vendor,
+        family=family,
+        model=model,
+        stepping=stepping,
+    )
 
 
 def _get_physical_ram_bytes() -> int | None:
