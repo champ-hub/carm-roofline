@@ -1,14 +1,12 @@
 """Output writers for profiling results.
 
-Produces CSV (GUI-compatible applications format) and JSONL (one appended
-line per run, embedding metadata and the aggregated points) output.
+Produces JSONL (one appended line per run, embedding metadata and the
+aggregated points) and a machine-signature debug file.
 """
 
 from __future__ import annotations
 
-import csv
 import json
-from datetime import datetime
 
 from carm_roofline.architecture import write_machine_json
 from carm_roofline.output_utils import detail, info
@@ -23,67 +21,16 @@ def write_profile_results(
     config: ProfileConfig,
     points: list[AggregatedPoint],
 ) -> None:
-    """Write profiling results in both CSV and JSONL formats.
+    """Write profiling results in JSONL format.
 
-    CSV is written to ``<output_dir>/<machine_name>/applications.csv``
-    (GUI-compatible legacy format).  JSONL is written to
-    ``<output_dir>/<machine_name>/applications.jsonl`` (one appended line per run,
-    embedding run metadata and the aggregated points).
-
-    A ``machine.json`` debugging file is also written to
+    JSONL is written to ``<output_dir>/<machine_name>/applications.jsonl``
+    (one appended line per run, embedding run metadata and the aggregated
+    points). A ``machine.json`` debugging file is also written to
     ``<output_dir>/<machine_name>/machine.json`` on the first run.
     """
     machine_dir = config.output_dir / config.machine_name
     write_machine_json(config.machine_signature, machine_dir)
-    write_applications_csv(points, config, run)
     write_profile_jsonl(run, config, points)
-
-
-def write_applications_csv(
-    points: list[AggregatedPoint],
-    config: ProfileConfig,
-    run: RunResults,
-) -> None:
-    """Write aggregated profiling results as GUI-compatible applications CSV.
-
-    The CSV is appended to ``<output_dir>/<machine_name>/applications.csv``.
-    """
-    out_dir = config.output_dir / config.machine_name
-    out_dir.mkdir(parents=True, exist_ok=True)
-    filepath = out_dir / "applications.csv"
-
-    date_str = run.metadata.date or datetime.now().isoformat(timespec="seconds")
-    method = run.metadata.method or "PAPI_HL"
-    isa = run.metadata.isa or ""
-    precision = run.metadata.precision or ""
-
-    header = ["Date", "Method", "Name", "ISA", "Precision", "Threads", "AI", "GFLOPS", "Bandwidth", "Time"]
-
-    file_exists = filepath.exists()
-    with filepath.open("a" if file_exists else "w", newline="") as f:
-        writer = csv.writer(f)
-
-        if not file_exists:
-            writer.writerow(header)
-
-        for pt in points:
-            writer.writerow(
-                (
-                    date_str,
-                    method,
-                    pt.label,
-                    isa,
-                    precision,
-                    pt.num_threads,
-                    f"{pt.arithmetic_intensity:.3f}",
-                    f"{pt.flops_per_second / 1e9:.3f}",
-                    f"{pt.bandwidth / 1e9:.3f}",
-                    f"{pt.runtime_s:.3f}",
-                )
-            )
-
-    info(f"Applications CSV written: {filepath}")
-    detail(f"Aggregation={points[0].label if points else ''}, {len(points)} point(s)")
 
 
 def write_profile_jsonl(
@@ -102,8 +49,9 @@ def write_profile_jsonl(
     filepath = out_dir / "applications.jsonl"
 
     record = {
-        "format_version": "2.0",
+        "format_version": "3.0",
         "aggregation": config.aggregation.value,
+        "optional_metrics": sorted({name for pt in points for name in pt.optional_bytes}),
         "metadata": {
             "name": run.metadata.name,
             "date": run.metadata.date,
@@ -128,6 +76,8 @@ def write_profile_jsonl(
                 "arithmetic_intensity": pt.arithmetic_intensity,
                 "flops_per_second": pt.flops_per_second,
                 "bandwidth": pt.bandwidth,
+                "optional_bytes": pt.optional_bytes,
+                "optional_fractions": pt.optional_fractions,
             }
             for pt in points
         ],

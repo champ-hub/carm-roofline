@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import math
+import re
 
 import pandas as pd
 import pytest
 
 from carm_roofline.gui.config import GUISettings
 from carm_roofline.gui.data import (
+    _BW_FILL_OPACITIES,
+    _BW_LINE_STYLES,
+    _SELECTED_FILL_BASE_OPACITY,
     RoofConfig,
     RoofStore,
+    _format_point_tooltip,
+    _residency_alpha,
+    _residency_to_level_fractions,
+    _residency_width_mult,
     build_paraver_figure,
     build_roofline_figure,
 )
@@ -159,7 +167,7 @@ def test_build_roofline_figure_renders_application_points() -> None:
             ),
         ],
     )
-    roof = RoofConfig(app_ids=["r1"])
+    roof = RoofConfig(roof_id="r1", app_ids=["r1"])
     fig = build_roofline_figure([roof], [], {"r1": rec})
     markers = [t for t in fig.data if t.mode == "markers+text"]
     assert len(markers) == 1
@@ -173,16 +181,19 @@ def test_build_roofline_figure_renders_application_points() -> None:
     assert markers[0].marker.sizemode == "area"
     # marker opacity is 0.6
     assert markers[0].marker.opacity == 0.6
-    # customdata contains rich tooltip via _format_point_tooltip
+    # customdata[0] is the rich tooltip via _format_point_tooltip
     assert len(markers[0].customdata) == 2
-    assert "<b>run1 \u2014 2024-01-01 (global)</b>" in markers[0].customdata[0]
-    assert "<i>p1</i>" in markers[0].customdata[0]
-    assert "Performance" in markers[0].customdata[0]
-    assert "Execution" in markers[0].customdata[0]
-    assert "Work" in markers[0].customdata[0]
-    assert "  Arithmetic Intensity: 0.500 OPS/Byte" in markers[0].customdata[0]
-    assert "  Duration:" in markers[0].customdata[0]
-    assert markers[0].hovertemplate == "%{customdata}<extra></extra>"
+    assert "<b>run1 \u2014 2024-01-01 (global)</b>" in markers[0].customdata[0][0]
+    assert "<i>p1</i>" in markers[0].customdata[0][0]
+    assert "Performance" in markers[0].customdata[0][0]
+    assert "Execution" in markers[0].customdata[0][0]
+    assert "Work" in markers[0].customdata[0][0]
+    assert "  Arithmetic Intensity: 0.500 OPS/Byte" in markers[0].customdata[0][0]
+    assert "  Duration:" in markers[0].customdata[0][0]
+    # customdata[1] is the per-point cache-residency profile; customdata[2] the roof id
+    assert markers[0].customdata[0][1] == {}
+    assert markers[0].customdata[0][2] == "r1"
+    assert markers[0].hovertemplate == "%{customdata[0]}<extra></extra>"
 
 
 def test_build_roofline_figure_normalize_by_threads() -> None:
@@ -695,3 +706,477 @@ def test_build_paraver_figure_no_roofs_still_draws_points() -> None:
     assert len(markers) == 1
     # perf in GOPS (100..300) pulls the y-axis bottom below the [0, 3.5] fallback.
     assert fig.layout.yaxis.range[0] < 0
+
+
+def test_point_tooltip_includes_cache_residency() -> None:
+    """Tooltip appends a Cache Residency section when the point carries fractions."""
+    rec = ApplicationRecord(id="r1", label="run1", aggregation="global", metadata={}, machine="m", points=[])
+    p = ApplicationPoint(
+        label="p1",
+        total_flops=1e9,
+        total_bytes=1e6,
+        runtime_s=0.5,
+        num_ranks=1,
+        num_threads=1,
+        num_regions=1,
+        arithmetic_intensity=0.5,
+        flops_per_second=2e9,
+        bandwidth=1e9,
+        optional_fractions={"cache-residency": {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02}},
+    )
+    tooltip = _format_point_tooltip(rec, p)
+    assert "<b>Cache Residency</b>" in tooltip
+    assert "L1: 60.0% | L2: 30.0% | L3: 8.0% | DRAM: 2.0%" in tooltip
+
+
+def test_point_tooltip_includes_3key_cache_residency() -> None:
+    """Tooltip renders the merged L3+DRAM label for 3-bucket fractions."""
+    rec = ApplicationRecord(id="r1", label="run1", aggregation="global", metadata={}, machine="m", points=[])
+    p = ApplicationPoint(
+        label="p1",
+        total_flops=1e9,
+        total_bytes=1e6,
+        runtime_s=0.5,
+        num_ranks=1,
+        num_threads=1,
+        num_regions=1,
+        arithmetic_intensity=0.5,
+        flops_per_second=2e9,
+        bandwidth=1e9,
+        optional_fractions={"cache-residency": {"l1": 0.6, "l2": 0.3, "l3plus": 0.1}},
+    )
+    tooltip = _format_point_tooltip(rec, p)
+    assert "<b>Cache Residency</b>" in tooltip
+    assert "L1: 60.0% | L2: 30.0% | L3+DRAM: 10.0%" in tooltip
+
+
+def test_point_tooltip_includes_l2plus_cache_residency() -> None:
+    """Tooltip renders the merged L2+L3+DRAM label for an l2plus bucket."""
+    rec = ApplicationRecord(id="r1", label="run1", aggregation="global", metadata={}, machine="m", points=[])
+    p = ApplicationPoint(
+        label="p1",
+        total_flops=1e9,
+        total_bytes=1e6,
+        runtime_s=0.5,
+        num_ranks=1,
+        num_threads=1,
+        num_regions=1,
+        arithmetic_intensity=0.5,
+        flops_per_second=2e9,
+        bandwidth=1e9,
+        optional_fractions={"cache-residency": {"l1": 0.2, "l2plus": 0.8}},
+    )
+    tooltip = _format_point_tooltip(rec, p)
+    assert "<b>Cache Residency</b>" in tooltip
+    assert "L1: 20.0% | L2+L3+DRAM: 80.0%" in tooltip
+
+
+def test_residency_to_level_fractions_filters_by_roof_levels() -> None:
+    """Plus-key expansion targets only the canonical roof levels actually present."""
+    assert _residency_to_level_fractions(
+        {"l1": 0.2, "l3plus": 0.5}, roof_levels={"L1", "L2", "DRAM"}
+    ) == {"L1": 0.2, "L2": 0.0, "L3": 0.0, "DRAM": 0.5}
+
+
+def test_residency_to_level_fractions_default_expands_l3plus() -> None:
+    """Without roof_levels, l3plus expands to L3 and DRAM in the canonical order."""
+    assert _residency_to_level_fractions({"l3plus": 0.5}) == {"L1": 0.0, "L2": 0.0, "L3": 0.5, "DRAM": 0.5}
+
+
+def test_residency_to_level_fractions_ignores_unknown_keys() -> None:
+    """Unknown serialized keys are ignored; known levels keep their values."""
+    assert _residency_to_level_fractions({"l1": 0.5, "bogus": 0.5}) == {"L1": 0.5, "L2": 0.0, "L3": 0.0, "DRAM": 0.0}
+
+
+def test_residency_to_level_fractions_exact_legacy_keys_map_individually() -> None:
+    """Legacy 4-key exact keys still map each level individually."""
+    assert _residency_to_level_fractions({"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02}) == {
+        "L1": 0.6,
+        "L2": 0.3,
+        "L3": 0.08,
+        "DRAM": 0.02,
+    }
+
+
+def test_point_tooltip_omits_cache_residency_without_data() -> None:
+    """Tooltip has no Cache Residency section when the point has no fractions."""
+    rec = ApplicationRecord(id="r1", label="run1", aggregation="global", metadata={}, machine="m", points=[])
+    p = ApplicationPoint(
+        label="p1",
+        total_flops=1e9,
+        total_bytes=1e6,
+        runtime_s=0.5,
+        num_ranks=1,
+        num_threads=1,
+        num_regions=1,
+        arithmetic_intensity=0.5,
+        flops_per_second=2e9,
+        bandwidth=1e9,
+    )
+    tooltip = _format_point_tooltip(rec, p)
+    assert "Cache Residency" not in tooltip
+
+
+def _roofline_records_with_all_levels() -> list[BenchmarkRecord]:
+    """Arithmetic plus L1/L2/L3/DRAM memory records for a single roof filter."""
+    ts = "2026-01-01T00:00:00"
+    records: list[BenchmarkRecord] = [
+        {
+            "type": "arithmetic",
+            "name": "fma",
+            "isa": "test_isa",
+            "machine": "test_machine",
+            "data_type": "f32",
+            "num_threads": 1,
+            "timestamp": ts,
+            "operation": "fma",
+            "performance_gops": 120.0,
+        }
+    ]
+    for level, bw in (("L1", 400.0), ("L2", 100.0), ("L3", 60.0), ("DRAM", 30.0)):
+        records.append(
+            {
+                "type": "memory",
+                "name": f"{level} load",
+                "isa": "test_isa",
+                "machine": "test_machine",
+                "data_type": "f32",
+                "num_threads": 1,
+                "timestamp": ts,
+                "load_store_ratio": "2:1",
+                "cache_level": level,
+                "bandwidth_gbps": bw,
+            }
+        )
+    return records
+
+
+def _point_with_residency() -> ApplicationPoint:
+    return ApplicationPoint(
+        label="p1",
+        total_flops=1e9,
+        total_bytes=1e6,
+        runtime_s=0.5,
+        num_ranks=1,
+        num_threads=1,
+        num_regions=1,
+        arithmetic_intensity=0.5,
+        flops_per_second=2e9,
+        bandwidth=1e9,
+        optional_fractions={"cache-residency": {"l1": 1.0, "l2": 0.5, "l3": 0.1, "dram": 0.0}},
+    )
+
+
+def _point_with_3key_residency() -> ApplicationPoint:
+    return ApplicationPoint(
+        label="p1",
+        total_flops=1e9,
+        total_bytes=1e6,
+        runtime_s=0.5,
+        num_ranks=1,
+        num_threads=1,
+        num_regions=1,
+        arithmetic_intensity=0.5,
+        flops_per_second=2e9,
+        bandwidth=1e9,
+        optional_fractions={"cache-residency": {"l1": 0.2, "l2": 0.3, "l3plus": 0.5}},
+    )
+
+
+def _point_with_l2plus_residency() -> ApplicationPoint:
+    return ApplicationPoint(
+        label="p1",
+        total_flops=1e9,
+        total_bytes=1e6,
+        runtime_s=0.5,
+        num_ranks=1,
+        num_threads=1,
+        num_regions=1,
+        arithmetic_intensity=0.5,
+        flops_per_second=2e9,
+        bandwidth=1e9,
+        optional_fractions={"cache-residency": {"l1": 0.2, "l2plus": 0.8}},
+    )
+
+
+def _memory_line(fig: Any, roof_id: str, level: str) -> Any:
+    """The single memory ceiling trace of *roof_id* at *level* (located by dash)."""
+    matches = [
+        t
+        for t in fig.data
+        if t.mode == "lines" and t.legendgroup == roof_id and t.line.dash == _BW_LINE_STYLES[level]["dash"]
+    ]
+    assert len(matches) == 1, f"expected one {level} line for roof {roof_id}, got {len(matches)}"
+    return matches[0]
+
+
+def test_selection_emphasis_scales_selected_roof_lines() -> None:
+    """Selection emphasis scales the selected roof's ceilings per level and dims other roofs."""
+    records = _roofline_records_with_all_levels()
+    roof1 = RoofConfig(
+        roof_id="r1",
+        label="Roof 1",
+        isa="test_isa",
+        machine="test_machine",
+        num_threads=1,
+        data_type="f32",
+        compute_insts=["fma"],
+        load_store_ratio="2:1",
+        app_ids=["a1"],
+    )
+    roof2 = RoofConfig(
+        roof_id="r2",
+        label="Roof 2",
+        isa="test_isa",
+        machine="test_machine",
+        num_threads=1,
+        data_type="f32",
+        compute_insts=["fma"],
+        load_store_ratio="2:1",
+        app_ids=["a2"],
+    )
+    apps = {
+        "a1": ApplicationRecord(id="a1", label="app1", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_residency()]),
+        "a2": ApplicationRecord(id="a2", label="app2", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_residency()]),
+    }
+    fig = build_roofline_figure(
+        [roof1, roof2],
+        records,
+        apps,
+        selected_roof_id="r1",
+        selected_residency={"l1": 1.0, "l2": 0.5, "l3": 0.1, "dram": 0.0},
+    )
+    # Selected roof: each level scales with its own residency fraction.
+    for level, frac in (("L1", 1.0), ("L2", 0.5), ("L3", 0.1), ("DRAM", 0.0)):
+        line = _memory_line(fig, "r1", level)
+        assert line.line.width == pytest.approx(1.5 * 1.5 * _residency_width_mult(frac))
+        assert line.opacity == pytest.approx(_residency_alpha(frac))
+    # Background roof: all levels at the fixed de-emphasis fraction.
+    for level in ("L1", "L2", "L3", "DRAM"):
+        line = _memory_line(fig, "r2", level)
+        assert line.line.width == pytest.approx(2.25 * _residency_width_mult(0.1))
+        assert line.opacity == pytest.approx(_residency_alpha(0.1))
+    # Selected roof compute ceiling scales with the dominant level fraction (1.0).
+    compute = [t for t in fig.data if t.mode == "lines" and t.legendgroup == "r1" and t.line.dash == "solid"]
+    assert len(compute) == 1
+    assert compute[0].line.width == pytest.approx(1.5 * 1.5 * 3.0)
+    assert compute[0].opacity == pytest.approx(1.0)
+
+
+def test_selection_emphasis_3key_l3plus_highlights_l3_and_dram() -> None:
+    """3-bucket fractions: the l3plus value emphasizes the L3 AND DRAM ceilings equally."""
+    records = _roofline_records_with_all_levels()
+    roof1 = RoofConfig(
+        roof_id="r1",
+        label="Roof 1",
+        isa="test_isa",
+        machine="test_machine",
+        num_threads=1,
+        data_type="f32",
+        compute_insts=["fma"],
+        load_store_ratio="2:1",
+        app_ids=["a1"],
+    )
+    roof2 = RoofConfig(
+        roof_id="r2",
+        label="Roof 2",
+        isa="test_isa",
+        machine="test_machine",
+        num_threads=1,
+        data_type="f32",
+        compute_insts=["fma"],
+        load_store_ratio="2:1",
+        app_ids=["a2"],
+    )
+    apps = {
+        "a1": ApplicationRecord(id="a1", label="app1", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_3key_residency()]),
+        "a2": ApplicationRecord(id="a2", label="app2", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_3key_residency()]),
+    }
+    fig = build_roofline_figure(
+        [roof1, roof2],
+        records,
+        apps,
+        selected_roof_id="r1",
+        selected_residency={"l1": 0.2, "l2": 0.3, "l3plus": 0.5},
+    )
+    # Selected roof: L1/L2 scale individually; L3 and DRAM share the l3plus fraction.
+    for level, frac in (("L1", 0.2), ("L2", 0.3), ("L3", 0.5), ("DRAM", 0.5)):
+        line = _memory_line(fig, "r1", level)
+        assert line.line.width == pytest.approx(1.5 * 1.5 * _residency_width_mult(frac))
+        assert line.opacity == pytest.approx(_residency_alpha(frac))
+    # Background roof: all levels at the fixed de-emphasis fraction.
+    for level in ("L1", "L2", "L3", "DRAM"):
+        line = _memory_line(fig, "r2", level)
+        assert line.line.width == pytest.approx(2.25 * _residency_width_mult(0.1))
+        assert line.opacity == pytest.approx(_residency_alpha(0.1))
+    # Selected roof compute ceiling scales with the dominant l3plus fraction (0.5).
+    compute = [t for t in fig.data if t.mode == "lines" and t.legendgroup == "r1" and t.line.dash == "solid"]
+    assert len(compute) == 1
+    assert compute[0].line.width == pytest.approx(1.5 * 1.5 * _residency_width_mult(0.5))
+    assert compute[0].opacity == pytest.approx(_residency_alpha(0.5))
+
+
+def test_selection_emphasis_l2plus_expands_beyond_l2() -> None:
+    """4-key schema with l2plus: L2, L3 AND DRAM ceilings share the l2plus fraction."""
+    records = _roofline_records_with_all_levels()
+    roof1 = RoofConfig(
+        roof_id="r1",
+        label="Roof 1",
+        isa="test_isa",
+        machine="test_machine",
+        num_threads=1,
+        data_type="f32",
+        compute_insts=["fma"],
+        load_store_ratio="2:1",
+        app_ids=["a1"],
+    )
+    roof2 = RoofConfig(
+        roof_id="r2",
+        label="Roof 2",
+        isa="test_isa",
+        machine="test_machine",
+        num_threads=1,
+        data_type="f32",
+        compute_insts=["fma"],
+        load_store_ratio="2:1",
+        app_ids=["a2"],
+    )
+    apps = {
+        "a1": ApplicationRecord(id="a1", label="app1", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_l2plus_residency()]),
+        "a2": ApplicationRecord(id="a2", label="app2", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_l2plus_residency()]),
+    }
+    fig = build_roofline_figure(
+        [roof1, roof2],
+        records,
+        apps,
+        selected_roof_id="r1",
+        selected_residency={"l1": 0.2, "l2plus": 0.8},
+    )
+    # Selected roof: L1 scales individually; L2, L3 and DRAM share the l2plus fraction.
+    for level, frac in (("L1", 0.2), ("L2", 0.8), ("L3", 0.8), ("DRAM", 0.8)):
+        line = _memory_line(fig, "r1", level)
+        assert line.line.width == pytest.approx(1.5 * 1.5 * _residency_width_mult(frac))
+        assert line.opacity == pytest.approx(_residency_alpha(frac))
+    # Background roof: all levels at the fixed de-emphasis fraction.
+    for level in ("L1", "L2", "L3", "DRAM"):
+        line = _memory_line(fig, "r2", level)
+        assert line.line.width == pytest.approx(2.25 * _residency_width_mult(0.1))
+        assert line.opacity == pytest.approx(_residency_alpha(0.1))
+    # Selected roof compute ceiling scales with the dominant l2plus fraction (0.8).
+    compute = [t for t in fig.data if t.mode == "lines" and t.legendgroup == "r1" and t.line.dash == "solid"]
+    assert len(compute) == 1
+    assert compute[0].line.width == pytest.approx(1.5 * 1.5 * _residency_width_mult(0.8))
+    assert compute[0].opacity == pytest.approx(_residency_alpha(0.8))
+
+
+def test_selection_emphasis_defaults_without_selection() -> None:
+    """No selection info (or empty/stale residency) keeps default ceiling styles: no opacity, unscaled width."""
+    records = _roofline_records_with_all_levels()
+    roof = RoofConfig(
+        roof_id="r1",
+        label="Roof 1",
+        isa="test_isa",
+        machine="test_machine",
+        num_threads=1,
+        data_type="f32",
+        compute_insts=["fma"],
+        load_store_ratio="2:1",
+    )
+    fig = build_roofline_figure([roof], records)
+    line = _memory_line(fig, "r1", "L1")
+    assert line.line.width == pytest.approx(1.5 * 1.5)
+    assert line.opacity is None
+    compute = [t for t in fig.data if t.mode == "lines" and t.legendgroup == "r1" and t.line.dash == "solid"]
+    assert len(compute) == 1
+    assert compute[0].line.width == pytest.approx(1.5 * 1.5)
+    assert compute[0].opacity is None
+    # selected_roof_id=None with an empty residency dict also falls back to defaults.
+    fig2 = build_roofline_figure([roof], records, selected_roof_id=None, selected_residency={})
+    line2 = _memory_line(fig2, "r1", "L1")
+    assert line2.line.width == pytest.approx(1.5 * 1.5)
+    assert line2.opacity is None
+    # A stale roof id (no longer in the roof list) also falls back to defaults.
+    fig3 = build_roofline_figure(
+        [roof],
+        records,
+        selected_roof_id="gone",
+        selected_residency={"l1": 1.0, "l2": 0.5, "l3": 0.1, "dram": 0.0},
+    )
+    line3 = _memory_line(fig3, "r1", "L1")
+    assert line3.line.width == pytest.approx(1.5 * 1.5)
+    assert line3.opacity is None
+    # A stale roof id with a 3-key residency dict also falls back to defaults.
+    fig4 = build_roofline_figure(
+        [roof],
+        records,
+        selected_roof_id="gone",
+        selected_residency={"l1": 0.2, "l2": 0.3, "l3plus": 0.5},
+    )
+    line4 = _memory_line(fig4, "r1", "L1")
+    assert line4.line.width == pytest.approx(1.5 * 1.5)
+    assert line4.opacity is None
+
+
+def _fill_alpha(fillcolor: str) -> float:
+    """Extract the alpha channel from an ``rgba(r,g,b,a)`` fill color string."""
+    match = re.search(r"rgba\(\s*\d+,\s*\d+,\s*\d+,\s*([\d.]+)\)", fillcolor)
+    assert match, f"unexpected fillcolor {fillcolor!r}"
+    return float(match.group(1))
+
+
+def _fill_bands(fig: Any, roof_id: str) -> list[Any]:
+    """The roof's level fill bands, ordered L1..DRAM by ridge x position."""
+    fills = [t for t in fig.data if t.fill == "toself" and t.legendgroup == roof_id and t.mode == "lines"]
+    fills.sort(key=lambda t: t.x[1])
+    assert len(fills) == 4, f"expected 4 fill bands for roof {roof_id}, got {len(fills)}"
+    return fills
+
+
+def test_selection_fills_share_constant_base_opacity() -> None:
+    """Selection: every roof's level bands use one constant base fill transparency,
+    with the residency alpha applied on top; no selection keeps the default per-level
+    opacities."""
+    records = _roofline_records_with_all_levels()
+    roof1 = RoofConfig(
+        roof_id="r1",
+        label="Roof 1",
+        isa="test_isa",
+        machine="test_machine",
+        num_threads=1,
+        data_type="f32",
+        compute_insts=["fma"],
+        load_store_ratio="2:1",
+        app_ids=["a1"],
+    )
+    roof2 = RoofConfig(
+        roof_id="r2",
+        label="Roof 2",
+        isa="test_isa",
+        machine="test_machine",
+        num_threads=1,
+        data_type="f32",
+        compute_insts=["fma"],
+        load_store_ratio="2:1",
+        app_ids=["a2"],
+    )
+    apps = {
+        "a1": ApplicationRecord(id="a1", label="app1", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_residency()]),
+        "a2": ApplicationRecord(id="a2", label="app2", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_residency()]),
+    }
+    fig = build_roofline_figure(
+        [roof1, roof2],
+        records,
+        apps,
+        selected_roof_id="r1",
+        selected_residency={"l1": 1.0, "l2": 0.5, "l3": 0.1, "dram": 0.0},
+    )
+    # Selected roof: constant base * residency alpha per level (no per-level base).
+    for band, frac in zip(_fill_bands(fig, "r1"), (1.0, 0.5, 0.1, 0.0)):
+        assert _fill_alpha(band.fillcolor) == pytest.approx(_SELECTED_FILL_BASE_OPACITY * _residency_alpha(frac))
+    # Background roof: same constant base, all levels at the de-emphasis fraction.
+    for band in _fill_bands(fig, "r2"):
+        assert _fill_alpha(band.fillcolor) == pytest.approx(_SELECTED_FILL_BASE_OPACITY * _residency_alpha(0.1))
+    # Without a selection the default per-level opacities are kept.
+    fig2 = build_roofline_figure([roof1], records)
+    for band, level in zip(_fill_bands(fig2, "r1"), ("L1", "L2", "L3", "DRAM")):
+        assert _fill_alpha(band.fillcolor) == pytest.approx(_BW_FILL_OPACITIES[level])

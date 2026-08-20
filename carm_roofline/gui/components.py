@@ -760,6 +760,10 @@ def build_plot_area(mode: GUIMode = GUIMode.CARM, trace_bounds: tuple[float, flo
             config={"responsive": True, "toImageButtonOptions": {"format": "svg", "filename": "roofline"}},
         ),
     ]
+    if not mode.show_time_slider:
+        # Background-click channel for click-driven roof emphasis (see
+        # assets/roofline_bg_click.js): dcc.Graph only reports point clicks.
+        children.append(dcc.Input(id=PlotAreaID.BG_CLICK_CLEAR, type="text", value="0", style={"display": "none"}))
     if mode.show_time_slider:
         lo, hi = trace_bounds if trace_bounds else (0.0, 1.0)
         # Dash 4.1.0's step=None is bugged (collapses both handles) so use an explicit fine-grained step
@@ -820,6 +824,7 @@ def build_layout(
             # Hidden stores
             dcc.Store(id=StoreID.ROOF_STORE, data=store.to_dict()),
             dcc.Store(id=StoreID.ACTIVE_PANEL, data=store.active_panel),
+            dcc.Store(id=StoreID.SELECTED_POINT, data=None),
         ],
     )
 

@@ -12,12 +12,16 @@ The four modes match the hierarchy:
 - **PER_REGION_PER_THREAD**:  one point per (rank, thread, region); no cross-thread aggregation.
 
 At aggregation time, raw PAPI counters are converted to roofline metrics
-(flops, bytes, time_s) using the resolved ``MetricDefinition``.
+(flops, bytes, time_s) using the resolved ``MetricDefinition``. Optional
+metrics (e.g. cache residency) are computed per region and summed per
+aggregation strategy, carried on each ``AggregatedPoint`` as
+``optional_bytes``.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from .config import AggregationMode
 from .model import RegionMetrics, RunResults
@@ -27,8 +31,12 @@ from .shared import (
     MetricType,
     RooflinePoint,
     compute_region_point,
+    sum_optional_bytes,
     sum_roofline_points,
 )
+
+if TYPE_CHECKING:
+    from .optional_metrics import OptionalMetricName, ResolvedOptionalMetric
 
 
 @dataclass
@@ -42,6 +50,7 @@ class AggregatedPoint:
     num_ranks: int
     num_threads: int
     num_regions: int = 0
+    optional_bytes: dict[str, dict[str, float]] = field(default_factory=dict)
 
     @property
     def arithmetic_intensity(self) -> float:
@@ -55,20 +64,37 @@ class AggregatedPoint:
     def bandwidth(self) -> float:
         return self.total_bytes / self.runtime_s if self.runtime_s > 0 else 0.0
 
+    @property
+    def optional_fractions(self) -> dict[str, dict[str, float]]:
+        """Per-metric per-level fraction of ``total_bytes`` served at that level.
+
+        Each fraction is ``level_bytes / total_bytes`` (0.0 when
+        ``total_bytes == 0``); values are not renormalized — the sum is at
+        most 1, exactly 1 when every contributing region had L1 accesses.
+        """
+        result: dict[str, dict[str, float]] = {}
+        for name, levels in self.optional_bytes.items():
+            result[name] = {
+                level: (value / self.total_bytes if self.total_bytes > 0 else 0.0) for level, value in levels.items()
+            }
+        return result
+
 
 def _region_points(
     regions: list[RegionMetrics],
     resolved: dict[MetricType, MetricDefinition],
     metric_ctx: MetricContext,
+    resolved_optional: dict[OptionalMetricName, ResolvedOptionalMetric] | None = None,
 ) -> list[RooflinePoint]:
     """Compute (flops, bytes, time_s) for each region in a list."""
-    return [compute_region_point(r.counters, r.time_nsec, resolved, metric_ctx) for r in regions]
+    return [compute_region_point(r.counters, r.time_nsec, resolved, metric_ctx, resolved_optional) for r in regions]
 
 
 def aggregate_global(
     run: RunResults,
     resolved: dict[MetricType, MetricDefinition],
     metric_ctx: MetricContext,
+    resolved_optional: dict[OptionalMetricName, ResolvedOptionalMetric] | None = None,
 ) -> AggregatedPoint:
     """Aggregate all regions from all ranks/threads into a single point.
 
@@ -80,7 +106,7 @@ def aggregate_global(
     num_regions = 0
     for rank in run.ranks:
         for thread in rank.threads:
-            thread_points = _region_points(thread.regions, resolved, metric_ctx)
+            thread_points = _region_points(thread.regions, resolved, metric_ctx, resolved_optional)
             thread_totals.append(sum_roofline_points(thread_points))
             num_regions += len(thread_points)
     total_flops = sum(p.flops for p in thread_totals)
@@ -95,6 +121,7 @@ def aggregate_global(
         num_ranks=run.num_ranks,
         num_threads=num_threads,
         num_regions=num_regions,
+        optional_bytes=sum_optional_bytes([p.optional_bytes for p in thread_totals]),
     )
 
 
@@ -102,6 +129,7 @@ def aggregate_per_rank(
     run: RunResults,
     resolved: dict[MetricType, MetricDefinition],
     metric_ctx: MetricContext,
+    resolved_optional: dict[OptionalMetricName, ResolvedOptionalMetric] | None = None,
 ) -> list[AggregatedPoint]:
     """Aggregate each rank independently into its own roofline point.
 
@@ -113,7 +141,7 @@ def aggregate_per_rank(
         thread_totals: list[RooflinePoint] = []
         num_regions = 0
         for thread in rank.threads:
-            thread_points = _region_points(thread.regions, resolved, metric_ctx)
+            thread_points = _region_points(thread.regions, resolved, metric_ctx, resolved_optional)
             thread_totals.append(sum_roofline_points(thread_points))
             num_regions += len(thread_points)
 
@@ -130,6 +158,7 @@ def aggregate_per_rank(
                 num_ranks=1,
                 num_threads=len(rank.threads),
                 num_regions=num_regions,
+                optional_bytes=sum_optional_bytes([p.optional_bytes for p in thread_totals]),
             )
         )
     return points
@@ -139,12 +168,13 @@ def aggregate_per_thread(
     run: RunResults,
     resolved: dict[MetricType, MetricDefinition],
     metric_ctx: MetricContext,
+    resolved_optional: dict[OptionalMetricName, ResolvedOptionalMetric] | None = None,
 ) -> list[AggregatedPoint]:
     """Aggregate each (rank, thread) pair into its own roofline point."""
     points: list[AggregatedPoint] = []
     for rank in run.ranks:
         for thread in rank.threads:
-            thread_points = _region_points(thread.regions, resolved, metric_ctx)
+            thread_points = _region_points(thread.regions, resolved, metric_ctx, resolved_optional)
             total = sum_roofline_points(thread_points)
             label = (
                 f"{run.metadata.name}_rank{rank.rank_id}_thread{thread.thread_id}"
@@ -160,6 +190,7 @@ def aggregate_per_thread(
                     num_ranks=1,
                     num_threads=1,
                     num_regions=len(thread_points),
+                    optional_bytes=total.optional_bytes,
                 )
             )
     return points
@@ -169,6 +200,7 @@ def aggregate_per_region_merged(
     run: RunResults,
     resolved: dict[MetricType, MetricDefinition],
     metric_ctx: MetricContext,
+    resolved_optional: dict[OptionalMetricName, ResolvedOptionalMetric] | None = None,
 ) -> list[AggregatedPoint]:
     """Aggregate by region name across all ranks/threads.
 
@@ -183,7 +215,9 @@ def aggregate_per_region_merged(
         for thread in rank.threads:
             thread_key = (rank.rank_id, thread.thread_id)
             for region in thread.regions:
-                region_point = compute_region_point(region.counters, region.time_nsec, resolved, metric_ctx)
+                region_point = compute_region_point(
+                    region.counters, region.time_nsec, resolved, metric_ctx, resolved_optional
+                )
                 by_region.setdefault(region.name, {}).setdefault(thread_key, []).append(region_point)
 
     points: list[AggregatedPoint] = []
@@ -207,6 +241,7 @@ def aggregate_per_region_merged(
                 num_ranks=len(rank_ids),
                 num_threads=len(thread_groups),
                 num_regions=sum(len(pt_list) for pt_list in thread_groups.values()),
+                optional_bytes=sum_optional_bytes([p.optional_bytes for p in per_thread_sums.values()]),
             )
         )
     return points
@@ -216,6 +251,7 @@ def aggregate_per_region_per_thread(
     run: RunResults,
     resolved: dict[MetricType, MetricDefinition],
     metric_ctx: MetricContext,
+    resolved_optional: dict[OptionalMetricName, ResolvedOptionalMetric] | None = None,
 ) -> list[AggregatedPoint]:
     """One roofline point per (rank, thread, region); no cross-thread aggregation.
 
@@ -226,7 +262,9 @@ def aggregate_per_region_per_thread(
     for rank in run.ranks:
         for thread in rank.threads:
             for region in thread.regions:
-                region_point = compute_region_point(region.counters, region.time_nsec, resolved, metric_ctx)
+                region_point = compute_region_point(
+                    region.counters, region.time_nsec, resolved, metric_ctx, resolved_optional
+                )
                 label = (
                     f"{run.metadata.name}_rank{rank.rank_id}_thread{thread.thread_id}_{region.name}"
                     if run.metadata.name
@@ -241,6 +279,7 @@ def aggregate_per_region_per_thread(
                         num_ranks=1,
                         num_threads=1,
                         num_regions=1,
+                        optional_bytes=region_point.optional_bytes,
                     )
                 )
     return points
@@ -251,6 +290,7 @@ def aggregate(
     mode: AggregationMode,
     resolved: dict[MetricType, MetricDefinition],
     metric_ctx: MetricContext,
+    resolved_optional: dict[OptionalMetricName, ResolvedOptionalMetric] | None = None,
 ) -> list[AggregatedPoint]:
     """Dispatch to the appropriate aggregation strategy.
 
@@ -258,18 +298,21 @@ def aggregate(
         run: Full profiling results with raw region counters.
         mode: Aggregation strategy.
         resolved: Resolved metric implementations for computing flops/bytes.
+        metric_ctx: Metric context for flops/bytes computation.
+        resolved_optional: Resolved optional metrics to compute per region
+            (None or empty skips them).
 
     Returns:
         A list of one or more :class:`AggregatedPoint` instances.
     """
     if mode == AggregationMode.GLOBAL:
-        return [aggregate_global(run, resolved, metric_ctx)]
+        return [aggregate_global(run, resolved, metric_ctx, resolved_optional)]
     if mode == AggregationMode.RANK:
-        return aggregate_per_rank(run, resolved, metric_ctx)
+        return aggregate_per_rank(run, resolved, metric_ctx, resolved_optional)
     if mode == AggregationMode.THREAD:
-        return aggregate_per_thread(run, resolved, metric_ctx)
+        return aggregate_per_thread(run, resolved, metric_ctx, resolved_optional)
     if mode == AggregationMode.REGION_MERGED:
-        return aggregate_per_region_merged(run, resolved, metric_ctx)
+        return aggregate_per_region_merged(run, resolved, metric_ctx, resolved_optional)
     if mode == AggregationMode.REGION_PER_THREAD:
-        return aggregate_per_region_per_thread(run, resolved, metric_ctx)
+        return aggregate_per_region_per_thread(run, resolved, metric_ctx, resolved_optional)
     raise ValueError(f"Unknown aggregation mode: {mode}")

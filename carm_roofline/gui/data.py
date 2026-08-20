@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import re
 import uuid
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, TypedDict
@@ -315,6 +316,73 @@ _BW_FILL_OPACITIES: dict[str, float] = {
     "DRAM": 0.05,
 }
 
+# Fill opacity applied uniformly to every level band of every roof while a # cache-residency selection is active.
+_SELECTED_FILL_BASE_OPACITY = 0.2
+
+# Canonical memory hierarchy, lowest to highest. Serialized cache-residency
+# level keys are the lowercase canonical level names, optionally suffixed
+# "plus" to mean "this level and everything beyond it in the memory hierarchy"
+# (e.g. l3plus = L3 and DRAM, l2plus = L2, L3 and DRAM).
+_CACHE_LEVEL_ORDER: tuple[str, ...] = ("L1", "L2", "L3", "DRAM")
+_CACHE_LEVEL_RANK: dict[str, int] = {level: rank for rank, level in enumerate(_CACHE_LEVEL_ORDER)}
+
+
+def _canonical_level(key: str) -> str | None:
+    """The uppercase canonical level a serialized residency key names, else None.
+
+    A trailing ``"plus"`` suffix is stripped before matching (it marks the
+    level and everything beyond it in the memory hierarchy).
+    """
+    base = key.lower().removesuffix("plus")
+    level = base.upper()
+    return level if level in _CACHE_LEVEL_RANK else None
+
+
+def _residency_to_level_fractions(
+    residency: dict[str, float],
+    roof_levels: Iterable[str] | None = None,
+) -> dict[str, float]:
+    """Map serialized cache-residency fractions to per-roof ceiling fractions.
+
+    Returns all canonical uppercase roof keys ("L1"/"L2"/"L3"/"DRAM"); missing
+    levels map to 0.0. A ``"plus"`` key assigns its fraction to every canonical
+    level at-or-beyond its base (``"l3plus"`` -> "L3" and "DRAM", ``"l2plus"``
+    -> "L2", "L3" and "DRAM"); an exact key assigns to its single level (the
+    legacy 4-key schema). Keys are matched case-insensitively; unknown keys
+    are ignored; later dict keys overwrite earlier ones. *roof_levels*
+    restricts ``"plus"`` expansion to the canonical levels the roof actually
+    has (None = the full canonical order).
+    """
+    fractions = dict.fromkeys(_CACHE_LEVEL_ORDER, 0.0)
+    if roof_levels is None:
+        effective = _CACHE_LEVEL_ORDER
+    else:
+        effective = tuple(level for level in _CACHE_LEVEL_ORDER if level in roof_levels)
+    for key, value in residency.items():
+        base = _canonical_level(key)
+        if base is None:
+            continue
+        if key.lower().endswith("plus"):
+            for level in effective:
+                if _CACHE_LEVEL_RANK[level] >= _CACHE_LEVEL_RANK[base]:
+                    fractions[level] = value
+        else:
+            fractions[base] = value
+    return fractions
+
+
+# Residency fraction f in [0,1] -> ceiling line width multiplier / trace opacity.
+def _residency_width_mult(f: float) -> float:
+    return 0.5 + 2.5 * f
+
+
+def _residency_alpha(f: float) -> float:
+    return 0.3 + 0.7 * f
+
+
+# Roofs that do not contain the hovered point (fixed background de-emphasis).
+_BACKGROUND_FRACTION = 0.1
+
 
 # Distinct marker symbols assigned to each application under the same roof
 _APP_MARKER_SYMBOLS: tuple[str, ...] = (
@@ -335,6 +403,24 @@ _APP_MARKER_SYMBOLS: tuple[str, ...] = (
 )
 
 MIN_MARKER_SIZE: float = 50.0
+
+
+def _residency_tooltip_items(residency: dict[str, float]) -> tuple[tuple[str, float], ...]:
+    """Serialized cache-residency (label, value) pairs in canonical level order.
+
+    Unknown keys are skipped. An exact key renders as the uppercase level name;
+    a ``"plus"`` key renders as the canonical levels at-or-beyond its base
+    joined by "+" (e.g. "l3plus" -> "L3+DRAM", "l2plus" -> "L2+L3+DRAM").
+    """
+    ranked: list[tuple[int, str, float]] = []
+    for key, value in residency.items():
+        base = _canonical_level(key)
+        if base is None:
+            continue
+        label = "+".join(_CACHE_LEVEL_ORDER[_CACHE_LEVEL_RANK[base] :]) if key.lower().endswith("plus") else base
+        ranked.append((_CACHE_LEVEL_RANK[base], label, value))
+    ranked.sort(key=lambda item: item[0])
+    return tuple((label, value) for _, label, value in ranked)
 
 
 def _format_point_tooltip(rec: ApplicationRecord, p: ApplicationPoint, roof_num_threads: int | None = None) -> str:
@@ -358,6 +444,13 @@ def _format_point_tooltip(rec: ApplicationRecord, p: ApplicationPoint, roof_num_
         f"  Total Bytes: {Bytes(int(p.total_bytes))!s}",
         f"  Regions: {p.num_regions}",
     ]
+    residency = p.optional_fractions.get("cache-residency") or {}
+    if residency:
+        residency_parts = tuple(f"{label}: {value * 100:.1f}%" for label, value in _residency_tooltip_items(residency))
+        parts += [
+            "<b>Cache Residency</b>",
+            "  " + " | ".join(residency_parts),
+        ]
     return "<br>".join(parts)
 
 
@@ -417,6 +510,8 @@ def build_roofline_figure(
     records: list[BenchmarkRecord],
     applications_by_id: dict[str, ApplicationRecord] | None = None,
     settings: GUISettings | None = None,
+    selected_roof_id: str | None = None,
+    selected_residency: dict[str, float] | None = None,
 ) -> go.Figure:
     """Build a Plotly roofline figure from real benchmark records.
 
@@ -424,6 +519,11 @@ def build_roofline_figure(
     assembled; memory bandwidth ceilings, compute-performance ceilings,
     ridge-point markers, and optional application run points are drawn.
     Roofs with no matching data produce a warning annotation instead.
+
+    *selected_roof_id*/*selected_residency* drive click-driven emphasis: the
+    selected point's roof ceilings scale per cache level with the residency
+    fractions, and the other roofs are de-emphasized. A stale roof id (no
+    longer in *roofs*) or missing residency falls back to default styling.
     """
     s = settings or GUISettings()
     normalize_by_threads = s.normalize_by_threads
@@ -456,6 +556,10 @@ def build_roofline_figure(
                 if app_id not in app_symbol:
                     app_symbol[app_id] = _APP_MARKER_SYMBOLS[len(app_symbol) % len(_APP_MARKER_SYMBOLS)]
 
+    # A stale selection (e.g. the selected roof was removed) behaves like no selection.
+    if selected_roof_id is not None and all(r.id != selected_roof_id for r in roofs):
+        selected_roof_id = None
+
     for idx, (roof, model) in enumerate(zip(roofs, models)):
         color = _COLORS[idx % len(_COLORS)]
         divisor = roof_divisor(roof, s)
@@ -477,7 +581,14 @@ def build_roofline_figure(
                     for p in rec.points
                 ]
                 mismatches = [roof.num_threads is not None and roof.num_threads != p.num_threads for p in rec.points]
-                customdata = [_format_point_tooltip(rec, p, roof.num_threads) for p in rec.points]
+                customdata = [
+                    [
+                        _format_point_tooltip(rec, p, roof.num_threads),
+                        p.optional_fractions.get("cache-residency", {}),
+                        roof.id,
+                    ]
+                    for p in rec.points
+                ]
                 display_labels = ["!" if m else None for m in mismatches]
                 fig.add_trace(
                     go.Scatter(
@@ -503,11 +614,20 @@ def build_roofline_figure(
                         textposition="top center",
                         textfont={"color": "red", "size": 16, "weight": "bold"},
                         customdata=customdata,
-                        hovertemplate="%{customdata}<extra></extra>",
+                        hovertemplate="%{customdata[0]}<extra></extra>",
                     )
                 )
 
-        _add_roof_ceilings(fig, roof, model, color, divisor, y_min_gops, s)
+        if selected_roof_id is None or selected_residency is None:
+            level_fractions: dict[str, float] | None = None
+        elif roof.id == selected_roof_id:
+            level_fractions = _residency_to_level_fractions(
+                selected_residency, roof_levels=model.bandwidth_by_level.keys()
+            )
+        else:
+            level_fractions = dict.fromkeys(_CACHE_LEVEL_ORDER, _BACKGROUND_FRACTION)
+
+        _add_roof_ceilings(fig, roof, model, color, divisor, y_min_gops, s, level_fractions)
     _finalize_axes_and_layout(fig, x_range, y_range, s)
     return fig
 
@@ -520,8 +640,17 @@ def _add_roof_ceilings(
     roof_divisor: int,
     y_min_gops: float,
     settings: GUISettings,
+    level_fractions: dict[str, float] | None = None,
 ) -> None:
-    """Draw memory/compute ceilings and ridge-point hover markers for one roof."""
+    """Draw memory/compute ceilings and ridge-point hover markers for one roof.
+
+    *level_fractions* maps "L1"/"L2"/"L3"/"DRAM" to a residency fraction in
+    [0,1] used to scale each ceiling line's width and opacity. While a
+    selection is active the level-band fills share one constant base
+    transparency across every roof and level, modulated by the residency
+    alpha. None (or an empty dict) keeps the default per-level fill
+    opacities and unscaled lines.
+    """
     line_width = settings.line_width
     show_roof_fills = settings.show_roof_fills
 
@@ -581,6 +710,8 @@ def _add_roof_ceilings(
             y_right = bw_norm.value * ai_right / 1e9
         style = dict(_BW_LINE_STYLES.get(level, {"dash": "solid", "width": 1}))
         style["width"] = style["width"] * line_width
+        if level_fractions is not None:
+            style["width"] *= _residency_width_mult(level_fractions.get(level, 0.0))
         segments.append((level, ai_left, ai_right, y_left, y_right, bw_norm, style))
     # Append synthetic extension anchor so every real segment has a
     # "next" to pair with in a single fill loop.
@@ -606,7 +737,12 @@ def _add_roof_ceilings(
             y_pts = [c_yl, c_yr, n_yr, n_yl]
 
         if show_roof_fills:
-            opacity = _BW_FILL_OPACITIES.get(level, 0.1)
+            if level_fractions is not None:
+                # Selection: one constant base transparency shared by every
+                # roof and level; the residency alpha highlights bands on top.
+                opacity = _SELECTED_FILL_BASE_OPACITY * _residency_alpha(level_fractions.get(level, 0.0))
+            else:
+                opacity = _BW_FILL_OPACITIES.get(level, 0.1)
             r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
             fill_color = f"rgba({r},{g},{b},{opacity})"
 
@@ -631,6 +767,9 @@ def _add_roof_ceilings(
         if _level is None:  # skip synthetic anchor
             continue
         level = _level
+        trace_opts: dict[str, Any] = {}
+        if level_fractions is not None:
+            trace_opts["opacity"] = _residency_alpha(level_fractions.get(level, 0.0))
         fig.add_trace(
             go.Scatter(
                 x=[ai_left, ai_right],
@@ -641,6 +780,7 @@ def _add_roof_ceilings(
                 line={"color": color, **line_style},
                 hoverinfo="skip",
                 showlegend=_first,
+                **trace_opts,
             )
         )
         _first = False
@@ -655,9 +795,15 @@ def _add_roof_ceilings(
         else:
             compute_x_start = 1e-6
         is_top = perf.value == peak_perf_raw
+        compute_f = max(level_fractions.values()) if level_fractions is not None else None
         line_style = (
             {"dash": "solid", "width": 1.5 * line_width} if is_top else {"dash": "dot", "width": 2 * line_width}
         )
+        if compute_f is not None:
+            line_style["width"] *= _residency_width_mult(compute_f)
+        compute_trace_opts: dict[str, Any] = {}
+        if compute_f is not None:
+            compute_trace_opts["opacity"] = _residency_alpha(compute_f)
         fig.add_trace(
             go.Scatter(
                 x=[compute_x_start, 1e6],
@@ -668,6 +814,7 @@ def _add_roof_ceilings(
                 line={"color": color, **line_style},
                 hoverinfo="skip",
                 showlegend=_first,
+                **compute_trace_opts,
             )
         )
         _first = False

@@ -25,6 +25,7 @@ The GUI displays the architecture's roofline — peak performance bounds for com
 - **Memory-bound points** fall below the roofline intersection — they benefit from better data locality and reduced memory traffic.
 - **Compute-bound points** sit on or near the compute roof — they benefit from increasing computational intensity.
 - The **distance to the roofline** shows how much performance headroom exists.
+- **Clicking an application point** emphasizes the roof ceilings according to the point's cache-residency fractions.
 
 ## Arguments by Category
 

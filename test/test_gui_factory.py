@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 from carm_roofline.gui.config import GUIConfig
-from carm_roofline.gui.factory import create_app
+from carm_roofline.gui.factory import _clicked_point_residency, _selection_payload, create_app
 from carm_roofline.gui.ids import StoreID
 from carm_roofline.gui.providers import ParaverData
 from carm_roofline.paraver import ParaverWindowMode
@@ -363,3 +363,89 @@ def test_export_panel_accordion_groups_export_filter_and_color() -> None:
         -1.0: "100 ms",
     }
     assert duration_slider.tooltip == {"placement": "bottom", "transform": "paraverDuration"}
+
+
+def test_clicked_point_residency_parses_customdata() -> None:
+    """clickData payloads map to (roof_id, fractions); invalid payloads return None."""
+    assert _clicked_point_residency(None) is None
+    assert _clicked_point_residency({}) is None
+    assert _clicked_point_residency({"points": []}) is None
+    valid = {
+        "points": [
+            {
+                "customdata": [
+                    "<b>tooltip</b>",
+                    {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02},
+                    "r1",
+                ]
+            }
+        ]
+    }
+    assert _clicked_point_residency(valid) == ("r1", {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02})
+    # 3-bucket schema: keys pass through untouched (no shape assumption in parsing).
+    valid_3key = {
+        "points": [
+            {
+                "customdata": [
+                    "<b>tooltip</b>",
+                    {"l1": 0.6, "l2": 0.3, "l3plus": 0.1},
+                    "r1",
+                ]
+            }
+        ]
+    }
+    assert _clicked_point_residency(valid_3key) == ("r1", {"l1": 0.6, "l2": 0.3, "l3plus": 0.1})
+    # missing element 2 -> None
+    assert _clicked_point_residency({"points": [{"customdata": ["t", {}]}]}) is None
+    # non-str roof id -> None
+    assert _clicked_point_residency({"points": [{"customdata": ["t", {"l1": 0.6}, 42]}]}) is None
+    # empty fractions dict -> None
+    assert _clicked_point_residency({"points": [{"customdata": ["t", {}, "r1"]}]}) is None
+    # non-dict fractions -> None
+    assert _clicked_point_residency({"points": [{"customdata": ["t", "residency", "r1"]}]}) is None
+    # customdata not a list -> None
+    assert _clicked_point_residency({"points": [{"customdata": "nope"}]}) is None
+
+
+def test_selection_payload_clears_on_background_click() -> None:
+    """A background-click trigger clears the selection even when clickData holds an old point."""
+    valid_click = {
+        "points": [
+            {
+                "customdata": [
+                    "<b>tooltip</b>",
+                    {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02},
+                    "r1",
+                ]
+            }
+        ]
+    }
+    assert _selection_payload(valid_click, "roofline-bg-click.value", {"roof_id": "r1"}) is None
+    assert _selection_payload(None, "roofline-bg-click.value", None) is None
+    assert _selection_payload(valid_click, "roofline-plot.clickData", None) == {
+        "roof_id": "r1",
+        "fractions": {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02},
+    }
+    # 3-bucket schema: fractions pass through untouched.
+    valid_click_3key = {
+        "points": [
+            {
+                "customdata": [
+                    "<b>tooltip</b>",
+                    {"l1": 0.6, "l2": 0.3, "l3plus": 0.1},
+                    "r1",
+                ]
+            }
+        ]
+    }
+    assert _selection_payload(valid_click_3key, "roofline-plot.clickData", None) == {
+        "roof_id": "r1",
+        "fractions": {"l1": 0.6, "l2": 0.3, "l3plus": 0.1},
+    }
+    # Echo of the callback's own clickData reset keeps the current selection.
+    assert _selection_payload(None, "roofline-plot.clickData", {"roof_id": "r1", "fractions": {"l1": 0.6}}) == {
+        "roof_id": "r1",
+        "fractions": {"l1": 0.6},
+    }
+    # non-app point (no customdata) -> None
+    assert _selection_payload({"points": [{"x": 1, "y": 2}]}, "roofline-plot.clickData", None) is None

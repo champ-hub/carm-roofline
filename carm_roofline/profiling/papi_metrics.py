@@ -35,6 +35,7 @@ from carm_roofline.isa.x86 import X86AVX, X86AVX2, X86AVX512, X86SSE, X86Scalar
 from carm_roofline.output_utils import debug, detail, warn
 from carm_roofline.results_paths import user_cache_dir_for_carm
 
+from .papi_lib import _load_papi_library, collectable_events
 from .shared import (
     MetricContext,
     MetricDefinition,
@@ -401,7 +402,7 @@ _DEFAULT_REGISTRY = PAPIMetricRegistry()
 # ---------------------------------------------------------------------------
 
 _PAPI_EVENT_CACHE_PREFIX = "papi_events_"
-_PAPI_EVENT_CACHE_VERSION = 1
+_PAPI_EVENT_CACHE_VERSION = 2
 
 
 def _papi_cache_dir() -> Path:
@@ -513,7 +514,9 @@ def parse_available_events(use_cache: bool = True) -> frozenset[str]:
     The catalog is cached per machine configuration under the XDG cache
     directory: a matching entry skips the (potentially slow) command, a
     stale or absent entry runs it and stores the result. ``use_cache=False``
-    bypasses both the read and the write.
+    bypasses both the read and the write. Events that the installed library
+    cannot add to an event set are filtered out before caching, so the
+    catalog contains only collectable events.
 
     Returns:
         frozenset of available PAPI event name strings. Empty set if
@@ -545,7 +548,17 @@ def parse_available_events(use_cache: bool = True) -> frozenset[str]:
         warn(f"papi_xml_event_info exited with code {result.returncode}: {result.stderr.strip()}")
         return frozenset()
 
-    events = _parse_papi_xml_output(result.stdout)
+    raw_events = _parse_papi_xml_output(result.stdout)
+    library = _load_papi_library()
+    if library is not None:
+        events = collectable_events(raw_events, library)
+        detail(
+            f"PAPI event catalog: kept {len(events)} collectable events out of {len(raw_events)} reported by "
+            "papi_xml_event_info"
+        )
+    else:
+        debug("PAPI event catalog: collectability filter skipped (cannot load libpapi)")
+        events = raw_events
     if key is not None:
         _store_papi_event_cache(key, events)
     return events

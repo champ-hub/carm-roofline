@@ -39,7 +39,6 @@ def discover_rank_files(results_dir: Path) -> dict[int, Path]:
         rank_files[rank_id] = child
         debug(f"Discovered file for rank {rank_id}: {child}")
 
-    detail(f"Found {len(rank_files)} rank file(s) in {results_dir}")
     return rank_files
 
 

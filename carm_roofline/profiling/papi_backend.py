@@ -15,8 +15,9 @@ from pathlib import Path
 from carm_roofline.core import UserError
 from carm_roofline.output_utils import debug, detail, error, info, warn
 
-from .backends import ProfilerBackend
+from .backends import ProfilerBackend, RunResult, RunSpec
 from .model import RankMetrics
+from .papi_lib import _find_papi_library_path
 from .papi_loader import load_all_ranks
 from .papi_metrics import (
     PAPIMetricRegistry,
@@ -27,59 +28,8 @@ from .shared import (
     MetricDefinition,
     MetricResolutionConfig,
     MetricType,
+    check_perf_event_paranoid,
 )
-
-
-def _find_papi_library_path() -> Path | None:
-    """Locate ``libpapi.so`` via multiple discovery strategies.
-
-    Tries in order:
-      1. ``ldconfig -p`` (dynamic linker cache, standard installs)
-      2. ``pkg-config`` (respects ``PKG_CONFIG_PATH``, custom prefixes)
-
-    Returns:
-        Path to ``libpapi.so``, or *None* if not found by any strategy.
-    """
-    # Strategy 1: ldconfig -p
-    try:
-        result = subprocess.run(
-            ["ldconfig", "-p"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        if result.returncode == 0:
-            for line in result.stdout.splitlines():
-                if "libpapi.so" in line:
-                    # ldconfig -p output format: "	libpapi.so (libc6,x86-64) => /usr/lib/libpapi.so"
-                    parts = line.split("=>")
-                    if len(parts) == 2:
-                        path = Path(parts[1].strip())
-                        if path.is_file():
-                            return path
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        pass
-
-    # Strategy 2: pkg-config -> list dir, pick first libpapi.so*
-    try:
-        result = subprocess.run(
-            ["pkg-config", "--variable=libdir", "papi"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        if result.returncode == 0:
-            libdir = result.stdout.strip()
-            if libdir:
-                candidates = sorted(Path(libdir).glob("libpapi.so*"))
-                if candidates:
-                    return candidates[0]
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        pass
-
-    return None
 
 
 class PAPIHLBackend(ProfilerBackend):
@@ -94,15 +44,11 @@ class PAPIHLBackend(ProfilerBackend):
 
     def __init__(
         self,
-        output_dir: Path,
         resolution_config: MetricResolutionConfig,
-        events_override: str | None = None,
+        *,
         use_cache: bool = True,
     ) -> None:
-        self._output_dir = output_dir
-        self._output_dir.mkdir(parents=True, exist_ok=True)
         self._resolution_config = resolution_config or MetricResolutionConfig()
-        self._events_override = events_override
         self._use_cache = use_cache
         self._available_events: frozenset[str] = frozenset()
         self._resolved_metrics: dict[MetricType, MetricDefinition] = {}
@@ -112,15 +58,30 @@ class PAPIHLBackend(ProfilerBackend):
         return dict(self._resolved_metrics)
 
     @property
+    def available_events(self) -> frozenset[str]:
+        """Hardware events available on this system (from papi_xml_event_info)."""
+        return self._available_events
+
+    @property
     def run_method_name(self) -> str:
         """Human-readable label for the run metadata 'method' field."""
         return "PAPI HL"
+
+    def can_collect(self, events: frozenset[str]) -> bool:
+        """Return True if *events* can be counted together in one run.
+
+        Uses ``papi_event_chooser`` via :func:`validate_event_set`. A missing
+        chooser binary or timeout returns True (proceed optimistically); a
+        non-zero exit code (incompatibility) returns False.
+        """
+        return validate_event_set(events)
 
     def check_prerequisites(self) -> bool:
         """Verify that PAPI HL is available by checking the environment.
 
         We check for the presence of ``libpapi`` (via :func:`_find_papi_library_path`) or the ``papi_hl_output_writer``
-        utility as a proxy for PAPI HL availability. After that, runs ``papi_xml_event_info`` to discover available
+        utility as a proxy for PAPI HL availability. After that, verifies the kernel permits unprivileged hardware
+        counters (via :func:`check_perf_event_paranoid`), then runs ``papi_xml_event_info`` to discover available
         events and resolve metric implementations.
         """
 
@@ -156,6 +117,8 @@ class PAPIHLBackend(ProfilerBackend):
                     "nor the papi_hl_output_writer utility."
                 )
 
+        check_perf_event_paranoid()
+
         # Build registry with ISA tailoring baked in at construction time
         self._available_events = parse_available_events(use_cache=self._use_cache)
         self._registry = PAPIMetricRegistry(self._resolution_config)
@@ -180,16 +143,16 @@ class PAPIHLBackend(ProfilerBackend):
 
         return any(impl.priority < 100 for impl in self._resolved_metrics.values())
 
-    def _build_env(self) -> dict[str, str]:
+    def _build_env(self, run_spec: RunSpec) -> dict[str, str]:
         """Build the environment with PAPI HL output dir and resolved events."""
         env = os.environ.copy()
         # Configure PAPI
-        env["PAPI_OUTPUT_DIRECTORY"] = str(self._output_dir)
+        env["PAPI_OUTPUT_DIRECTORY"] = str(run_spec.output_dir)
 
-        if self._events_override:
-            # User explicitly specified events
-            env["PAPI_EVENTS"] = self._events_override
-            detail(f"Using user-specified PAPI events: {self._events_override}")
+        if run_spec.events:
+            # Per-run event set (partitioned pool chunk or whole pool)
+            env["PAPI_EVENTS"] = run_spec.events
+            detail(f"Resolved PAPI events ({len(run_spec.events.split(','))}): {run_spec.events}")
         elif self._resolved_metrics:
             # Collect all required events from resolved metrics
             all_events: set[str] = set()
@@ -203,11 +166,22 @@ class PAPIHLBackend(ProfilerBackend):
 
         return env
 
-    def run(self, command: list[str], cwd: Path) -> int:
-        env = self._build_env()
+    def profile(self, run_spec: RunSpec, command: list[str], cwd: Path) -> RunResult:
+        """Run the profiled command under PAPI HL and parse its output.
+
+        Args:
+            run_spec: Per-run parameters (output directory, requested events).
+            command: The full application command (including launcher if any).
+            cwd: Working directory for the command.
+
+        Returns:
+            The command exit code together with the parsed rank metrics.
+        """
+        run_spec.output_dir.mkdir(parents=True, exist_ok=True)
+        env = self._build_env(run_spec)
         cmd_str = " ".join(command)
         info(f"Running profiled command: {cmd_str}")
-        detail(f"PAPI HL output dir: {self._output_dir}")
+        detail(f"PAPI HL output dir: {run_spec.output_dir}")
         debug(f"cwd: {cwd}")
         try:
             result = subprocess.run(
@@ -227,15 +201,16 @@ class PAPIHLBackend(ProfilerBackend):
         if result.returncode != 0:
             warn(f"Profiled command exited with code {result.returncode}")
 
-        return result.returncode
+        ranks = self._parse_output(run_spec)
+        return RunResult(exit_code=result.returncode, ranks=ranks)
 
-    def parse_output(self) -> list[RankMetrics]:
-        """Parse PAPI HL profiling output files.
+    def _parse_output(self, run_spec: RunSpec) -> list[RankMetrics]:
+        """Parse PAPI HL profiling output files from the run directory.
 
         Returns:
             List of RankMetrics parsed from the PAPI HL output directory.
         """
-        papi_output_dir = self._output_dir / "papi_hl_output"
+        papi_output_dir = run_spec.output_dir / "papi_hl_output"
         detail(f"Scanning for PAPI HL profiling results in: {papi_output_dir}")
         ranks = load_all_ranks(papi_output_dir)
 
@@ -245,8 +220,8 @@ class PAPIHLBackend(ProfilerBackend):
         info(f"Loaded {len(ranks)} rank(s) from {papi_output_dir}")
 
         # Post-hoc: check all requested events were collected
-        # Skip when the user supplied --events-override; resolved events are not what PAPI was told to collect.
-        if ranks and self._resolved_metrics and not self._events_override:
+        # Skip for per-run partitioned event sets; resolved metrics are not what PAPI was told to collect.
+        if ranks and self._resolved_metrics and not run_spec.events:
             # Get requested event names from resolved metrics
             requested: set[str] = set()
             for impl in self._resolved_metrics.values():
@@ -267,7 +242,8 @@ class PAPIHLBackend(ProfilerBackend):
                     "The following requested PAPI events were NOT collected by PAPI HL: "
                     f"{', '.join(sorted(missing))}. "
                     "This usually means the event set exceeds available hardware counters. Bytes and/or FLOPs may be "
-                    "undercounted or zero. Try specifying fewer ISAs via --isa to reduce hardware counter pressure."
+                    "undercounted or zero. Try specifying fewer ISAs via --isa to reduce hardware counter pressure, "
+                    "or use the --merge-runs option to combine multiple runs."
                 )
                 detail(
                     f"Requested: {len(requested)} events, "

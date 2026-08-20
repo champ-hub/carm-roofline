@@ -107,6 +107,50 @@ def _parse_trigger_id() -> dict[str, Any]:
         return {}
 
 
+def _clicked_point_residency(click_data: dict[str, Any] | None) -> tuple[str, dict[str, float]] | None:
+    """Return (roof_id, cache-residency fractions) from a Dash clickData payload.
+
+    Returns None when there is no click, the clicked trace is not an
+    application point, or the point carries no cache-residency data — the
+    caller then falls back to default roof styling.
+    """
+    if not click_data:
+        return None
+    points = click_data.get("points") or []
+    if not points:
+        return None
+    customdata = points[0].get("customdata")
+    if not isinstance(customdata, list) or len(customdata) != 3 or not customdata[1]:
+        return None
+    roof_id, fractions = customdata[2], customdata[1]
+    if not isinstance(roof_id, str) or not isinstance(fractions, dict):
+        return None
+    return roof_id, {k: float(v) for k, v in fractions.items()}
+
+
+def _selection_payload(
+    click_data: dict[str, Any] | None,
+    triggered_prop_id: str,
+    current_selection: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Selection-store payload for a plot click; None means cleared/unchanged.
+
+    A background-click trigger (the hidden ``roofline-bg-click`` input) always
+    clears the selection — ``clickData`` still holds the last clicked point, so
+    it must be ignored. A clickData echo of the callback's own reset (None)
+    keeps the current selection. A point click selects the point's roof; None
+    when the point carries no cache-residency data (e.g. a ridge marker).
+    """
+    if triggered_prop_id.startswith(f"{PlotAreaID.BG_CLICK_CLEAR}."):
+        return None
+    if click_data is None:
+        return current_selection
+    clicked = _clicked_point_residency(click_data)
+    if clicked is None:
+        return None
+    return {"roof_id": clicked[0], "fractions": clicked[1]}
+
+
 def _get_trigger_index() -> int:
     """Extract the ``index`` field from the triggered input's pattern-matching ID."""
     trigger_id = _parse_trigger_id()
@@ -484,9 +528,29 @@ def _register_callbacks(
 
         return store, resolved_roofs, per_roof_opts
 
+    # Click selection -> SELECTED_POINT store (CARM mode only; paraver has no residency data)
+    if mode.show_app_dropdown:
+
+        @app.callback(
+            Output(StoreID.SELECTED_POINT, "data"),
+            Output(PlotAreaID.ROOFLINE_PLOT, "clickData"),
+            Input(PlotAreaID.ROOFLINE_PLOT, "clickData"),
+            Input(PlotAreaID.BG_CLICK_CLEAR, "value"),
+            State(StoreID.SELECTED_POINT, "data"),
+            prevent_initial_call=True,
+        )
+        def _update_selected_point(
+            click_data: dict[str, Any] | None,
+            _bg_click: str | None,
+            current_selection: dict[str, Any] | None,
+        ) -> tuple[dict[str, Any] | None, None]:
+            _tr("_update_selected_point enter")
+            ctx = callback_context
+            prop_id = ctx.triggered[0]["prop_id"] if ctx.triggered else ""
+            return _selection_payload(click_data, prop_id, current_selection), None
+
     # 8b. Update plot (no ACTIVE_PANEL, panel switches shouldn't rebuild the figure)
-    @app.callback(
-        Output(PlotAreaID.ROOFLINE_PLOT, "figure"),
+    plot_inputs: list[Any] = [
         Input(StoreID.ROOF_STORE, "data"),
         Input({"type": RoofCardID.DROPDOWN_MACHINE, "index": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_ISA, "index": ALL}, "value"),
@@ -496,7 +560,11 @@ def _register_callbacks(
         Input({"type": RoofCardID.DROPDOWN_LS_RATIO, "index": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_FREQUENCY, "index": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_APPS, "index": ALL}, "value"),
-    )
+    ]
+    if mode.show_app_dropdown:  # CARM mode only; paraver has no residency data
+        plot_inputs.append(Input(StoreID.SELECTED_POINT, "data"))
+
+    @app.callback(Output(PlotAreaID.ROOFLINE_PLOT, "figure"), *plot_inputs)
     def _update_plot(
         store_data: dict[str, Any] | None,
         machine_vals: list[str | None],
@@ -507,6 +575,7 @@ def _register_callbacks(
         ls_ratio_vals: list[str | None],
         freq_vals: list[str | None],
         app_ids_vals: list[list[str] | None],
+        selection_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         _tr("_update_plot enter")
         store, resolved_roofs, _per_roof_opts = _resolve_roof_data(
@@ -541,11 +610,14 @@ def _register_callbacks(
                 color_mode=store.paraver_state.color_mode,
             )
         else:
+            selected = selection_data or {}
             figure = build_roofline_figure(
                 resolved_roofs,
                 records or [],
                 app_by_id or {},
                 settings=store.settings,
+                selected_roof_id=selected.get("roof_id"),
+                selected_residency=selected.get("fractions"),
             )
         figure_dict = cast("dict[str, Any]", figure.to_dict())
         _tr(f"_update_plot exit traces={len(figure_dict.get('data', []))}")

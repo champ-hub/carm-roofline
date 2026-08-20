@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import argparse
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pytest
 
-from carm_roofline.core import DataType
-
+import carm_roofline.profiling.papi_backend as papi_backend
 import carm_roofline.profiling.papi_metrics as papi_metrics
-
+import carm_roofline.profiling.perf_backend as perf_backend
+import carm_roofline.profiling.shared as shared
+from carm_roofline.core import DataType, UserError
+from carm_roofline.profiling import RunResult, RunSpec, profile_main
 from carm_roofline.profiling.aggregation import (
     AggregatedPoint,
     aggregate,
@@ -21,8 +26,19 @@ from carm_roofline.profiling.aggregation import (
     aggregate_per_region_per_thread,
     aggregate_per_thread,
 )
-from carm_roofline.profiling.config import AggregationMode
+from carm_roofline.profiling.config import AggregationMode, ProfileConfig
+from carm_roofline.profiling.merge import merge_runs, missing_required_events, partition_events
 from carm_roofline.profiling.model import RegionMetrics, RunMetadata, RunResults, ThreadMetrics
+from carm_roofline.profiling.optional_metrics import (
+    OPTIONAL_METRICS,
+    OptionalMetric,
+    OptionalMetricName,
+    _cache_level_bytes,
+    _last_bucket,
+    resolve_optional_metrics,
+    validate_metric_names,
+)
+from carm_roofline.profiling.papi_lib import collectable_events
 from carm_roofline.profiling.papi_loader import (
     RankMetrics,
     discover_rank_files,
@@ -31,17 +47,20 @@ from carm_roofline.profiling.papi_loader import (
 )
 from carm_roofline.profiling.papi_metrics import (
     METRICS,
-    _parse_papi_xml_output,
+    PAPIMetricRegistry,
     _papi_cache_key,
     _papi_event_cache_path,
+    _parse_papi_xml_output,
     _store_papi_event_cache,
     build_isa_custom_metrics,
     fp_arith_counters_for_isas,
-    PAPIMetricRegistry,
     parse_available_events,
     resolve_metrics,
 )
+from carm_roofline.profiling.perf_backend import PerfBackend
+from carm_roofline.profiling.perf_loader import multiplexed_events
 from carm_roofline.profiling.shared import (
+    BackendType,
     MetricContext,
     MetricDefinition,
     MetricResolutionConfig,
@@ -534,39 +553,6 @@ def test_default_app_name() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_write_applications_csv(tmp_path: Path) -> None:
-    from unittest.mock import MagicMock
-
-    from carm_roofline.profiling.output import write_applications_csv
-
-    cfg = MagicMock(machine_name="test_run", output_dir=tmp_path)
-    run = _make_sample_run()
-    pts = [aggregate_global(run, SAMPLE_RESOLVED, DEFAULT_CTX)]
-    write_applications_csv(pts, cfg, run)
-
-    csv_path = tmp_path / "test_run" / "applications.csv"
-    assert csv_path.exists()
-    text = csv_path.read_text()
-    assert "Date,Method,Name,ISA,Precision,Threads,AI,GFLOPS,Bandwidth,Time" in text
-    assert "test" in text  # label
-
-
-def test_write_applications_csv_per_rank(tmp_path: Path) -> None:
-    from unittest.mock import MagicMock
-
-    from carm_roofline.profiling.output import write_applications_csv
-
-    cfg = MagicMock(machine_name="test_run", output_dir=tmp_path)
-    run = _make_sample_run()
-    pts = aggregate_per_rank(run, SAMPLE_RESOLVED, DEFAULT_CTX)
-    write_applications_csv(pts, cfg, run)
-
-    csv_path = tmp_path / "test_run" / "applications.csv"
-    assert csv_path.exists()
-    rows = csv_path.read_text().strip().split("\n")
-    assert len(rows) == 3  # header + 2 rank points
-
-
 def test_write_profile_jsonl(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
 
@@ -583,7 +569,7 @@ def test_write_profile_jsonl(tmp_path: Path) -> None:
     assert len(lines) == 1  # single line per run
 
     record = json.loads(lines[0])
-    assert record["format_version"] == "2.0"
+    assert record["format_version"] == "3.0"
     assert record["aggregation"] == "global"
     assert record["metadata"]["name"] == "test"
     assert "num_ranks" in record["metadata"]
@@ -843,6 +829,7 @@ def _patch_xml_command(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_parse_available_events_cache_hit_skips_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     key = _patch_cache_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(papi_metrics, "_load_papi_library", lambda: None)
     _store_papi_event_cache(key, frozenset({"PAPI_L1_DCM", "PAPI_TOT_CYC"}))
 
     def _must_not_run(*args: object, **kwargs: object) -> object:
@@ -857,6 +844,7 @@ def test_parse_available_events_cache_hit_skips_command(tmp_path: Path, monkeypa
 def test_parse_available_events_cache_miss_runs_and_stores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     key = _patch_cache_env(monkeypatch, tmp_path)
     _patch_xml_command(monkeypatch)
+    monkeypatch.setattr(papi_metrics, "_load_papi_library", lambda: None)
 
     events = parse_available_events()
     assert events == frozenset({"PAPI_L1_DCM", "PAPI_TOT_CYC"})
@@ -874,16 +862,16 @@ def test_parse_available_events_cache_stale_key_runs_and_stores_new(
     key = _patch_cache_env(monkeypatch, tmp_path)
     _store_papi_event_cache("a" * 64, frozenset({"PAPI_TOT_CYC"}))
     _patch_xml_command(monkeypatch)
+    monkeypatch.setattr(papi_metrics, "_load_papi_library", lambda: None)
 
     events = parse_available_events()
     assert events == frozenset({"PAPI_L1_DCM", "PAPI_TOT_CYC"})
     assert _papi_event_cache_path(key).is_file()
 
 
-def test_parse_available_events_use_cache_false_ignores_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_parse_available_events_use_cache_false_ignores_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     key = _patch_cache_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(papi_metrics, "_load_papi_library", lambda: None)
     _store_papi_event_cache(key, frozenset({"PAPI_L1_DCM", "PAPI_TOT_CYC"}))
 
     calls: list[list[str]] = []
@@ -906,9 +894,57 @@ def test_parse_available_events_cache_corrupt_file_runs_command(
     key = _patch_cache_env(monkeypatch, tmp_path)
     _papi_event_cache_path(key).write_bytes(b"not json at all")
     _patch_xml_command(monkeypatch)
+    monkeypatch.setattr(papi_metrics, "_load_papi_library", lambda: None)
 
     events = parse_available_events()
     assert events == frozenset({"PAPI_L1_DCM", "PAPI_TOT_CYC"})
+
+
+def test_parse_available_events_filters_uncollectable_events(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only events kept by the collectability filter reach the catalog and its cache."""
+    key = _patch_cache_env(monkeypatch, tmp_path)
+    _patch_xml_command(monkeypatch)
+    monkeypatch.setattr(papi_metrics, "_load_papi_library", lambda: object())
+    monkeypatch.setattr(
+        papi_metrics,
+        "collectable_events",
+        lambda events, library: frozenset(e for e in events if e == "PAPI_L1_DCM"),
+    )
+
+    events = parse_available_events()
+    assert events == frozenset({"PAPI_L1_DCM"})
+
+    payload = json.loads(_papi_event_cache_path(key).read_text(encoding="utf-8"))
+    assert payload["version"] == papi_metrics._PAPI_EVENT_CACHE_VERSION
+    assert payload["events"] == ["PAPI_L1_DCM"]
+
+
+def test_collectable_events_keeps_only_addable_events() -> None:
+    """Per-event add test drops unresolvable/unaddable names and always cleans up."""
+    from unittest.mock import Mock
+
+    lib = Mock()
+    lib.PAPI_version.return_value = 0x07020000
+    lib.PAPI_library_init.return_value = 0x07020000
+
+    def fake_name_to_code(name: bytes, code_ptr: object) -> int:
+        text = name.decode()
+        if text == "gone":
+            return -7
+        code_ptr[0] = 5 if text == "good" else 6
+        return 0
+
+    lib.PAPI_event_name_to_code.side_effect = fake_name_to_code
+    lib.PAPI_create_eventset.return_value = 0
+    lib.PAPI_add_event.side_effect = lambda eventset, code: 0 if code == 5 else -1
+    lib.PAPI_cleanup_eventset.return_value = 0
+    lib.PAPI_destroy_eventset.return_value = 0
+
+    result = collectable_events({"good", "bad", "gone"}, lib)
+    assert result == frozenset({"good"})
+    assert lib.PAPI_add_event.call_count == 2
+    assert lib.PAPI_cleanup_eventset.call_count == 2
+    assert lib.PAPI_destroy_eventset.call_count == 2
 
 
 def test_papi_cache_key_changes_when_probe_changes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1041,3 +1077,1447 @@ def test_resolve_metrics_with_custom_isa_outranks_default() -> None:
     bytes_impl = resolved[MetricType.BYTES]
     assert bytes_impl.priority == 200
     assert "X86AVX2" in str(bytes_impl.description)
+
+
+# ---------------------------------------------------------------------------
+# Run partitioning and merging (merge.py)
+# ---------------------------------------------------------------------------
+
+
+def test_partition_events_empty() -> None:
+    assert partition_events([], lambda s: True) == []
+
+
+def test_partition_events_all_fit_single_run_short_circuit() -> None:
+    calls: list[frozenset[str]] = []
+
+    def validator(events: frozenset[str]) -> bool:
+        calls.append(events)
+        return True
+
+    chunks = partition_events({"b", "a", "c"}, validator)
+    assert chunks == [["a", "b", "c"]]
+    assert len(calls) == 1  # short-circuit: whole pool checked once
+
+
+def test_partition_events_pairs_when_capacity_two() -> None:
+    chunks = partition_events(list("abcdefghij"), lambda s: len(s) <= 2)
+    assert chunks == [["a", "b"], ["c", "d"], ["e", "f"], ["g", "h"], ["i", "j"]]
+
+
+def test_partition_events_all_rejected_isolates_with_warn(monkeypatch: pytest.MonkeyPatch) -> None:
+    warns: list[str] = []
+    monkeypatch.setattr("carm_roofline.profiling.merge.warn", lambda *args, **kwargs: warns.append(str(args[0])))
+    chunks = partition_events(["b", "a", "c"], lambda s: False)
+    assert chunks == [["a"], ["b"], ["c"]]
+    assert len(warns) == 3
+    assert all("cannot be counted together" in w for w in warns)
+
+
+def test_partition_events_partial_fit() -> None:
+    # Pool of 4; capacity 2 (but the whole pool must be rejected first).
+    def validator(events: frozenset[str]) -> bool:
+        return len(events) != 4 and len(events) <= 2
+
+    chunks = partition_events({"PAPI_DP_OPS", "PAPI_FP_OPS", "PAPI_L1_DCA", "PAPI_LST_INS"}, validator)
+    assert chunks == [["PAPI_DP_OPS", "PAPI_FP_OPS"], ["PAPI_L1_DCA", "PAPI_LST_INS"]]
+
+
+def _run_with_counters(counters: dict[str, int], name: str = "app") -> RunResults:
+    region = RegionMetrics(name="total", parent_region_id="-1", cycles=100, time_nsec=1_000_000, counters=counters)
+    thread = ThreadMetrics(thread_id=0, regions=[region])
+    return RunResults(
+        metadata=RunMetadata(name=name, date="2024-01-01T00:00:00"),
+        ranks=[RankMetrics(rank_id=0, threads=[thread])],
+    )
+
+
+def test_merge_runs_requires_at_least_two() -> None:
+    with pytest.raises(RuntimeError, match="requires at least 2 runs"):
+        merge_runs([_run_with_counters({"PAPI_FP_OPS": 1000})])
+
+
+def test_merge_runs_unions_disjoint_counters() -> None:
+    merged = merge_runs([_run_with_counters({"PAPI_FP_OPS": 1000}), _run_with_counters({"PAPI_L1_DCA": 500})])
+    region = merged.ranks[0].threads[0].regions[0]
+    assert region.counters == {"PAPI_FP_OPS": 1000, "PAPI_L1_DCA": 500}
+    assert region.cycles == 100  # from run 0 (identical executions)
+    assert region.time_nsec == 1_000_000  # from run 0
+
+
+def test_merge_runs_metadata_fresh_date_and_notes() -> None:
+    run0 = _run_with_counters({"PAPI_FP_OPS": 1000})
+    run1 = _run_with_counters({"PAPI_L1_DCA": 500})
+    merged = merge_runs([run0, run1])
+    assert merged.metadata.name == "app"
+    assert merged.metadata.method == "PAPI_HL"  # from run 0
+    assert merged.metadata.notes == "merged from 2 runs"
+    assert merged.metadata.date != "2024-01-01T00:00:00"  # fresh date
+
+
+def test_merge_runs_structural_mismatch_raises() -> None:
+    run0 = _run_with_counters({"PAPI_FP_OPS": 1000})
+    run1 = _run_with_counters({"PAPI_L1_DCA": 500})
+    run1.ranks[0].threads[0].regions.append(
+        RegionMetrics(name="second", parent_region_id="-1", cycles=1, time_nsec=1, counters={})
+    )
+    with pytest.raises(RuntimeError, match="region structure differs"):
+        merge_runs([run0, run1])
+
+
+def test_merge_runs_pairs_ranks_by_position_not_id() -> None:
+    """PAPI HL names rank files per-process, so rank_ids differ across runs."""
+    region0 = RegionMetrics(name="total", parent_region_id="-1", cycles=1, time_nsec=1, counters={"PAPI_FP_OPS": 1})
+    region1 = RegionMetrics(name="total", parent_region_id="-1", cycles=1, time_nsec=1, counters={"PAPI_L1_DCA": 2})
+    thread = ThreadMetrics(thread_id=0, regions=[region0])
+    run0 = RunResults(metadata=RunMetadata(name="app"), ranks=[RankMetrics(rank_id=207867, threads=[thread])])
+    run1 = RunResults(
+        metadata=RunMetadata(name="app"),
+        ranks=[RankMetrics(rank_id=760823, threads=[ThreadMetrics(thread_id=0, regions=[region1])])],
+    )
+    merged = merge_runs([run0, run1])
+    assert merged.ranks[0].rank_id == 207867  # run-0 label kept
+    assert merged.ranks[0].threads[0].regions[0].counters == {"PAPI_FP_OPS": 1, "PAPI_L1_DCA": 2}
+
+
+def test_merge_runs_overlapping_event_warns_keeps_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    warns: list[str] = []
+    monkeypatch.setattr("carm_roofline.profiling.merge.warn", lambda *args, **kwargs: warns.append(str(args[0])))
+    merged = merge_runs(
+        [
+            _run_with_counters({"PAPI_FP_OPS": 1000, "PAPI_L1_DCA": 500}),
+            _run_with_counters({"PAPI_L1_DCA": 999, "PAPI_LST_INS": 10}),
+        ]
+    )
+    region = merged.ranks[0].threads[0].regions[0]
+    assert region.counters["PAPI_L1_DCA"] == 500  # run-0 value kept
+    assert region.counters["PAPI_LST_INS"] == 10
+    assert any("PAPI_L1_DCA" in w and "multiple runs" in w for w in warns)
+
+
+def test_merge_runs_event_definitions_union() -> None:
+    def _rank_with_defs(defs: dict[str, object]) -> RankMetrics:
+        region = RegionMetrics(name="total", parent_region_id="-1", cycles=1, time_nsec=1, counters={"PAPI_FP_OPS": 1})
+        return RankMetrics(rank_id=0, event_definitions=defs, threads=[ThreadMetrics(thread_id=0, regions=[region])])
+
+    run0 = RunResults(metadata=RunMetadata(name="app"), ranks=[_rank_with_defs({"PAPI_FP_OPS": {"type": "delta"}})])
+    run1 = RunResults(metadata=RunMetadata(name="app"), ranks=[_rank_with_defs({"PAPI_L1_DCA": {"type": "delta"}})])
+    merged = merge_runs([run0, run1])
+    assert merged.ranks[0].event_definitions == {
+        "PAPI_FP_OPS": {"type": "delta"},
+        "PAPI_L1_DCA": {"type": "delta"},
+    }
+
+
+def test_missing_required_events_partial_collection() -> None:
+    run = _run_with_counters({"PAPI_FP_OPS": 1000})
+    assert missing_required_events(run, {"PAPI_FP_OPS", "PAPI_L1_DCA"}) == {"PAPI_L1_DCA"}
+    assert missing_required_events(run, {"PAPI_FP_OPS"}) == set()
+    assert missing_required_events(run, set()) == set()
+
+
+# ---------------------------------------------------------------------------
+# Metric-centric CLI (config.py)
+# ---------------------------------------------------------------------------
+
+
+def _parse_profile_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    ProfileConfig.insert_arguments(parser)
+    return parser.parse_args(argv)
+
+
+@pytest.mark.parametrize("flag", ["--papi-events", "--perf-events"])
+def test_cli_removed_event_overrides_rejected(flag: str) -> None:
+    with pytest.raises(SystemExit):
+        _parse_profile_args([flag, "PAPI_FP_OPS", "--", "./app"])
+
+
+def test_cli_metrics_space_separated_list_and_deduped() -> None:
+    args = _parse_profile_args(["--metrics", "cache-residency", "cache-residency", "--", "./app"])
+    config = ProfileConfig(args)
+    assert config.optional_metrics == (OptionalMetricName.CACHE_RESIDENCY,)
+    assert config.list_metrics is False
+
+
+def test_cli_no_metric_defaults_empty() -> None:
+    config = ProfileConfig(_parse_profile_args(["--", "./app"]))
+    assert config.optional_metrics == ()
+
+
+def test_cli_unknown_metric_rejected_at_parse_time() -> None:
+    with pytest.raises(SystemExit):
+        _parse_profile_args(["--metrics", "bogus", "--", "./app"])
+
+
+def test_cli_list_metrics_flag() -> None:
+    config = ProfileConfig(_parse_profile_args(["--list-metrics"]))
+    assert config.list_metrics is True
+
+
+def test_cli_merge_runs_flag_defaults_false() -> None:
+    config = ProfileConfig(_parse_profile_args(["--", "./app"]))
+    assert config.merge_runs is False
+
+
+def test_cli_merge_runs_flag_true() -> None:
+    config = ProfileConfig(_parse_profile_args(["--merge-runs", "--", "./app"]))
+    assert config.merge_runs is True
+
+
+def test_profile_main_list_metrics_exits_without_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr("carm_roofline.profiling.info", lambda *args, **kwargs: messages.append(str(args[0])))
+    config = ProfileConfig(_parse_profile_args(["--list-metrics"]))
+    assert profile_main(config) == 0
+    assert any("cache-residency" in m for m in messages)
+
+
+# ---------------------------------------------------------------------------
+# Cache-residency optional metric (optional_metrics.py)
+# ---------------------------------------------------------------------------
+
+# Role maps for the 3-bucket schema (l1/l2/l3plus; L3 and DRAM grouped),
+# i.e. the AMD paths measuring L1 and L2 miss boundaries.
+# L1 accesses are scaled to 64B-line granularity; L2 accounting is
+# prefetch-inclusive (demand L2 misses + L2 prefetch fills leaving L2).
+# PAPI names the AMD native events after the perf ones on Zen 3+:
+# l2_cache_misses_from_dc_misses == CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C,
+# l2_pf_miss_l2_hit_l3 == L2_PREFETCH_HIT_L3:L2_HW_PREFETCHER,
+# l2_pf_miss_l2_l3 == L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER.
+
+PAPI_CACHE_ROLES = {
+    "shape": "direct",
+    "levels": ("l1", "l2"),
+    "l1_accesses": "PAPI_L1_DCA",
+    "l1_misses": "PAPI_L1_DCM",
+    "l2_misses": "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C",
+    "l2_pf_hit_l3": "L2_PREFETCH_HIT_L3:L2_HW_PREFETCHER",
+    "l2_pf_l3": "L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER",
+}
+
+PERF_CACHE_ROLES = {
+    "shape": "pairs",
+    "levels": ("l1", "l2"),
+    "l1_loads": "L1-dcache-loads",
+    "l1_load_misses": "L1-dcache-load-misses",
+    "l1_stores": "L1-dcache-stores",
+    "l1_store_misses": "L1-dcache-store-misses",
+    "l2_misses": "l2_cache_misses_from_dc_misses",
+    "l2_pf_hit_l3": "l2_pf_miss_l2_hit_l3",
+    "l2_pf_l3": "l2_pf_miss_l2_l3",
+}
+
+# 4-boundary role map (L1/L2/L3 miss boundaries; L3 and DRAM separate) —
+# the Intel perf path: l2_rqsts.miss is prefetch-inclusive, LLC counters
+# give the L3 boundary.
+PERF_INTEL_CACHE_ROLES = {
+    "shape": "pairs",
+    "levels": ("l1", "l2", "l3"),
+    "l1_loads": "L1-dcache-loads",
+    "l1_load_misses": "L1-dcache-load-misses",
+    "l1_stores": "L1-dcache-stores",
+    "l1_store_misses": "L1-dcache-store-misses",
+    "l2_misses": "l2_rqsts.miss",
+    "l3_load_misses": "LLC-load-misses",
+    "l3_store_misses": "LLC-store-misses",
+}
+
+# Single-boundary role map (L1 only): everything beyond L1 groups into l2plus.
+L1_ONLY_CACHE_ROLES = {
+    "shape": "direct",
+    "levels": ("l1",),
+    "l1_accesses": "PAPI_L1_DCA",
+    "l1_misses": "PAPI_L1_DCM",
+}
+
+
+def _cache_compute(
+    counters: dict[str, float],
+    role_events: dict[str, str],
+    region_bytes: float = 800.0,
+    bytes_per_instruction: float = 8.0,
+) -> dict[str, float]:
+    return OPTIONAL_METRICS[OptionalMetricName.CACHE_RESIDENCY].compute(
+        counters, region_bytes, role_events, bytes_per_instruction
+    )
+
+
+@pytest.mark.parametrize(
+    "counters, expected_fractions",
+    [
+        # pure L1: m1 = 0 -> all traffic served at L1
+        (
+            {"PAPI_L1_DCA": 800, "PAPI_L1_DCM": 0, "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C": 0},
+            {"l1": 1.0, "l2": 0.0, "l3plus": 0.0},
+        ),
+        # pure L2: m1 = 1 (every line misses L1), nothing leaves L2
+        (
+            {"PAPI_L1_DCA": 800, "PAPI_L1_DCM": 100, "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C": 0},
+            {"l1": 0.0, "l2": 1.0, "l3plus": 0.0},
+        ),
+        # pure L3plus: m1 = 1 and all L2-missing traffic leaves L2
+        (
+            {
+                "PAPI_L1_DCA": 800,
+                "PAPI_L1_DCM": 100,
+                "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C": 100,
+            },
+            {"l1": 0.0, "l2": 0.0, "l3plus": 1.0},
+        ),
+        # mixed: 800 accesses * 8 B/inst / 64 = 100 lines; 40 miss L1 (m1=0.4);
+        # 16 demand + 8 + 8 prefetch fills leave L2 -> f_l3plus = 0.32
+        (
+            {
+                "PAPI_L1_DCA": 800,
+                "PAPI_L1_DCM": 40,
+                "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C": 16,
+                "L2_PREFETCH_HIT_L3:L2_HW_PREFETCHER": 8,
+                "L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER": 8,
+            },
+            {"l1": 0.6, "l2": 0.08, "l3plus": 0.32},
+        ),
+        # saturation: fills exceed total_lines -> f_l2 == 0, sum still 1
+        (
+            {
+                "PAPI_L1_DCA": 800,
+                "PAPI_L1_DCM": 100,
+                "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C": 500,
+            },
+            {"l1": 0.0, "l2": 0.0, "l3plus": 1.0},
+        ),
+        # saturation past the L1-miss remainder: fills = 100/100 but only 0.4
+        # of traffic missed L1 -> f_l3plus caps at 0.4, f_l2 == 0
+        (
+            {
+                "PAPI_L1_DCA": 800,
+                "PAPI_L1_DCM": 40,
+                "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C": 100,
+            },
+            {"l1": 0.6, "l2": 0.0, "l3plus": 0.4},
+        ),
+        # l1_misses > total_lines -> m1 saturates at 1
+        (
+            {"PAPI_L1_DCA": 800, "PAPI_L1_DCM": 500, "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C": 0},
+            {"l1": 0.0, "l2": 1.0, "l3plus": 0.0},
+        ),
+    ],
+)
+def test_cache_residency_fractions_sum_to_one(counters: dict[str, float], expected_fractions: dict[str, float]) -> None:
+    result = _cache_compute(counters, PAPI_CACHE_ROLES)
+    assert sum(result.values()) == pytest.approx(800.0)  # saturated fractions sum to 1
+    for level, frac in expected_fractions.items():
+        assert result[level] == pytest.approx(frac * 800.0)
+
+
+def test_cache_residency_zero_l1_accesses_all_zero() -> None:
+    result = _cache_compute(
+        {
+            "PAPI_L1_DCA": 0,
+            "PAPI_L1_DCM": 40,
+            "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C": 10,
+        },
+        PAPI_CACHE_ROLES,
+    )
+    assert result == {"l1": 0.0, "l2": 0.0, "l3plus": 0.0}
+
+
+def test_cache_residency_perf_derives_load_store_pairs() -> None:
+    counters = {
+        "L1-dcache-loads": 480,
+        "L1-dcache-stores": 320,
+        "L1-dcache-load-misses": 24,
+        "L1-dcache-store-misses": 16,
+        "l2_cache_misses_from_dc_misses": 16,
+        "l2_pf_miss_l2_hit_l3": 8,
+        "l2_pf_miss_l2_l3": 8,
+    }
+    # accesses = 480 + 320 = 800 -> 100 lines; misses = 40 -> m1 = 0.4;
+    # fills = 16 + 8 + 8 = 32 -> f_l3plus = 0.32, f_l2 = 0.08
+    result = _cache_compute(counters, PERF_CACHE_ROLES)
+    assert result == {
+        "l1": pytest.approx(480.0),
+        "l2": pytest.approx(64.0),
+        "l3plus": pytest.approx(256.0),
+    }
+
+
+def test_cache_residency_perf_missing_store_and_pf_roles_default_zero() -> None:
+    # Partitioned runs can lack the store/pf counters: absent roles -> 0.0.
+    counters = {
+        "L1-dcache-loads": 800,
+        "L1-dcache-load-misses": 40,
+        "l2_cache_misses_from_dc_misses": 32,
+    }
+    result = _cache_compute(counters, PERF_CACHE_ROLES)
+    assert result == {
+        "l1": pytest.approx(480.0),
+        "l2": pytest.approx(64.0),
+        "l3plus": pytest.approx(256.0),
+    }
+
+
+def test_cache_residency_perf_zero_misses_all_l1() -> None:
+    counters = {
+        "L1-dcache-loads": 400,
+        "L1-dcache-stores": 400,
+        "L1-dcache-load-misses": 0,
+        "L1-dcache-store-misses": 0,
+        "l2_cache_misses_from_dc_misses": 0,
+        "l2_pf_miss_l2_hit_l3": 0,
+        "l2_pf_miss_l2_l3": 0,
+    }
+    result = _cache_compute(counters, PERF_CACHE_ROLES)
+    assert result == {"l1": 800.0, "l2": 0.0, "l3plus": 0.0}
+
+
+def test_validate_metric_names_empty_and_dedupe() -> None:
+    assert validate_metric_names(None) == ()
+    assert validate_metric_names([]) == ()
+    assert tuple(m.value for m in validate_metric_names(["cache-residency", "cache-residency"])) == ("cache-residency",)
+
+
+def test_validate_metric_names_unknown_raises_user_error() -> None:
+    with pytest.raises(UserError) as exc_info:
+        validate_metric_names(["bogus"])
+    assert str(exc_info.value) == "Unknown optional metric 'bogus'. Available: cache-residency"
+
+
+AMD_PAPI_EVENTS = frozenset(
+    {
+        "PAPI_L1_DCA",
+        "PAPI_L1_DCM",
+        "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C",
+        "L2_PREFETCH_HIT_L3:L2_HW_PREFETCHER",
+        "L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER",
+    }
+)
+
+
+def test_resolve_optional_metrics_papi_prefers_amd_prefetch_inclusive() -> None:
+    """On AMD all five events resolve -> the prefetch-inclusive map wins (not the Intel fallback)."""
+    resolved = resolve_optional_metrics((OptionalMetricName.CACHE_RESIDENCY,), AMD_PAPI_EVENTS, BackendType.PAPI)
+    roles = resolved[OptionalMetricName.CACHE_RESIDENCY].role_events
+    assert roles["l2_misses"] == "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C"
+    assert roles["l2_pf_hit_l3"] == "L2_PREFETCH_HIT_L3:L2_HW_PREFETCHER"
+    assert roles["l2_pf_l3"] == "L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER"
+    assert resolved[OptionalMetricName.CACHE_RESIDENCY].required_events == AMD_PAPI_EVENTS
+
+
+def test_resolve_optional_metrics_papi_falls_back_to_intel_demand_only() -> None:
+    """Only the three PAPI presets available -> demand-only Intel map (no pf roles, no L3 events)."""
+    available = frozenset({"PAPI_L1_DCA", "PAPI_L1_DCM", "PAPI_L2_DCM"})
+    resolved = resolve_optional_metrics((OptionalMetricName.CACHE_RESIDENCY,), available, BackendType.PAPI)
+    roles = resolved[OptionalMetricName.CACHE_RESIDENCY].role_events
+    assert roles["levels"] == ("l1", "l2")  # 3-bucket: no L3 boundary on the PAPI path
+    assert roles["l2_misses"] == "PAPI_L2_DCM"
+    assert "l2_pf_hit_l3" not in roles
+    assert "l2_pf_l3" not in roles
+    assert "l3_misses" not in roles
+
+
+def test_resolve_optional_metrics_perf_prefers_amd_prefetch_inclusive() -> None:
+    available = frozenset(
+        {
+            "L1-dcache-loads",
+            "L1-dcache-load-misses",
+            "L1-dcache-stores",
+            "L1-dcache-store-misses",
+            "l2_cache_misses_from_dc_misses",
+            "l2_pf_miss_l2_hit_l3",
+            "l2_pf_miss_l2_l3",
+        }
+    )
+    resolved = resolve_optional_metrics((OptionalMetricName.CACHE_RESIDENCY,), available, BackendType.PERF)
+    roles = resolved[OptionalMetricName.CACHE_RESIDENCY].role_events
+    assert roles["l2_misses"] == "l2_cache_misses_from_dc_misses"
+    assert roles["l2_pf_hit_l3"] == "l2_pf_miss_l2_hit_l3"
+    assert roles["l2_pf_l3"] == "l2_pf_miss_l2_l3"
+
+
+def test_resolve_optional_metrics_perf_falls_back_to_intel_l2_rqsts() -> None:
+    """Intel perf events incl. LLC counters -> the 4-bucket map (l2_rqsts.miss, no pf roles)."""
+    available = frozenset(
+        {
+            "L1-dcache-loads",
+            "L1-dcache-load-misses",
+            "L1-dcache-stores",
+            "L1-dcache-store-misses",
+            "l2_rqsts.miss",
+            "LLC-load-misses",
+            "LLC-store-misses",
+        }
+    )
+    resolved = resolve_optional_metrics((OptionalMetricName.CACHE_RESIDENCY,), available, BackendType.PERF)
+    roles = resolved[OptionalMetricName.CACHE_RESIDENCY].role_events
+    assert roles["levels"] == ("l1", "l2", "l3")  # separate L3 and DRAM buckets
+    assert roles["l2_misses"] == "l2_rqsts.miss"
+    assert "l2_pf_hit_l3" not in roles
+    assert "l2_pf_l3" not in roles
+    required = resolved[OptionalMetricName.CACHE_RESIDENCY].required_events
+    assert {"LLC-load-misses", "LLC-store-misses"} <= required
+
+
+def test_resolve_optional_metrics_missing_events_warns_and_omits(monkeypatch: pytest.MonkeyPatch) -> None:
+    warns: list[str] = []
+    monkeypatch.setattr(
+        "carm_roofline.profiling.optional_metrics.warn", lambda *args, **kwargs: warns.append(str(args[0]))
+    )
+    available = frozenset({"PAPI_L1_DCA", "PAPI_L2_DCM"})  # no PAPI_L1_DCM
+    resolved = resolve_optional_metrics((OptionalMetricName.CACHE_RESIDENCY,), available, BackendType.PAPI)
+    assert resolved == {}
+    assert warns
+    assert "cache-residency" in warns[0]
+    assert "Missing events" in warns[0]
+
+
+def test_resolve_optional_metrics_all_unavailable_empty() -> None:
+    assert resolve_optional_metrics((OptionalMetricName.CACHE_RESIDENCY,), frozenset(), BackendType.PAPI) == {}
+
+
+def test_resolve_optional_metrics_unsupported_backend_skips(monkeypatch: pytest.MonkeyPatch) -> None:
+    warns: list[str] = []
+    monkeypatch.setattr(
+        "carm_roofline.profiling.optional_metrics.warn", lambda *args, **kwargs: warns.append(str(args[0]))
+    )
+    # A metric defining only the PAPI backend; resolving it for perf is unsupported.
+    papi_only = OptionalMetric(
+        description="papi-only",
+        events={BackendType.PAPI: (PAPI_CACHE_ROLES,)},
+        compute=OPTIONAL_METRICS[OptionalMetricName.CACHE_RESIDENCY].compute,
+    )
+    monkeypatch.setattr(
+        "carm_roofline.profiling.optional_metrics.OPTIONAL_METRICS",
+        {OptionalMetricName.CACHE_RESIDENCY: papi_only},
+    )
+    resolved = resolve_optional_metrics(
+        (OptionalMetricName.CACHE_RESIDENCY,), frozenset({"PAPI_L1_DCA"}), BackendType.PERF
+    )
+    assert resolved == {}
+    assert warns and "not supported by the perf backend" in warns[0]
+
+
+def test_compute_region_point_optional_bytes() -> None:
+    counters = {
+        "PAPI_FP_OPS": 1000,
+        "PAPI_L1_DCA": 800,
+        "PAPI_L1_DCM": 40,
+        "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C": 16,
+        "L2_PREFETCH_HIT_L3:L2_HW_PREFETCHER": 8,
+        "L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER": 8,
+    }
+    resolved = resolve_metrics(frozenset({"PAPI_FP_OPS", "PAPI_L1_DCA"}))
+    resolved_optional = resolve_optional_metrics(
+        (OptionalMetricName.CACHE_RESIDENCY,), frozenset(counters), BackendType.PAPI
+    )
+    pt = compute_region_point(counters, 1_000_000_000, resolved, DEFAULT_CTX, resolved_optional)
+    assert pt.flops == 1000.0
+    assert pt.bytes == 800 * DEFAULT_CTX.bytes_per_instruction  # 800 accesses x 8 B/inst = 6400
+    assert pt.optional_bytes == {
+        "cache-residency": {
+            "l1": pytest.approx(0.6 * 6400.0),
+            "l2": pytest.approx(0.08 * 6400.0),
+            "l3plus": pytest.approx(0.32 * 6400.0),
+        }
+    }
+
+
+def test_cache_level_bytes_scales_accesses_to_lines_and_saturates() -> None:
+    """L1 accesses are scaled to 64B lines; fills saturating past the L1-miss
+    remainder must not push the sum past 1.
+
+    accesses=800 * 8 B/inst / 64 = 100 lines; m1 = 40/100 = 0.4 -> f_l1 = 0.6;
+    l2 boundary (misses + pf fills) = 500/100 = 5 -> saturated to the 0.4
+    remainder: f_l3plus = 0.4, f_l2 = 0.
+    """
+    levels = _cache_level_bytes(
+        accesses=800,
+        misses={"l1": 40.0, "l2": 200.0 + 150.0 + 150.0},
+        levels=("l1", "l2"),
+        region_bytes=800.0,
+        bytes_per_instruction=8.0,
+    )
+    assert levels == {
+        "l1": pytest.approx(0.6 * 800.0),
+        "l2": pytest.approx(0.0),
+        "l3plus": pytest.approx(0.4 * 800.0),
+    }
+    assert sum(levels.values()) == pytest.approx(800.0)
+
+
+def test_last_bucket_names() -> None:
+    """The everything-beyond bucket: dram when L3 is the last boundary, else next-plus."""
+    assert _last_bucket(("l1",)) == "l2plus"
+    assert _last_bucket(("l1", "l2")) == "l3plus"
+    assert _last_bucket(("l1", "l2", "l3")) == "dram"
+
+
+@pytest.mark.parametrize(
+    "counters, expected_fractions",
+    [
+        # pure L1: no misses anywhere
+        (
+            {
+                "L1-dcache-loads": 480,
+                "L1-dcache-stores": 320,
+                "L1-dcache-load-misses": 0,
+                "L1-dcache-store-misses": 0,
+                "l2_rqsts.miss": 0,
+                "LLC-load-misses": 0,
+                "LLC-store-misses": 0,
+            },
+            {"l1": 1.0, "l2": 0.0, "l3": 0.0, "dram": 0.0},
+        ),
+        # telescoping: 800 accesses * 8 B/inst / 64 = 100 lines;
+        # l1=40 (0.4), l2=12 (0.12), l3=7 (0.07) -> f = 0.6 / 0.28 / 0.05 / 0.07
+        (
+            {
+                "L1-dcache-loads": 480,
+                "L1-dcache-stores": 320,
+                "L1-dcache-load-misses": 24,
+                "L1-dcache-store-misses": 16,
+                "l2_rqsts.miss": 12,
+                "LLC-load-misses": 4,
+                "LLC-store-misses": 3,
+            },
+            {"l1": 0.6, "l2": 0.28, "l3": 0.05, "dram": 0.07},
+        ),
+        # saturation across three boundaries: l3 misses > l2 misses clamps
+        # f_l3 to 0 and keeps the sum at 1
+        (
+            {
+                "L1-dcache-loads": 480,
+                "L1-dcache-stores": 320,
+                "L1-dcache-load-misses": 24,
+                "L1-dcache-store-misses": 16,
+                "l2_rqsts.miss": 12,
+                "LLC-load-misses": 30,
+                "LLC-store-misses": 20,
+            },
+            {"l1": 0.6, "l2": 0.28, "l3": 0.0, "dram": 0.12},
+        ),
+        # l1_misses > total_lines saturates m1 at 1: all traffic leaves L1,
+        # then telescopes through l2/l3
+        (
+            {
+                "L1-dcache-loads": 480,
+                "L1-dcache-stores": 320,
+                "L1-dcache-load-misses": 90,
+                "L1-dcache-store-misses": 60,
+                "l2_rqsts.miss": 12,
+                "LLC-load-misses": 4,
+                "LLC-store-misses": 3,
+            },
+            {"l1": 0.0, "l2": 0.88, "l3": 0.05, "dram": 0.07},
+        ),
+    ],
+)
+def test_cache_residency_four_boundaries_sum_to_one(
+    counters: dict[str, float], expected_fractions: dict[str, float]
+) -> None:
+    """4-bucket shape (levels l1/l2/l3): exact {l1, l2, l3, dram} buckets."""
+    result = _cache_compute(counters, PERF_INTEL_CACHE_ROLES)
+    assert sum(result.values()) == pytest.approx(800.0)  # saturated fractions sum to 1
+    assert set(result) == {"l1", "l2", "l3", "dram"}
+    for level, frac in expected_fractions.items():
+        assert result[level] == pytest.approx(frac * 800.0)
+
+
+def test_cache_residency_four_boundaries_zero_accesses_all_zero() -> None:
+    result = _cache_compute(
+        {
+            "L1-dcache-loads": 0,
+            "L1-dcache-stores": 0,
+            "L1-dcache-load-misses": 40,
+            "L1-dcache-store-misses": 10,
+            "l2_rqsts.miss": 10,
+            "LLC-load-misses": 5,
+            "LLC-store-misses": 5,
+        },
+        PERF_INTEL_CACHE_ROLES,
+    )
+    assert result == {"l1": 0.0, "l2": 0.0, "l3": 0.0, "dram": 0.0}
+
+
+@pytest.mark.parametrize(
+    "counters, expected_fractions",
+    [
+        # pure L1: m1 = 0 -> everything served at L1
+        ({"PAPI_L1_DCA": 800, "PAPI_L1_DCM": 0}, {"l1": 1.0, "l2plus": 0.0}),
+        # all-miss: m1 = 1 -> everything beyond L1
+        ({"PAPI_L1_DCA": 800, "PAPI_L1_DCM": 100}, {"l1": 0.0, "l2plus": 1.0}),
+        # mixed: 40/100 lines miss L1
+        ({"PAPI_L1_DCA": 800, "PAPI_L1_DCM": 40}, {"l1": 0.6, "l2plus": 0.4}),
+        # saturation: m1 saturates at 1
+        ({"PAPI_L1_DCA": 800, "PAPI_L1_DCM": 500}, {"l1": 0.0, "l2plus": 1.0}),
+    ],
+)
+def test_cache_residency_single_boundary_sum_to_one(
+    counters: dict[str, float], expected_fractions: dict[str, float]
+) -> None:
+    """1-bucket-shape (levels ("l1",)): {l1, l2plus} with everything beyond L1 grouped."""
+    result = _cache_compute(counters, L1_ONLY_CACHE_ROLES)
+    assert sum(result.values()) == pytest.approx(800.0)
+    assert set(result) == {"l1", "l2plus"}
+    for level, frac in expected_fractions.items():
+        assert result[level] == pytest.approx(frac * 800.0)
+
+
+# ---------------------------------------------------------------------------
+# Optional bytes through aggregation and output
+# ---------------------------------------------------------------------------
+
+# cache-residency counters (same ratios as the end-to-end test): per region
+# bytes = PAPI_L1_DCA * 8 (DEFAULT_CTX) = 6400; accesses=800 -> 100 lines;
+# m1=0.4, fills=32 -> fractions {l1:0.6, l2:0.08, l3plus:0.32}.
+_CACHE_COUNTERS = {
+    "PAPI_FP_OPS": 1000,
+    "PAPI_L1_DCA": 800,
+    "PAPI_L1_DCM": 40,
+    "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C": 16,
+    "L2_PREFETCH_HIT_L3:L2_HW_PREFETCHER": 8,
+    "L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER": 8,
+}
+_CACHE_OPTIONAL = resolve_optional_metrics(
+    (OptionalMetricName.CACHE_RESIDENCY,), frozenset(_CACHE_COUNTERS), BackendType.PAPI
+)
+
+
+def _make_cache_run() -> RunResults:
+    """Run with cache-residency counters mirroring _make_sample_run (2 ranks x 1 thread)."""
+    reg = RegionMetrics(
+        name="daxpy",
+        parent_region_id="-1",
+        cycles=1364391136,
+        time_nsec=427162799,
+        counters=dict(_CACHE_COUNTERS),
+    )
+    th = ThreadMetrics(thread_id=0, regions=[reg])
+    ranks = [
+        RankMetrics(rank_id=0, threads=[th]),
+        RankMetrics(rank_id=1, threads=[th]),
+    ]
+    return RunResults(metadata=RunMetadata(name="test"), ranks=ranks)
+
+
+@pytest.mark.parametrize(
+    "mode, expected_per_point",
+    [
+        (AggregationMode.GLOBAL, [{"l1": 7680.0, "l2": 1024.0, "l3plus": 4096.0}]),
+        (AggregationMode.RANK, [{"l1": 3840.0, "l2": 512.0, "l3plus": 2048.0}] * 2),
+        (AggregationMode.THREAD, [{"l1": 3840.0, "l2": 512.0, "l3plus": 2048.0}] * 2),
+        (AggregationMode.REGION_MERGED, [{"l1": 7680.0, "l2": 1024.0, "l3plus": 4096.0}]),
+        (AggregationMode.REGION_PER_THREAD, [{"l1": 3840.0, "l2": 512.0, "l3plus": 2048.0}] * 2),
+    ],
+)
+def test_aggregate_modes_carry_optional_bytes(
+    mode: AggregationMode, expected_per_point: list[dict[str, float]]
+) -> None:
+    run = _make_cache_run()
+    resolved = resolve_metrics(frozenset({"PAPI_FP_OPS", "PAPI_L1_DCA"}))
+    points = aggregate(run, mode, resolved, DEFAULT_CTX, _CACHE_OPTIONAL)
+    assert len(points) == len(expected_per_point)
+    for pt, expected in zip(points, expected_per_point):
+        assert set(pt.optional_bytes) == {"cache-residency"}
+        levels = pt.optional_bytes["cache-residency"]
+        for level, value in expected.items():
+            assert levels[level] == pytest.approx(value)
+        level_total = sum(expected.values())
+        assert pt.total_bytes == pytest.approx(level_total)
+        fractions = pt.optional_fractions["cache-residency"]
+        for level, value in expected.items():
+            assert fractions[level] == pytest.approx(value / level_total)
+        assert sum(fractions.values()) == pytest.approx(1.0)
+
+
+def test_aggregate_without_optional_is_empty() -> None:
+    run = _make_cache_run()
+    resolved = resolve_metrics(frozenset({"PAPI_FP_OPS", "PAPI_L1_DCA"}))
+    pt = aggregate_global(run, resolved, DEFAULT_CTX)
+    assert pt.optional_bytes == {}
+    assert pt.optional_fractions == {}
+
+
+def test_write_profile_jsonl_optional_metrics(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
+
+    from carm_roofline.profiling.output import write_profile_jsonl
+
+    run = _make_cache_run()
+    resolved = resolve_metrics(frozenset({"PAPI_FP_OPS", "PAPI_L1_DCA"}))
+    pts = aggregate(run, AggregationMode.GLOBAL, resolved, DEFAULT_CTX, _CACHE_OPTIONAL)
+    cfg = MagicMock(machine_name="test_run", output_dir=tmp_path, aggregation=AggregationMode.GLOBAL)
+    write_profile_jsonl(run, cfg, pts)
+
+    jsonl_path = tmp_path / "test_run" / "applications.jsonl"
+    record = json.loads(jsonl_path.read_text().strip().split("\n")[0])
+    assert record["format_version"] == "3.0"
+    assert record["optional_metrics"] == ["cache-residency"]
+
+    point = record["points"][0]
+    assert set(point["optional_bytes"]) == {"cache-residency"}
+    for level, value in point["optional_bytes"]["cache-residency"].items():
+        assert value == pytest.approx({"l1": 7680.0, "l2": 1024.0, "l3plus": 4096.0}[level])
+    fractions = point["optional_fractions"]["cache-residency"]
+    assert fractions == {
+        "l1": pytest.approx(0.6),
+        "l2": pytest.approx(0.08),
+        "l3plus": pytest.approx(0.32),
+    }
+
+
+def test_load_applications_carries_optional_fractions(tmp_path: Path) -> None:
+    from carm_roofline.roofline_assembly import load_applications
+
+    record = {
+        "format_version": "3.0",
+        "aggregation": "global",
+        "optional_metrics": ["cache-residency"],
+        "metadata": {"name": "app", "date": "2026-01-01T00:00:00", "command": "./app"},
+        "points": [
+            {
+                "label": "app",
+                "total_flops": 1000.0,
+                "total_bytes": 6400.0,
+                "runtime_s": 1.0,
+                "num_ranks": 1,
+                "num_threads": 1,
+                "num_regions": 1,
+                "arithmetic_intensity": 0.15625,
+                "flops_per_second": 1000.0,
+                "bandwidth": 6400.0,
+                "optional_bytes": {"cache-residency": {"l1": 3840.0, "l2": 512.0, "l3plus": 2048.0}},
+                "optional_fractions": {"cache-residency": {"l1": 0.6, "l2": 0.08, "l3plus": 0.32}},
+            }
+        ],
+    }
+    path = tmp_path / "applications.jsonl"
+    path.write_text(json.dumps(record, sort_keys=True) + "\n")
+
+    records = load_applications(path)
+    assert len(records) == 1
+    pt = records[0].points[0]
+    # Known fields survive the round trip; optional fractions are carried too.
+    assert pt.label == "app"
+    assert pt.total_flops == 1000.0
+    assert pt.total_bytes == 6400.0
+    assert pt.runtime_s == 1.0
+    assert pt.arithmetic_intensity == 0.15625
+    assert pt.bandwidth == 6400.0
+    assert pt.optional_fractions == {"cache-residency": {"l1": 0.6, "l2": 0.08, "l3plus": 0.32}}
+
+
+# ---------------------------------------------------------------------------
+# End-to-end profile_main with mocked PAPI backend
+# ---------------------------------------------------------------------------
+
+_CACHE_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<eventinfo>
+<component index="0" type="CPU" id="perf_event">
+  <eventset type="NATIVE">
+    <event index="0" name="PAPI_FP_OPS" desc="floating point ops"></event>
+    <event index="1" name="PAPI_L1_DCA" desc="l1 data accesses"></event>
+    <event index="2" name="PAPI_L1_DCM" desc="l1 data misses"></event>
+    <event index="3" name="CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C" desc="l2 demand data misses"></event>
+    <event index="4" name="L2_PREFETCH_HIT_L3:L2_HW_PREFETCHER" desc="l2 prefetch fills hitting l3"></event>
+    <event index="5" name="L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER" desc="l2 prefetch fills missing l3"></event>
+  </eventset>
+</component>
+</eventinfo>"""
+
+
+def _patch_papi_discovery(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Make PAPI discovery hermetic: fake lib, XML catalog, isolated cache."""
+    monkeypatch.setattr(papi_backend, "_find_papi_library_path", lambda: Path("/fake/libpapi.so"))
+    monkeypatch.setattr(papi_backend.shutil, "which", lambda name: f"/fake/bin/{name}")
+    monkeypatch.setattr(papi_metrics, "_papi_cache_dir", lambda: tmp_path / "papi-cache")
+    monkeypatch.setattr(papi_metrics, "_papi_cache_key", lambda: "k" * 64)
+    monkeypatch.setattr(papi_metrics, "_load_papi_library", lambda: None)
+
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        if args[0] == "nm":
+            return SimpleNamespace(stdout="PAPI_hl_region_begin\n", stderr="", returncode=0)
+        return SimpleNamespace(stdout=_CACHE_XML, stderr="", returncode=0)
+
+    monkeypatch.setattr(papi_backend.subprocess, "run", fake_run)
+
+
+def test_profile_main_papi_optional_metric_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Single-run profile: cache-residency resolves against the AMD prefetch-inclusive alternative.
+
+    Counters: PAPI_FP_OPS=1000, PAPI_L1_DCA=800, PAPI_L1_DCM=40,
+    CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C=16,
+    L2_PREFETCH_HIT_L3:L2_HW_PREFETCHER=8, L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER=8
+    -> 800 accesses * 8 B/inst / 64 = 100 lines; m1=0.4; fills=32 ->
+    fractions {l1:0.6, l2:0.08, l3plus:0.32} and bytes {3840, 512, 2048}
+    of 6400 (PAPI_L1_DCA x 8 B/inst).
+    """
+    _patch_papi_discovery(monkeypatch, tmp_path)
+    monkeypatch.setattr(shared, "perf_event_paranoid", lambda: 2)
+    monkeypatch.setattr(papi_backend, "validate_event_set", lambda events: True)
+
+    counters = {
+        "PAPI_FP_OPS": 1000,
+        "PAPI_L1_DCA": 800,
+        "PAPI_L1_DCM": 40,
+        "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C": 16,
+        "L2_PREFETCH_HIT_L3:L2_HW_PREFETCHER": 8,
+        "L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER": 8,
+    }
+
+    def fake_profile(
+        self: papi_backend.PAPIHLBackend, run_spec: RunSpec, command: list[str], cwd: Path
+    ) -> RunResult:
+        region = RegionMetrics(
+            name="total", parent_region_id="-1", cycles=0, time_nsec=1_000_000_000, counters=counters
+        )
+        ranks = [RankMetrics(rank_id=0, threads=[ThreadMetrics(thread_id=0, regions=[region])])]
+        return RunResult(exit_code=0, ranks=ranks)
+
+    monkeypatch.setattr(papi_backend.PAPIHLBackend, "profile", fake_profile)
+
+    args = _parse_profile_args(
+        [
+            "--backend",
+            "papi",
+            "--data-type",
+            "f64",
+            "--metrics",
+            "cache-residency",
+            "--aggregation",
+            "global",
+            "--output-dir",
+            str(tmp_path),
+            "--",
+            "./app",
+        ]
+    )
+    config = ProfileConfig(args)
+    assert profile_main(config) == 0
+
+    jsonl_path = tmp_path / config.machine_name / "applications.jsonl"
+    lines = jsonl_path.read_text().strip().split("\n")
+    assert len(lines) == 1
+    record = json.loads(lines[-1])
+    assert record["format_version"] == "3.0"
+    assert record["optional_metrics"] == ["cache-residency"]
+
+    point = record["points"][0]
+    assert point["total_flops"] == pytest.approx(1000.0)
+    assert point["total_bytes"] == pytest.approx(6400.0)
+    assert set(point["optional_bytes"]) == {"cache-residency"}
+    for level, value in point["optional_bytes"]["cache-residency"].items():
+        assert value == pytest.approx({"l1": 3840.0, "l2": 512.0, "l3plus": 2048.0}[level])
+    assert point["optional_fractions"]["cache-residency"] == {
+        "l1": pytest.approx(0.6),
+        "l2": pytest.approx(0.08),
+        "l3plus": pytest.approx(0.32),
+    }
+
+
+def _make_fake_backend_class() -> type:
+    """Fake PAPIHLBackend: 4-event pool with capacity 2 -> two disjoint runs.
+
+    FLOPS needs {PAPI_DP_OPS, PAPI_FP_OPS}; BYTES needs {PAPI_L1_DCA, PAPI_LST_INS}.
+    Each run returns only its own events' counters, so merged counters carry both.
+    """
+    flops_impl = MetricDefinition(
+        type=MetricType.FLOPS,
+        required_events=frozenset({"PAPI_DP_OPS", "PAPI_FP_OPS"}),
+        compute=lambda e, ctx: e["PAPI_FP_OPS"],
+        priority=100,
+        description="FLOPS",
+    )
+    bytes_impl = MetricDefinition(
+        type=MetricType.BYTES,
+        required_events=frozenset({"PAPI_L1_DCA", "PAPI_LST_INS"}),
+        compute=lambda e, ctx: e["PAPI_L1_DCA"] * 8,
+        priority=100,
+        description="BYTES",
+    )
+    resolved = {MetricType.FLOPS: flops_impl, MetricType.BYTES: bytes_impl}
+
+    class FakePAPIHLBackend:
+        instances: ClassVar[list[FakePAPIHLBackend]] = []
+        can_collect_calls: ClassVar[int] = 0
+        check_prerequisites_calls: ClassVar[int] = 0
+
+        def __init__(
+            self,
+            resolution_config: MetricResolutionConfig,
+            *,
+            use_cache: bool = True,
+        ) -> None:
+            self._resolution_config = resolution_config
+            self._use_cache = use_cache
+            self.profile_calls = 0
+            self.received_specs: list[RunSpec] = []
+            FakePAPIHLBackend.instances.append(self)
+
+        @property
+        def resolved_metrics(self) -> dict[MetricType, MetricDefinition]:
+            return dict(resolved)
+
+        @property
+        def available_events(self) -> frozenset[str]:
+            return frozenset({"PAPI_DP_OPS", "PAPI_FP_OPS", "PAPI_L1_DCA", "PAPI_LST_INS"})
+
+        def can_collect(self, events: frozenset[str]) -> bool:
+            FakePAPIHLBackend.can_collect_calls += 1
+            return len(events) <= 2
+
+        def check_prerequisites(self) -> bool:
+            FakePAPIHLBackend.check_prerequisites_calls += 1
+            return False
+
+        def profile(self, run_spec: RunSpec, command: list[str], cwd: Path) -> RunResult:
+            self.profile_calls += 1
+            self.received_specs.append(run_spec)
+            counters: dict[str, int] = {}
+            if run_spec.events is not None and "PAPI_FP_OPS" in run_spec.events:
+                counters["PAPI_DP_OPS"] = 1000
+                counters["PAPI_FP_OPS"] = 1000
+            if run_spec.events is not None and "PAPI_L1_DCA" in run_spec.events:
+                counters["PAPI_L1_DCA"] = 100
+                counters["PAPI_LST_INS"] = 200
+            region = RegionMetrics(
+                name="total", parent_region_id="-1", cycles=0, time_nsec=1_000_000_000, counters=counters
+            )
+            ranks = [RankMetrics(rank_id=0, threads=[ThreadMetrics(thread_id=0, regions=[region])])]
+            return RunResult(exit_code=0, ranks=ranks)
+
+        @property
+        def run_method_name(self) -> str:
+            return "fake"
+
+    return FakePAPIHLBackend
+
+
+def test_profile_main_merges_partitioned_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pool of 4 events with capacity 2 -> 2 app runs merged into one JSONL record."""
+    fake_cls = _make_fake_backend_class()
+    monkeypatch.setattr(papi_backend, "PAPIHLBackend", fake_cls)
+    fake_cls.instances.clear()
+    fake_cls.can_collect_calls = 0
+    fake_cls.check_prerequisites_calls = 0
+
+    args = _parse_profile_args(
+        [
+            "--backend",
+            "papi",
+            "--merge-runs",
+            "--aggregation",
+            "global",
+            "--output-dir",
+            str(tmp_path),
+            "--",
+            "./app",
+        ]
+    )
+    config = ProfileConfig(args)
+    assert profile_main(config) == 0
+
+    # One session-scoped backend; each chunk is one profile() call with its own event set.
+    assert len(fake_cls.instances) == 1
+    backend = fake_cls.instances[0]
+    assert [s.events for s in backend.received_specs] == [
+        "PAPI_DP_OPS,PAPI_FP_OPS",
+        "PAPI_L1_DCA,PAPI_LST_INS",
+    ]
+    assert backend.profile_calls == 2
+
+    # Resolution is a one-time session probe: check_prerequisites runs once.
+    assert fake_cls.check_prerequisites_calls == 1
+
+    # Each run gets its own output directory so files never overwrite.
+    assert len({s.output_dir for s in backend.received_specs}) == 2
+
+    jsonl_path = tmp_path / config.machine_name / "applications.jsonl"
+    lines = jsonl_path.read_text().strip().split("\n")
+    assert len(lines) == 1  # one JSONL record despite two app runs
+
+    record = json.loads(lines[0])
+    assert record["metadata"]["notes"] == "merged from 2 runs"
+    assert record["metadata"]["date"]  # fresh merged date
+    assert record["optional_metrics"] == []
+
+    point = record["points"][0]
+    assert point["total_flops"] == pytest.approx(1000.0)  # from run 0's counters
+    assert point["total_bytes"] == pytest.approx(800.0)  # from run 1's counters
+    assert point["total_flops"] > 0
+    assert point["total_bytes"] > 0
+
+
+def test_profile_main_single_run_without_merge_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without --merge-runs the whole 4-event pool is one chunk: one run, no partitioning, no merge."""
+    fake_cls = _make_fake_backend_class()
+    monkeypatch.setattr(papi_backend, "PAPIHLBackend", fake_cls)
+    fake_cls.instances.clear()
+    fake_cls.can_collect_calls = 0
+    fake_cls.check_prerequisites_calls = 0
+
+    args = _parse_profile_args(
+        ["--backend", "papi", "--aggregation", "global", "--output-dir", str(tmp_path), "--", "./app"]
+    )
+    config = ProfileConfig(args)
+    assert profile_main(config) == 0
+
+    # One session-scoped backend; the whole 4-event pool is one chunk in sorted order (D < F < L1 < LST).
+    assert len(fake_cls.instances) == 1
+    backend = fake_cls.instances[0]
+    assert [s.events for s in backend.received_specs] == [
+        "PAPI_DP_OPS,PAPI_FP_OPS,PAPI_L1_DCA,PAPI_LST_INS"
+    ]
+    assert backend.profile_calls == 1
+    assert fake_cls.check_prerequisites_calls == 1
+    assert fake_cls.can_collect_calls == 0  # partition logic never consulted
+
+    jsonl_path = tmp_path / config.machine_name / "applications.jsonl"
+    lines = jsonl_path.read_text().strip().split("\n")
+    assert len(lines) == 1  # one JSONL record from the single run
+
+    record = json.loads(lines[0])
+    assert record["metadata"]["notes"] == ""
+    assert record["optional_metrics"] == []
+
+    point = record["points"][0]
+    assert point["total_flops"] == pytest.approx(1000.0)
+    assert point["total_bytes"] == pytest.approx(800.0)
+
+
+# ---------------------------------------------------------------------------
+# Perf backend multiplexing checks (perf_backend.py, perf_loader.py)
+# ---------------------------------------------------------------------------
+
+
+def test_multiplexed_events_full_run_fit() -> None:
+    text = (
+        "# started on Wed Aug 19 16:55:32 2026\n"
+        "\n"
+        "1552836,ns,duration_time,1552836,100,00,,\n"
+        "260989,,ls_dispatch.ld_dispatch,550492,100,00,,\n"
+        "10781,,ls_dispatch.ld_st_dispatch,550492,100,00,,\n"
+    )
+    assert multiplexed_events(text) == []
+
+
+def test_multiplexed_events_full_run_scaled() -> None:
+    text = (
+        "850123,,cycles,73949,16,00,,\n"
+        "888426,,instructions,439544,100,00,1,insn per cycle\n"
+        "185958,,branches,439544,100,00,,\n"
+    )
+    assert multiplexed_events(text) == ["cycles"]
+
+
+def test_multiplexed_events_full_run_not_counted() -> None:
+    text = (
+        "850123,,cycles,73949,100,00,,\n"
+        "<not counted>,,stalled-cycles-frontend,0,0,00,,\n"
+        "<not supported>,,ls_dispatch.ld_dispatch,0,100,00,,\n"
+    )
+    assert multiplexed_events(text) == ["ls_dispatch.ld_dispatch", "stalled-cycles-frontend"]
+
+
+def test_multiplexed_events_interval_format() -> None:
+    text = (
+        "0.100118315,432081371,,cycles,40357201,40,00,,\n"
+        "0.100118315,1185147799,,instructions,41396681,41,00,2,insn per cycle\n"
+        "0.100118315,,,,,,0,stalled cycles per insn\n"
+        "0.100118315,<not counted>,,cache-misses,0,0,00,,\n"
+        "0.100118315,168534787,,ls_dispatch.store_dispatch,31978881,100,00,,\n"
+    )
+    assert multiplexed_events(text) == ["cache-misses", "cycles", "instructions"]
+
+
+def test_multiplexed_events_empty_or_comment_only() -> None:
+    assert multiplexed_events("") == []
+    assert multiplexed_events("# only comments\n\n") == []
+
+
+def _perf_backend_with_probe(monkeypatch: pytest.MonkeyPatch, fake_run: object) -> PerfBackend:
+    """PerfBackend whose can_collect probe is replaced by *fake_run*."""
+    monkeypatch.setattr(perf_backend.shutil, "which", lambda name: "/usr/bin/perf")
+    monkeypatch.setattr(perf_backend.subprocess, "run", fake_run)
+    return PerfBackend(MetricResolutionConfig())
+
+
+def test_perf_can_collect_probe_fits(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        calls.append(args)
+        return SimpleNamespace(returncode=0, stdout="1000,,cycles,550492,100,00,,\n", stderr="")
+
+    backend = _perf_backend_with_probe(monkeypatch, fake_run)  # type: ignore[arg-type]
+    assert backend.can_collect(frozenset({"cycles"})) is True
+    assert calls == [
+        ["/usr/bin/perf", "stat", "-x,", "-e", "duration_time,cycles", "--", "sleep", "0.05"]
+    ]
+
+
+def test_perf_can_collect_probe_rejects_multiplexed(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            returncode=0,
+            stdout=(
+                "850123,,cycles,73949,16,00,,\n"
+                "888426,,instructions,439544,100,00,1,insn per cycle\n"
+            ),
+            stderr="",
+        )
+
+    backend = _perf_backend_with_probe(monkeypatch, fake_run)  # type: ignore[arg-type]
+    assert backend.can_collect(frozenset({"cycles", "instructions"})) is False
+
+
+def test_perf_can_collect_probe_rejects_not_counted(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            returncode=0,
+            stdout="<not counted>,,stalled-cycles-frontend,0,0,00,,\n",
+            stderr="",
+        )
+
+    backend = _perf_backend_with_probe(monkeypatch, fake_run)  # type: ignore[arg-type]
+    assert backend.can_collect(frozenset({"stalled-cycles-frontend"})) is False
+
+
+def test_perf_can_collect_probe_nonzero_exit_rejects(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(returncode=129, stdout="", stderr="invalid or unsupported event")
+
+    backend = _perf_backend_with_probe(monkeypatch, fake_run)  # type: ignore[arg-type]
+    assert backend.can_collect(frozenset({"cycles"})) is False
+
+
+def test_perf_can_collect_probe_failure_is_optimistic(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        raise subprocess.TimeoutExpired(args, timeout=10)
+
+    backend = _perf_backend_with_probe(monkeypatch, fake_run)  # type: ignore[arg-type]
+    assert backend.can_collect(frozenset({"cycles"})) is True
+
+
+def test_perf_can_collect_missing_perf_is_optimistic(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        raise AssertionError("probe must not run when perf is missing")
+
+    monkeypatch.setattr(perf_backend.shutil, "which", lambda name: None)
+    monkeypatch.setattr(perf_backend.subprocess, "run", fake_run)
+    backend = PerfBackend(MetricResolutionConfig())
+    assert backend.can_collect(frozenset({"cycles"})) is True
+
+
+def test_perf_can_collect_empty_set_skips_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        raise AssertionError("probe must not run for an empty event set")
+
+    backend = _perf_backend_with_probe(monkeypatch, fake_run)  # type: ignore[arg-type]
+    assert backend.can_collect(frozenset()) is True
+
+
+def test_perf_partition_uses_probe_capability(monkeypatch: pytest.MonkeyPatch) -> None:
+    """partition_events with a real PerfBackend splits on probe-reported overcommit."""
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        events = next(a for a in args if a.startswith("duration_time,")).split(",")
+        n = len(events) - 1  # drop duration_time
+        rows = "\n".join(f"1000,,{e},550492,{100 if n <= 2 else 50},00,," for e in events[1:])
+        return SimpleNamespace(returncode=0, stdout=rows + "\n", stderr="")
+
+    backend = _perf_backend_with_probe(monkeypatch, fake_run)
+    chunks = partition_events(["a", "b", "c", "d", "e"], backend.can_collect)
+    assert chunks == [["a", "b"], ["c", "d"], ["e"]]
+
+
+def test_perf_parse_output_warns_on_multiplexed_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A run whose CSV shows <not counted> events warns post-hoc but still parses."""
+    warns: list[str] = []
+    monkeypatch.setattr(perf_backend, "warn", lambda *args, **kwargs: warns.append(str(args[0])))
+    backend = PerfBackend(MetricResolutionConfig())
+    run_spec = RunSpec(output_dir=tmp_path, events="fp_ret_sse_avx_ops.all,ls_dispatch.ld_dispatch")
+    (tmp_path / "perf_stat.csv").write_text(
+        "1000,,fp_ret_sse_avx_ops.all,550492,100,00,,\n"
+        "<not counted>,,ls_dispatch.ld_dispatch,0,0,00,,\n"
+    )
+    ranks = backend._parse_output(run_spec)
+    assert any("time-multiplexed" in w and "ls_dispatch.ld_dispatch" in w for w in warns)
+    assert ranks[0].threads[0].regions[0].counters == {"fp_ret_sse_avx_ops.all": 1000}
+
+
+def test_perf_check_prerequisites_warns_when_resolved_set_overcommits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The resolved event set failing the probe warns during the session probe."""
+    monkeypatch.setattr(shared, "perf_event_paranoid", lambda: 2)
+    monkeypatch.setattr(perf_backend, "parse_perf_available_events", lambda: frozenset({"A", "B"}))
+    impl = MetricDefinition(
+        type=MetricType.FLOPS,
+        required_events=frozenset({"A", "B"}),
+        compute=lambda e, ctx: 0.0,
+        priority=50,
+        description="FLOPS",
+    )
+    monkeypatch.setattr(
+        perf_backend, "resolve_perf_metrics", lambda available, config: {MetricType.FLOPS: impl}
+    )
+    monkeypatch.setattr(PerfBackend, "can_collect", lambda self, events: False)
+    warns: list[str] = []
+    monkeypatch.setattr(perf_backend, "warn", lambda *args, **kwargs: warns.append(str(args[0])))
+    backend = PerfBackend(MetricResolutionConfig())
+    assert backend.check_prerequisites() is True
+    assert any("may not fit" in w for w in warns)
+
+
+def test_perf_event_paranoid_reads_value(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    paranoid_file = tmp_path / "perf_event_paranoid"
+    paranoid_file.write_text("3\n")
+    monkeypatch.setattr(shared, "_PERF_PARANOID_PATH", paranoid_file)
+    assert shared.perf_event_paranoid() == 3
+
+
+@pytest.mark.parametrize("exc", [FileNotFoundError, PermissionError, OSError])
+def test_perf_event_paranoid_unreadable_returns_none(monkeypatch: pytest.MonkeyPatch, exc: type[OSError]) -> None:
+    class UnreadablePath:
+        def read_text(self, *args: object, **kwargs: object) -> str:
+            raise exc()
+
+    monkeypatch.setattr(shared, "_PERF_PARANOID_PATH", UnreadablePath())
+    assert shared.perf_event_paranoid() is None
+
+
+def test_perf_event_paranoid_non_integer_returns_none(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    paranoid_file = tmp_path / "perf_event_paranoid"
+    paranoid_file.write_text("garbage\n")
+    monkeypatch.setattr(shared, "_PERF_PARANOID_PATH", paranoid_file)
+    assert shared.perf_event_paranoid() is None
+
+
+@pytest.mark.parametrize("paranoid", [3, 4])
+def test_check_perf_event_paranoid_raises_when_too_high(monkeypatch: pytest.MonkeyPatch, paranoid: int) -> None:
+    monkeypatch.setattr(shared, "perf_event_paranoid", lambda: paranoid)
+    with pytest.raises(UserError, match="perf_event_paranoid"):
+        shared.check_perf_event_paranoid()
+
+
+@pytest.mark.parametrize("paranoid", [-1, 0, 1, 2])
+def test_check_perf_event_paranoid_accepts_2_or_lower(monkeypatch: pytest.MonkeyPatch, paranoid: int) -> None:
+    monkeypatch.setattr(shared, "perf_event_paranoid", lambda: paranoid)
+    warns: list[str] = []
+    monkeypatch.setattr(shared, "warn", lambda *args, **kwargs: warns.append(str(args[0])))
+    shared.check_perf_event_paranoid()
+    assert not any("perf_event_paranoid" in w for w in warns)
+
+
+def test_check_perf_event_paranoid_unreadable_warns_and_proceeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(shared, "perf_event_paranoid", lambda: None)
+    warns: list[str] = []
+    monkeypatch.setattr(shared, "warn", lambda *args, **kwargs: warns.append(str(args[0])))
+    shared.check_perf_event_paranoid()
+    assert sum("perf_event_paranoid" in w for w in warns) == 1
+
+
+@pytest.mark.parametrize("paranoid", [3, 4])
+def test_perf_check_prerequisites_raises_when_paranoid_too_high(
+    monkeypatch: pytest.MonkeyPatch, paranoid: int
+) -> None:
+    monkeypatch.setattr(shared, "perf_event_paranoid", lambda: paranoid)
+    monkeypatch.setattr(perf_backend.shutil, "which", lambda name: "/usr/bin/perf")
+    monkeypatch.setattr(
+        perf_backend,
+        "parse_perf_available_events",
+        lambda: (_ for _ in ()).throw(AssertionError("must fail before discovery")),
+    )
+    with pytest.raises(UserError, match="perf_event_paranoid"):
+        PerfBackend(MetricResolutionConfig()).check_prerequisites()
+
+
+@pytest.mark.parametrize("paranoid", [-1, 0, 1, 2])
+def test_perf_check_prerequisites_accepts_paranoid_2_or_lower(
+    monkeypatch: pytest.MonkeyPatch, paranoid: int
+) -> None:
+    monkeypatch.setattr(shared, "perf_event_paranoid", lambda: paranoid)
+    monkeypatch.setattr(perf_backend.shutil, "which", lambda name: "/usr/bin/perf")
+    monkeypatch.setattr(perf_backend, "parse_perf_available_events", lambda: frozenset({"A"}))
+    impl = MetricDefinition(
+        type=MetricType.FLOPS,
+        required_events=frozenset({"A"}),
+        compute=lambda e, ctx: 0.0,
+        priority=50,
+        description="FLOPS",
+    )
+    monkeypatch.setattr(
+        perf_backend, "resolve_perf_metrics", lambda available, config: {MetricType.FLOPS: impl}
+    )
+    monkeypatch.setattr(PerfBackend, "can_collect", lambda self, events: True)
+    warns: list[str] = []
+    monkeypatch.setattr(shared, "warn", lambda *args, **kwargs: warns.append(str(args[0])))
+    backend = PerfBackend(MetricResolutionConfig())
+    assert backend.check_prerequisites() is True
+    assert not any("perf_event_paranoid" in w for w in warns)
+
+
+def test_perf_check_prerequisites_unreadable_paranoid_warns_and_proceeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(shared, "perf_event_paranoid", lambda: None)
+    monkeypatch.setattr(perf_backend.shutil, "which", lambda name: "/usr/bin/perf")
+    monkeypatch.setattr(perf_backend, "parse_perf_available_events", lambda: frozenset({"A"}))
+    impl = MetricDefinition(
+        type=MetricType.FLOPS,
+        required_events=frozenset({"A"}),
+        compute=lambda e, ctx: 0.0,
+        priority=50,
+        description="FLOPS",
+    )
+    monkeypatch.setattr(
+        perf_backend, "resolve_perf_metrics", lambda available, config: {MetricType.FLOPS: impl}
+    )
+    monkeypatch.setattr(PerfBackend, "can_collect", lambda self, events: True)
+    warns: list[str] = []
+    monkeypatch.setattr(shared, "warn", lambda *args, **kwargs: warns.append(str(args[0])))
+    backend = PerfBackend(MetricResolutionConfig())
+    assert backend.check_prerequisites() is True
+    assert sum("perf_event_paranoid" in w for w in warns) == 1
+
+
+@pytest.mark.parametrize("paranoid", [3, 4])
+def test_papi_check_prerequisites_raises_when_paranoid_too_high(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, paranoid: int
+) -> None:
+    _patch_papi_discovery(monkeypatch, tmp_path)
+    monkeypatch.setattr(shared, "perf_event_paranoid", lambda: paranoid)
+    monkeypatch.setattr(
+        papi_backend,
+        "parse_available_events",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must fail before discovery")),
+    )
+    with pytest.raises(UserError, match="perf_event_paranoid"):
+        papi_backend.PAPIHLBackend(MetricResolutionConfig()).check_prerequisites()
+
+
+@pytest.mark.parametrize("paranoid", [-1, 0, 1, 2])
+def test_papi_check_prerequisites_accepts_paranoid_2_or_lower(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, paranoid: int
+) -> None:
+    _patch_papi_discovery(monkeypatch, tmp_path)
+    monkeypatch.setattr(shared, "perf_event_paranoid", lambda: paranoid)
+    monkeypatch.setattr(papi_backend, "validate_event_set", lambda events: True)
+    warns: list[str] = []
+    monkeypatch.setattr(shared, "warn", lambda *args, **kwargs: warns.append(str(args[0])))
+    backend = papi_backend.PAPIHLBackend(MetricResolutionConfig())
+    assert isinstance(backend.check_prerequisites(), bool)
+    assert not any("perf_event_paranoid" in w for w in warns)
+
+
+def test_papi_check_prerequisites_unreadable_paranoid_warns_and_proceeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_papi_discovery(monkeypatch, tmp_path)
+    monkeypatch.setattr(shared, "perf_event_paranoid", lambda: None)
+    monkeypatch.setattr(papi_backend, "validate_event_set", lambda events: True)
+    warns: list[str] = []
+    monkeypatch.setattr(shared, "warn", lambda *args, **kwargs: warns.append(str(args[0])))
+    backend = papi_backend.PAPIHLBackend(MetricResolutionConfig())
+    assert isinstance(backend.check_prerequisites(), bool)
+    assert sum("perf_event_paranoid" in w for w in warns) == 1

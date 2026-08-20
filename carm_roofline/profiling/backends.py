@@ -1,6 +1,7 @@
 """Backend interface for profiler backends.
 
-Defines the :class:`ProfilerBackend` abstract base class and the
+Defines the :class:`ProfilerBackend` abstract base class, the per-run
+:class:`RunSpec`/:class:`RunResult` value objects, and the
 :func:`create_backend` factory function.  Concrete backend implementations
 live in :mod:`~.papi_backend` and :mod:`~.perf_backend`.
 """
@@ -8,13 +9,15 @@ live in :mod:`~.papi_backend` and :mod:`~.perf_backend`.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from carm_roofline.core import UserError
 
-from .config import BackendType, ProfileConfig
+from .config import ProfileConfig
 from .shared import (
+    BackendType,
     MetricDefinition,
     MetricResolutionConfig,
     MetricType,
@@ -24,18 +27,47 @@ if TYPE_CHECKING:
     from .model import RankMetrics
 
 
+@dataclass(frozen=True)
+class RunSpec:
+    """Parameters for one profiled execution of the application.
+
+    A backend executes one run per :class:`RunSpec`; the backend itself is
+    session-scoped (one instance per ``carm profile`` invocation).
+    """
+
+    output_dir: Path
+    """Directory for this run's profiling output files."""
+
+    events: str | None = None
+    """Comma-separated event list to collect, or None for the backend's resolved events."""
+
+
+@dataclass(frozen=True)
+class RunResult:
+    """Outcome of one profiled execution: the exit code plus parsed ranks."""
+
+    exit_code: int
+    """Exit code of the profiled command."""
+
+    ranks: list[RankMetrics]
+    """Rank metrics parsed from this run's profiling output files."""
+
+
 class ProfilerBackend(ABC):
     """Abstract interface for profiler backends.
 
-    Each backend knows how to:
-    - Verify its prerequisites (e.g. PAPI library, environment).
-    - Run the profiled command and produce profiling output files.
-    - Parse its output files into the rank/thread/region model.
+    A backend is session-scoped: one instance per ``carm profile`` invocation.
+    It verifies prerequisites and resolves metrics via
+    :meth:`check_prerequisites` (once), then executes each application run via
+    :meth:`profile` with a per-run :class:`RunSpec`.
     """
 
     @abstractmethod
     def check_prerequisites(self) -> bool:
         """Check that all prerequisites for this backend are met.
+
+        This is the one-time session probe: it discovers the event catalog and
+        resolves metric implementations. Call it once before :meth:`profile`.
 
         Raises:
             UserError: If prerequisites are not met (e.g. required library not found).
@@ -45,15 +77,16 @@ class ProfilerBackend(ABC):
         """
 
     @abstractmethod
-    def run(self, command: list[str], cwd: Path) -> int:
-        """Run the profiled command and collect profiling output.
+    def profile(self, run_spec: RunSpec, command: list[str], cwd: Path) -> RunResult:
+        """Run the profiled command and parse its profiling output.
 
         Args:
+            run_spec: Per-run parameters (output directory, requested events).
             command: The full application command (including launcher if any).
             cwd: Optional working directory for the command.
 
         Returns:
-            Exit code of the command.
+            The command exit code together with the parsed rank metrics.
         """
 
     @property
@@ -65,12 +98,25 @@ class ProfilerBackend(ABC):
         to the best available :class:`MetricDefinition`.
         """
 
+    @property
     @abstractmethod
-    def parse_output(self) -> list[RankMetrics]:
-        """Parse the profiling output files produced by :meth:`run`.
+    def available_events(self) -> frozenset[str]:
+        """Hardware events available on this system.
+
+        Returns the set of event names the backend can collect, populated by
+        :meth:`check_prerequisites`.
+        """
+
+    @abstractmethod
+    def can_collect(self, events: frozenset[str]) -> bool:
+        """Return True if *events* can be collected together in one run.
+
+        Args:
+            events: Candidate event set to validate.
 
         Returns:
-            List of RankMetrics parsed from the backend's output format.
+            True when all events fit in one run, False when the backend would
+            have to drop or multiplex events and a partitioned run is needed.
         """
 
     @property
@@ -81,14 +127,16 @@ class ProfilerBackend(ABC):
 
 def create_backend(
     config: ProfileConfig,
-    workspace: Path,
     resolution_cfg: MetricResolutionConfig,
 ) -> ProfilerBackend:
-    """Factory: create the appropriate profiler backend for the given configuration.
+    """Factory: create the profiler backend for the given configuration.
+
+    The returned backend is session-scoped: it discovers and resolves metrics
+    once via :meth:`ProfilerBackend.check_prerequisites`, then executes each
+    application run via :meth:`ProfilerBackend.profile`.
 
     Args:
         config: Resolved profile configuration.
-        workspace: Temporary workspace directory for profiling output.
         resolution_cfg: Metric resolution configuration.
 
     Returns:
@@ -101,18 +149,14 @@ def create_backend(
         from .papi_backend import PAPIHLBackend
 
         return PAPIHLBackend(
-            workspace,
             resolution_config=resolution_cfg,
-            events_override=config.papi_events,
             use_cache=config.use_papi_cache,
         )
     elif config.backend == BackendType.PERF:
         from .perf_backend import PerfBackend
 
         return PerfBackend(
-            workspace,
             resolution_config=resolution_cfg,
-            events_override=config.perf_events,
             interval_ms=config.perf_interval,
         )
     raise UserError(f"Unknown backend: {config.backend}")

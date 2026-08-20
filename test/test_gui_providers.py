@@ -614,6 +614,70 @@ def test_load_applications_round_trips_time_s(tmp_path: Path) -> None:
     assert carm.time_s is None
 
 
+def test_load_applications_mixed_format_versions_preserves_optional_fractions(tmp_path: Path) -> None:
+    """A file mixing 2.0 (4-key) and 3.0 (3-key) records loads both shapes verbatim."""
+    path = tmp_path / "applications.jsonl"
+    path.write_text(
+        "\n".join(
+            json.dumps(rec, sort_keys=True)
+            for rec in [
+                {
+                    "format_version": "2.0",
+                    "metadata": {"name": "legacy", "date": "2026-01-01", "command": "run"},
+                    "aggregation": "avg",
+                    "points": [
+                        {
+                            "label": "p_legacy",
+                            "total_flops": 1,
+                            "total_bytes": 1,
+                            "runtime_s": 1,
+                            "num_ranks": 1,
+                            "num_threads": 1,
+                            "num_regions": 1,
+                            "arithmetic_intensity": 1,
+                            "flops_per_second": 1,
+                            "bandwidth": 1,
+                            "optional_fractions": {
+                                "cache-residency": {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02}
+                            },
+                        }
+                    ],
+                },
+                {
+                    "format_version": "3.0",
+                    "metadata": {"name": "modern", "date": "2026-01-02", "command": "run"},
+                    "aggregation": "avg",
+                    "points": [
+                        {
+                            "label": "p_modern",
+                            "total_flops": 1,
+                            "total_bytes": 1,
+                            "runtime_s": 1,
+                            "num_ranks": 1,
+                            "num_threads": 1,
+                            "num_regions": 1,
+                            "arithmetic_intensity": 1,
+                            "flops_per_second": 1,
+                            "bandwidth": 1,
+                            "optional_fractions": {"cache-residency": {"l1": 0.6, "l2": 0.3, "l3plus": 0.1}},
+                        }
+                    ],
+                },
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    records = load_applications(path)
+    assert len(records) == 2
+    legacy, modern = records
+    assert legacy.points[0].optional_fractions == {
+        "cache-residency": {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02}
+    }
+    assert modern.points[0].optional_fractions == {"cache-residency": {"l1": 0.6, "l2": 0.3, "l3plus": 0.1}}
+
+
 def test_paraver_provider_legend_keeps_nan_state_code_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

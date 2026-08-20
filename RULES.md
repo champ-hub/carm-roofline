@@ -48,3 +48,7 @@ object
 str
 ```
 when a more precise type can describe the data.
+
+## General
+
+In documentation, refer to this software as "the CARM Tool".

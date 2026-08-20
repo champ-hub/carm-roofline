@@ -27,6 +27,7 @@ class StoreID(ID):
 
     ROOF_STORE = "roof-store"
     ACTIVE_PANEL = "active-panel"
+    SELECTED_POINT = "roofline-selected-point"
 
 
 class NavbarID(ID):
@@ -83,6 +84,7 @@ class PlotAreaID(ID):
     """IDs for the roofline plot graph."""
 
     ROOFLINE_PLOT = "roofline-plot"
+    BG_CLICK_CLEAR = "roofline-bg-click"
 
 
 class ParaverID(ID):

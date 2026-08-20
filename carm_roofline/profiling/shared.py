@@ -3,23 +3,66 @@
 This module contains the backend-agnostic types and algorithms shared across
 all profiler backends:
 
+- :class:`BackendType` — enumeration of profiler backends.
 - :class:`MetricType` — enumeration of roofline metric categories.
 - :class:`MetricResolutionConfig` — user preferences that influence resolution.
 - :class:`MetricContext` — application/ISA-specific context for computation.
 - :class:`MetricDefinition` — a concrete metric implementation.
 - :func:`compute_region_point` / :func:`sum_roofline_points` — arithmetic helpers.
+- :func:`sum_optional_bytes` — optional-metric bytes aggregation helper.
 - :func:`resolve_metrics` — generic priority-based metric resolution.
+- :func:`check_perf_event_paranoid` — pre-flight check that the kernel permits unprivileged hardware counters.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Callable, cast
 
-from carm_roofline.core import ArithmeticOperation, DataType
+from carm_roofline.core import ArithmeticOperation, DataType, UserError
 from carm_roofline.isa import BaseISA
-from carm_roofline.output_utils import debug, detail
+from carm_roofline.output_utils import debug, detail, warn
+
+if TYPE_CHECKING:
+    from .optional_metrics import OptionalMetricName, ResolvedOptionalMetric
+
+
+_PERF_PARANOID_PATH = Path("/proc/sys/kernel/perf_event_paranoid")
+_PERF_PARANOID_LIMIT = 2
+
+
+def perf_event_paranoid() -> int | None:
+    """Return the current perf_event_paranoid value, or None when unreadable or non-integer."""
+    try:
+        return int(_PERF_PARANOID_PATH.read_text(encoding="ascii").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def check_perf_event_paranoid() -> None:
+    """Raise UserError when the kernel blocks unprivileged hardware-counter access.
+
+    Values above 2 block unprivileged per-process hardware counters for both
+    the perf and PAPI backends. An unreadable or non-integer sysctl warns and
+    proceeds optimistically.
+    """
+    paranoid = perf_event_paranoid()
+    if paranoid is None:
+        warn("Could not read /proc/sys/kernel/perf_event_paranoid; assuming perf hardware counters are permitted.")
+    elif paranoid > _PERF_PARANOID_LIMIT:
+        raise UserError(
+            f"perf_event_paranoid is set to {paranoid}; hardware-counter profiling requires a value of 2 or lower. "
+            "Run 'sudo sysctl kernel.perf_event_paranoid=-1' (or any value <= 2) and retry."
+        )
+
+
+class BackendType(Enum):
+    """Supported profiler backends."""
+
+    PAPI = "papi"
+    PERF = "perf"
 
 
 class MetricType(Enum):
@@ -116,13 +159,34 @@ class RooflinePoint:
     flops: float = 0.0
     bytes: float = 0.0
     time_s: float = 0.0
+    optional_bytes: dict[str, dict[str, float]] = field(default_factory=dict)
 
     def __add__(self, other: RooflinePoint) -> RooflinePoint:
         return RooflinePoint(
             flops=self.flops + other.flops,
             bytes=self.bytes + other.bytes,
             time_s=self.time_s + other.time_s,
+            optional_bytes=sum_optional_bytes([self.optional_bytes, other.optional_bytes]),
         )
+
+
+def sum_optional_bytes(optional: list[dict[str, dict[str, float]]]) -> dict[str, dict[str, float]]:
+    """Sum per-metric, per-level optional bytes across points.
+
+    Args:
+        optional: Per-point ``optional_bytes`` dicts.
+
+    Returns:
+        ``{metric_name: {level: summed_bytes}}``; ``{}`` when the list is empty
+        or all points carry no optional bytes.
+    """
+    result: dict[str, dict[str, float]] = {}
+    for per_metric in optional:
+        for name, levels in per_metric.items():
+            target = result.setdefault(name, {})
+            for level, value in levels.items():
+                target[level] = target.get(level, 0.0) + value
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -135,18 +199,25 @@ def compute_region_point(
     time_nsec: int,
     resolved: dict[MetricType, MetricDefinition],
     metric_ctx: MetricContext,
+    resolved_optional: dict[OptionalMetricName, ResolvedOptionalMetric] | None = None,
 ) -> RooflinePoint:
     """Compute (flops, bytes, time_s) for a single region from raw counters.
 
     Only metrics whose required events are all present in *counters* are
     computed; missing events cause the metric to be silently skipped.
+    Optional metrics are computed the same way: each resolved optional metric
+    whose required events are all present contributes its per-level bytes.
 
     Args:
         counters: Raw event counter values keyed by event name.
         time_nsec: Wall-clock time in nanoseconds for the region.
         resolved: Resolved metric implementations from ``resolve_metrics()``.
+        metric_ctx: Metric context for flops/bytes computation.
+        resolved_optional: Resolved optional metrics (from
+            ``resolve_optional_metrics()``); None or empty skips them.
 
-        A `RooflinePoint` with flops, bytes, and time_s.
+    Returns:
+        A `RooflinePoint` with flops, bytes, time_s, and optional_bytes.
     """
     float_counters = {k: float(v) for k, v in counters.items()}
     available_set = frozenset(counters)
@@ -163,7 +234,15 @@ def compute_region_point(
         if impl.required_events <= available_set:
             bytes_val = impl.compute(float_counters, metric_ctx)
 
-    return RooflinePoint(flops=flops, bytes=bytes_val, time_s=time_nsec / 1e9)
+    optional_bytes: dict[str, dict[str, float]] = {}
+    if resolved_optional:
+        for name, ro in resolved_optional.items():
+            if ro.required_events <= available_set:
+                levels = ro.metric.compute(float_counters, bytes_val, ro.role_events, metric_ctx.bytes_per_instruction)
+                # The JSON-facing container is per-metric heterogeneous, so it stays dict[str, float];
+                optional_bytes[name.value] = cast(dict[str, float], levels)
+
+    return RooflinePoint(flops=flops, bytes=bytes_val, time_s=time_nsec / 1e9, optional_bytes=optional_bytes)
 
 
 def sum_roofline_points(points: list[RooflinePoint]) -> RooflinePoint:

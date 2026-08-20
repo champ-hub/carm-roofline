@@ -27,7 +27,7 @@ carm profile -- ./my_app --my --args
 # Profile an MPI application with perf backend
 carm profile --backend perf -- mpirun -np 4 ./my_mpi_app
 
-# Custom PAPI events with cross-thread region-based aggregation
+# Custom aggregation for region-based analysis
 carm profile --backend papi --aggregation region_merged -- ./my_app
 
 # Specify one or more ISA vector widths for custom PAPI FLOPS/BYTES metrics
@@ -68,6 +68,25 @@ Controls how multi-rank (MPI) or multi-thread results are combined:
 When hardware counters can't directly count FLOPs (e.g. on older Intel or AMD CPUs), the tool estimates operations from instruction counts. `--isa` and `--data-type` tell it how many FLOPs each instruction retired, so the estimate is more accurate for your code's actual vector ISA and precision.
 
 In Intel processors, specifying different `--isa` values (e.g. `--isa x86_avx2 x86_scalar`) allows the CARM Tool to use a minimal set of FP_ARITH counters, targeting only those ISAs. This help avoid exceeding the hardware counter budget, which leads to incorrect results. If you get a warning about the resolved events not fitting the available hardware counters, try specifying fewer ISAs, omitting those your application doesn't use.
+
+### Optional metrics (`--metrics`, `--list-metrics`)
+
+The CLI is metric-centric: FLOPS and BYTES are always collected (needed for roofline plotting). Other metrics are optional and selected by name:
+
+```bash
+# List the available optional metrics
+carm profile --list-metrics
+
+# Profile with the cache-residency metric
+carm profile --metrics cache-residency -- ./my_app
+
+# Merge runs when the required events exceed the hardware counter budget
+carm profile --merge-runs --metrics cache-residency -- ./my_app
+```
+
+Each optional metric maps to a set of hardware events chosen from what your system supports. A profile always runs the command once by default; over-budget events are dropped and a warning lists them. `--merge-runs` will run the command multiple times to collect all requested metrics, merging the results from multiple runs.
+
+The cache-residency metric reports, per region, the fraction of memory traffic served at each cache level, with per-level resident bytes. On AMD, the L1 miss rate is scaled to using the declared data-type/ISA bytes-per-instruction, so pass `--data-type` matching the workload (e.g. `--data-type f64` for f64 code) and `--isa` when vectorized. The AMD event set can exceed the hardware counter budget, so use `--merge-runs` to collect it across multiple runs.
 
 ### Output and naming (`--verbose`, `--machine-name`, `--app-name`, `--output-dir`, `--keep-artifacts`)
 

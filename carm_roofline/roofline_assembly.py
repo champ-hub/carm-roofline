@@ -130,6 +130,7 @@ class ApplicationPoint:
     flops_per_second: float
     bandwidth: float
     time_s: float | None = None  # trace timestamp in seconds; None for CARM-benchmarked points
+    optional_fractions: dict[str, dict[str, float]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -270,6 +271,7 @@ def load_applications(path: Path, machine: str = "") -> list[ApplicationRecord]:
                         flops_per_second=float(p.get("flops_per_second", 0)),
                         bandwidth=float(p.get("bandwidth", 0)),
                         time_s=float(p["time_s"]) if p.get("time_s") is not None else None,
+                        optional_fractions=dict(p.get("optional_fractions") or {}),
                     )
                 )
             records.append(

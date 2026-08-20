@@ -260,6 +260,54 @@ def _derive_interval_ns(timestamps: list[str]) -> int:
     return 1_000_000
 
 
+def multiplexed_events(text: str) -> list[str]:
+    """Return the names of events that were not counted or were time-multiplexed.
+
+    Parses ``perf stat -x,`` CSV output in full-run or interval format. An
+    event is reported when its row carries the ``<not counted>`` or
+    ``<not supported>`` marker (the kernel never scheduled it) or when its
+    counted-time percentage is below 100 (the kernel time-multiplexed it).
+    Shadow-metric annotation rows (empty event name) are ignored.
+
+    Returns:
+        Sorted list of affected event names; empty when every event was
+        counted for the whole time it was enabled.
+    """
+    lines = [line for line in text.splitlines() if line.strip() and not line.strip().startswith("#")]
+    if not lines:
+        return []
+    rows = [row for row in csv.reader(io.StringIO("\n".join(lines))) if row and row[0].strip()]
+    if not rows:
+        return []
+
+    is_interval = _is_interval_format(rows)
+    # Interval mode prepends a timestamp column to the full-run layout:
+    # full-run: <count>,<unit>,<event>,<time_running>,<percent>,...
+    # interval: <timestamp>,<count>,<unit>,<event>,<time_running>,<percent>,...
+    col_event = _COL_EVENT_INTERVAL if is_interval else _COL_EVENT_FULLRUN
+    col_count = _COL_COUNT_INTERVAL if is_interval else _COL_COUNT_FULLRUN
+    col_percent = col_event + 2
+
+    affected: set[str] = set()
+    for row in rows:
+        if len(row) <= col_percent:
+            continue
+        event = row[col_event].strip()
+        if not event:
+            continue  # shadow-metric annotation row
+        count = row[col_count].strip()
+        if count.startswith("<not"):
+            affected.add(event)
+            continue
+        percent = row[col_percent].strip()
+        try:
+            if float(percent) < 100:
+                affected.add(event)
+        except ValueError:
+            pass
+    return sorted(affected)
+
+
 def perf_csv_to_thread_metrics(filepath: str | Path, interval_ms: int | None = None) -> ThreadMetrics | None:
     """Parse perf output and wrap it as a single-thread ``ThreadMetrics``.
 
