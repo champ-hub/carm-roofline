@@ -45,7 +45,11 @@ def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite])
         mem_benches = suite.get_memory_benchmarks()
         arith_benches = suite.get_arithmetic_benchmarks()
 
-        for (dt, nt, _ld, _st), group in sorted(_group_combos(mem_benches).items()):
+        combos = sorted(
+            _group_combos(mem_benches).items(),
+            key=lambda kv: (kv[0][0].name, kv[0][1], kv[0][2], kv[0][3]),
+        )
+        for (dt, nt, _ld, _st), group in combos:
             # Collect Bandwidth per cache level from this combo's memory benchmarks
             bw_by_level: dict[str, Bandwidth | None] = dict.fromkeys(_CACHE_LEVELS)
             for bench in group:

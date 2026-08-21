@@ -9,6 +9,7 @@ benchmark code for various configurations without errors.
 
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -40,6 +41,9 @@ from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
 from carm_roofline.core import ArithmeticOperation, Operation
 from carm_roofline.core import Bytes, Operations
 from carm_roofline.core import DataType
+from carm_roofline.benchmark.suites.arithmetic import ArithmeticBenchmarkSuite
+from carm_roofline.benchmark.suites.memory import MemoryBenchmarkSuite
+from carm_roofline.core import MemoryOperation, UserError
 
 
 class TestISACodegen:
@@ -956,6 +960,209 @@ class TestEdgeCases:
 
         assert isinstance(spec, MicrobenchmarkFunctionSpec)
         assert len(spec.body) > 0
+
+
+class TestIntegerCodegen:
+    """Test integer (i8/i16/i32/i64) code generation for x86 ISAs."""
+
+    # Short aliases for the expected-availability matrix below.
+    ADD = ArithmeticOperation.add
+    MUL = ArithmeticOperation.mul
+    DIV = ArithmeticOperation.div
+    LD = MemoryOperation.ld
+    ST = MemoryOperation.st
+
+    # Expected available operations per ISA and integer data type, mirroring the
+    # bench_instructions tables in carm_roofline/isa/x86.py.
+    EXPECTED_AVAILABLE: dict[str, dict[DataType, set[Operation]]] = {
+        "x86_scalar": {
+            DataType.i8: {ADD, MUL, DIV, LD, ST},
+            DataType.i16: {ADD, MUL, DIV, LD, ST},
+            DataType.i32: {ADD, MUL, DIV, LD, ST},
+            DataType.i64: {ADD, MUL, DIV, LD, ST},
+        },
+        "x86_sse": {
+            DataType.i8: {ADD, LD, ST},
+            DataType.i16: {ADD, MUL, LD, ST},
+            DataType.i32: {ADD, MUL, LD, ST},
+            DataType.i64: {ADD, LD, ST},
+        },
+        "x86_avx": {
+            DataType.i8: set(),
+            DataType.i16: set(),
+            DataType.i32: set(),
+            DataType.i64: set(),
+        },
+        "x86_avx2": {
+            DataType.i8: {ADD, LD, ST},
+            DataType.i16: {ADD, MUL, LD, ST},
+            DataType.i32: {ADD, MUL, LD, ST},
+            DataType.i64: {ADD, LD, ST},
+        },
+        "x86_avx512": {
+            DataType.i8: {ADD, LD, ST},
+            DataType.i16: {ADD, MUL, LD, ST},
+            DataType.i32: {ADD, MUL, LD, ST},
+            DataType.i64: {ADD, MUL, LD, ST},
+        },
+    }
+
+    @pytest.mark.parametrize(
+        "isa_name,data_type,operation,mnemonic",
+        [
+            ("x86_scalar", DataType.i8, ArithmeticOperation.add, "addb"),
+            ("x86_scalar", DataType.i8, ArithmeticOperation.mul, "imulb"),
+            ("x86_scalar", DataType.i8, ArithmeticOperation.div, "divb"),
+            ("x86_scalar", DataType.i16, ArithmeticOperation.add, "addw"),
+            ("x86_scalar", DataType.i16, ArithmeticOperation.mul, "imulw"),
+            ("x86_scalar", DataType.i16, ArithmeticOperation.div, "divw"),
+            ("x86_scalar", DataType.i32, ArithmeticOperation.add, "addl"),
+            ("x86_scalar", DataType.i32, ArithmeticOperation.mul, "imull"),
+            ("x86_scalar", DataType.i32, ArithmeticOperation.div, "divl"),
+            ("x86_scalar", DataType.i64, ArithmeticOperation.add, "addq"),
+            ("x86_scalar", DataType.i64, ArithmeticOperation.mul, "imulq"),
+            ("x86_scalar", DataType.i64, ArithmeticOperation.div, "divq"),
+            ("x86_sse", DataType.i8, ArithmeticOperation.add, "paddb"),
+            ("x86_sse", DataType.i16, ArithmeticOperation.add, "paddw"),
+            ("x86_sse", DataType.i16, ArithmeticOperation.mul, "pmullw"),
+            ("x86_sse", DataType.i32, ArithmeticOperation.add, "paddd"),
+            ("x86_sse", DataType.i32, ArithmeticOperation.mul, "pmulld"),
+            ("x86_sse", DataType.i64, ArithmeticOperation.add, "paddq"),
+            ("x86_avx2", DataType.i8, ArithmeticOperation.add, "vpaddb"),
+            ("x86_avx2", DataType.i16, ArithmeticOperation.mul, "vpmullw"),
+            ("x86_avx2", DataType.i32, ArithmeticOperation.add, "vpaddd"),
+            ("x86_avx2", DataType.i32, ArithmeticOperation.mul, "vpmulld"),
+            ("x86_avx2", DataType.i64, ArithmeticOperation.add, "vpaddq"),
+            ("x86_avx512", DataType.i8, ArithmeticOperation.add, "vpaddb"),
+            ("x86_avx512", DataType.i32, ArithmeticOperation.mul, "vpmulld"),
+            ("x86_avx512", DataType.i64, ArithmeticOperation.add, "vpaddq"),
+            ("x86_avx512", DataType.i64, ArithmeticOperation.mul, "vpmullq"),
+        ],
+    )
+    def test_integer_arithmetic_codegen(
+        self, mock_context, isa_name: str, data_type: DataType, operation: ArithmeticOperation, mnemonic: str
+    ):
+        """Test that integer arithmetic benchmarks generate the expected mnemonics."""
+        isa = TestISACodegen.instantiate_isa(isa_name)
+
+        params = ArithmeticBenchmarkParams(
+            data_type=data_type,
+            operation=operation,
+            num_ops=Operations(64),
+            thread_affinity=[0],
+        )
+        spec = isa.generate_arithmetic(params, mock_context)
+
+        assert isinstance(spec, MicrobenchmarkFunctionSpec)
+        assert len(spec.body) > 0
+        assert mnemonic in spec.body
+
+    @pytest.mark.parametrize(
+        "data_type,setup_asm",
+        [
+            (DataType.i8, "movb $0, %%ah"),
+            (DataType.i16, "xorw %%dx, %%dx"),
+            (DataType.i32, "xorl %%edx, %%edx"),
+            (DataType.i64, "xorl %%edx, %%edx"),
+        ],
+    )
+    def test_integer_div_setup_instructions(self, mock_context, data_type: DataType, setup_asm: str):
+        """Test that scalar integer div benchmarks preload dividend regs to avoid #DE faults."""
+        isa = X86Scalar()
+
+        params = ArithmeticBenchmarkParams(
+            data_type=data_type,
+            operation=ArithmeticOperation.div,
+            num_ops=Operations(64),
+            thread_affinity=[0],
+        )
+        spec = isa.generate_arithmetic(params, mock_context)
+
+        assert isinstance(spec, MicrobenchmarkFunctionSpec)
+        assert len(spec.body) > 0
+        assert setup_asm in spec.body
+
+    @pytest.mark.parametrize(
+        "isa_name,data_type,mnemonic",
+        [
+            ("x86_scalar", DataType.i32, "movl"),
+            ("x86_scalar", DataType.i64, "movq"),
+            ("x86_sse", DataType.i32, "movaps"),
+            ("x86_avx2", DataType.i64, "vmovaps"),
+            ("x86_avx512", DataType.i32, "vmovaps"),
+        ],
+    )
+    def test_integer_memory_codegen(self, mock_context, isa_name: str, data_type: DataType, mnemonic: str):
+        """Test that integer memory benchmarks generate the expected load/store mnemonics."""
+        isa = TestISACodegen.instantiate_isa(isa_name)
+
+        params = MemoryBenchmarkParams(
+            data_type=data_type,
+            load_store_ratio=LoadStoreRatio(1, 1),
+            size_per_thread=Bytes(512),
+            thread_affinity=[0],
+            memory_level_name="L1",
+        )
+        spec = isa.generate_memory(params, mock_context)
+
+        assert isinstance(spec, MicrobenchmarkFunctionSpec)
+        assert len(spec.body) > 0
+        assert mnemonic in spec.body
+
+    @pytest.mark.parametrize("isa_name", EXPECTED_AVAILABLE.keys())
+    def test_available_operations_matrix(self, isa_name: str):
+        """Test that each ISA exposes exactly the expected integer operations."""
+        isa = TestISACodegen.instantiate_isa(isa_name)
+
+        for data_type, expected in TestIntegerCodegen.EXPECTED_AVAILABLE[isa_name].items():
+            assert isa.bench_instructions.available_operations(data_type) == frozenset(expected)
+
+    def test_arithmetic_suite_skips_unavailable_instructions(self, monkeypatch, mock_context):
+        """Test that the arithmetic suite skips instructions unavailable for a data type."""
+        mock_context.architecture.isa = [X86SSE]
+        mock_context.benchmarking = SimpleNamespace(
+            data_type=[DataType.i32],
+            instructions={ArithmeticOperation.add, ArithmeticOperation.fma},
+            threads=[1],
+            num_ops=Operations(16),
+        )
+
+        suite = ArithmeticBenchmarkSuite.generate(mock_context, "x86_sse")
+
+        names = list(suite.benchmarks)
+        assert any("add" in name and "i32" in name for name in names)
+        assert all("fma" not in name for name in names)
+
+    def test_arithmetic_suite_raises_when_nothing_available(self, monkeypatch, mock_context):
+        """Test that a fully-unavailable arithmetic suite raises UserError."""
+        mock_context.architecture.isa = [X86AVX]
+        mock_context.benchmarking = SimpleNamespace(
+            data_type=[DataType.i32],
+            instructions={ArithmeticOperation.add},
+            threads=[1],
+            num_ops=Operations(16),
+        )
+
+        with pytest.raises(UserError):
+            ArithmeticBenchmarkSuite.generate(mock_context, "x86_avx")
+
+    def test_memory_suite_skips_unavailable_dtype(self, monkeypatch, mock_context):
+        """Test that the memory suite skips data types without load/store instructions."""
+        mock_context.architecture.isa = [X86AVX]
+        mock_context.benchmarking = SimpleNamespace(
+            data_type=[DataType.i32, DataType.f32],
+            threads=[1],
+            ld_st_ratio=[LoadStoreRatio(1, 0)],
+            mem_target=["L1"],
+            mem_test_sizes=None,
+        )
+
+        suite = MemoryBenchmarkSuite.generate(mock_context, "x86_avx")
+
+        names = list(suite.benchmarks)
+        assert len(names) > 0
+        assert all("f32" in name for name in names)
+        assert all("i32" not in name for name in names)
 
 
 if __name__ == "__main__":

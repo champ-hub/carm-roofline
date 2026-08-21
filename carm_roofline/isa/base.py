@@ -210,6 +210,10 @@ class BaseISA:
         "Returns the assembly instructions that are run prior to the benchmark, e.g. RVV's vsetvli instruction"
         return []
 
+    def implicit_clobbers(self, data_type: DataType) -> list[str]:
+        "Registers written implicitly by benchmark instructions (e.g. idiv's dividend regs); must be declared clobbers"
+        return []
+
     def format_iasm_input(self, var: InlineASM.Input) -> str:
         "Formats an inline asm input variable, may vary between ISAs"
         return f"%[{var.asm_name}]"
@@ -582,8 +586,13 @@ class BaseISA:
             self.control_instructions.branch_nz.fmt(self.helper_registers.outer_iterator, self.OUTER_LOOP_LABEL),
         ]
 
-        # Clobbers: bench registers + helper registers used by the outer/inner loop
-        clobbers = [*bench_registers, self.helper_registers.outer_iterator, self.helper_registers.inner_iterator]
+        # Clobbers: bench registers + implicit clobbers + helper registers used by the outer/inner loop
+        clobbers = [
+            *bench_registers,
+            *self.implicit_clobbers(params.data_type),
+            self.helper_registers.outer_iterator,
+            self.helper_registers.inner_iterator,
+        ]
         iasm = InlineASM(asm, [var_num_reps], clobbers)
         bench_code = self.__generate_generic_benchmark(iasm, func_name=func_name)
 
@@ -762,7 +771,7 @@ class BaseISA:
                 hregs.pointer_increment,
                 hregs.write_pointer,
             ]
-        clobbers = [*bench_registers, *helper_clobbers]
+        clobbers = [*bench_registers, *self.implicit_clobbers(params.data_type), *helper_clobbers]
         iasm = InlineASM(asm, asm_inputs, clobbers)
         bench_code = self.__generate_generic_benchmark(iasm, func_name=func_name)
 

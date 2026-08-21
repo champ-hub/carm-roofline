@@ -8,7 +8,8 @@ from types import SimpleNamespace
 from carm_roofline.architecture.memory import CacheAwareThreadAffinity, MemoryLevelInfo
 from carm_roofline.benchmark.benchmarking import LoadStoreRatio
 from carm_roofline.benchmark.generation import MemoryLayoutMode
-from carm_roofline.core import DataType
+from carm_roofline.benchmark.generation.code_gen import TypedInstructions
+from carm_roofline.core import DataType, ArithmeticOperation, MemoryOperation
 from carm_roofline.benchmark.suites.memory import MemoryBenchmarkSuite
 from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
 from carm_roofline.core import Bytes, Frequency
@@ -65,6 +66,16 @@ class _TopologyWithDRAMFinal:
 
 class _DummyISA:
     name = "dummy_isa"
+
+    bench_instructions = TypedInstructions(
+        {
+            DataType.f64: {
+                ArithmeticOperation.add: "vaddsd {}, {}, {}",
+                MemoryOperation.ld: "movsd {off}({ptr}), {reg}",
+                MemoryOperation.st: "movsd {reg}, {off}({ptr})",
+            }
+        }
+    )
 
     @classmethod
     def from_architecture(cls, architecture):

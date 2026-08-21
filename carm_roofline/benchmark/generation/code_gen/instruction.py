@@ -373,6 +373,10 @@ class TypedInstructions:
         assert isinstance(instruction, (Arithmetic, Memory))
         return instruction
 
+    def available_operations(self, data_type: DataType) -> frozenset[Operation]:
+        """Operations with an instruction format for this data type (empty set if unsupported)."""
+        return frozenset(self.formats.get(data_type, {}))
+
     def __getitem__(self, arg: DataType) -> dict[Operation, _Instruction]:
         return self.formats[arg]
 

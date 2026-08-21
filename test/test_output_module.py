@@ -516,6 +516,7 @@ def _make_minimal_roofline_suite(
     isa_name: str = "isa1",
     performance_gops: float = 10e9,
     bandwidth_bps: float = 40e9,
+    data_type: "DataType | None" = None,
 ) -> "RooflineBenchmarkSuite":
     """Create a minimal roofline suite with one arith + one L1 mem benchmark."""
     from carm_roofline.benchmark.benchmark import (
@@ -532,14 +533,17 @@ def _make_minimal_roofline_suite(
     from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
     from carm_roofline.core import Bandwidth, Bytes, Operations, Performance, Seconds
 
+    if data_type is None:
+        data_type = DataType.f32
+
     arith_params = ArithmeticBenchmarkParams(
-        data_type=DataType.f32,
+        data_type=data_type,
         thread_affinity=[0],
         operation=ArithmeticOperation.fma,
         num_ops=Operations(1024),
     )
     arith_spec = MicrobenchmarkFunctionSpec(
-        function_name="arith",
+        function_name=f"arith_{data_type.name}",
         body="",
         read_array_size=Bytes(0),
         write_array_size=Bytes(0),
@@ -552,14 +556,14 @@ def _make_minimal_roofline_suite(
     )
 
     mem_params = MemoryBenchmarkParams(
-        data_type=DataType.f32,
+        data_type=data_type,
         thread_affinity=[0],
         load_store_ratio=LoadStoreRatio(2, 1),
         size_per_thread=Bytes(1024),
         memory_level_name="L1",
     )
     mem_spec = MicrobenchmarkFunctionSpec(
-        function_name="mem",
+        function_name=f"mem_{data_type.name}",
         body="",
         read_array_size=Bytes(0),
         write_array_size=Bytes(0),
@@ -590,6 +594,29 @@ def test_roofline_cli_prints_summary():
     handler = _get_handler_for_test_type(TestType.ROOFLINE)
     try:
         handler.print_table(context, isa_suites)
+    except Exception as e:
+        pytest.fail(f"Handler raised exception: {e}")
+
+
+def test_roofline_cli_prints_summary_with_multiple_data_types():
+    """Roofline CLI summary handles memory benchmarks across multiple data types.
+
+    The summary groups memory benches by (data_type, threads, ld, st); sorting
+    those groups previously crashed because DataType objects are not orderable.
+    """
+    from carm_roofline.benchmark.output import TestType, _get_handler_for_test_type
+    from carm_roofline.core import DataType
+
+    context = _make_fake_context(["isa1"], freq_hz=3.0e9)
+    context.benchmarking.test = TestType.ROOFLINE
+
+    suite = _make_minimal_roofline_suite()
+    for name, bench in _make_minimal_roofline_suite(data_type=DataType.i32).get_memory_benchmarks().items():
+        suite.add_benchmark(name, bench)
+
+    handler = _get_handler_for_test_type(TestType.ROOFLINE)
+    try:
+        handler.print_table(context, {"isa1": suite})
     except Exception as e:
         pytest.fail(f"Handler raised exception: {e}")
 
