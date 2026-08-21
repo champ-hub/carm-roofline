@@ -66,6 +66,26 @@ class MicrobenchmarkFunctionSpec:
     def num_threads(self) -> int:
         return len(self.thread_affinity)
 
+    def measurement_key(self) -> tuple[object, ...]:
+        """Identity of the physical experiment this spec performs.
+
+        Two specs with equal keys render identical header entries (modulo the
+        function name) and therefore measure identical work. Every field that the
+        generated header consumes participates; function_name is excluded because
+        it differs by construction between duplicates.
+        """
+        # body embeds the function name once, in its first line (the C signature),
+        # so strip the first occurrence only.
+        canonical_body = self.body.replace(self.function_name, "", 1)
+        return (
+            canonical_body,
+            self.read_array_size.value,
+            self.write_array_size.value,
+            tuple(self.thread_affinity),
+            self.frequency.value,
+            None if self.nominal_frequency is None else self.nominal_frequency.value,
+        )
+
 
 def _validate_specs(functions: list[MicrobenchmarkFunctionSpec]) -> None:
     """Ensure specs are well-formed before rendering."""

@@ -75,6 +75,26 @@ def generate_microbenchmarks(context: CARMContext, isa_name: str) -> ISABenchmar
     return suite_class.generate(context, isa_name)
 
 
+def _group_duplicates(
+    flat_benchmarks: dict[str, BaseBenchmark],
+) -> dict[tuple[object, ...], list[BaseBenchmark]]:
+    """Group benchmarks whose specs perform the identical experiment."""
+    groups: dict[tuple[object, ...], list[BaseBenchmark]] = {}
+    for benchmark in flat_benchmarks.values():
+        groups.setdefault(benchmark.spec.measurement_key(), []).append(benchmark)
+    return groups
+
+
+def _propagate_results(groups: dict[tuple[object, ...], list[BaseBenchmark]]) -> None:
+    """Copy each measured canonical result onto its duplicate records."""
+    for group in groups.values():
+        canonical = group[0]
+        if canonical.results is None:
+            continue
+        for alias in group[1:]:
+            alias.process_results(canonical.results.time_taken, canonical.results.num_repetitions)
+
+
 def run_full_benchmark(
     context: CARMContext,
 ) -> dict[str, ISABenchmarkSuite]:
@@ -120,6 +140,18 @@ def run_full_benchmark(
 
     debug(f"Flattened benchmarks for compilation: {list(flat_benchmarks.keys())}")
 
+    # Group benchmarks that perform the identical physical experiment and run
+    # only one canonical representative per group; results are fanned back out
+    # to every duplicate record after parsing.
+    groups = _group_duplicates(flat_benchmarks)
+    canonical_benchmarks = [group[0] for group in groups.values()]
+    num_suppressed = len(flat_benchmarks) - len(canonical_benchmarks)
+    if num_suppressed:
+        detail(
+            f"Suppressed {num_suppressed} duplicate benchmark(s): "
+            f"running {len(canonical_benchmarks)} unique measurement(s)"
+        )
+
     keep_workspace = context.run_config.dry_run or context.run_config.keep_artifacts
     with workspace_context(keep=keep_workspace, prefix="carm-benchmark-") as workspace_dir:
         workspace = Path(workspace_dir)
@@ -132,8 +164,8 @@ def run_full_benchmark(
         generated_header = workspace / "microbenchmarks.h"
         generated_binary = workspace / "benchmark"
 
-        # Step 3: Create header file from all benchmark specifications
-        create_microbenchmark_header(flat_benchmarks.values(), generated_header)
+        # Step 3: Create header file from canonical benchmark specifications
+        create_microbenchmark_header(canonical_benchmarks, generated_header)
 
         if context.run_config.dry_run:
             detail(f"Dry run: wrote generated header to {generated_header}; skipping compilation and execution.")
@@ -148,13 +180,14 @@ def run_full_benchmark(
         )
         debug(f"Compiled binary: {binary_path}")
 
-        # Step 5: Run compiled binary (all ISAs and benchmarks at once)
-        expected_runtime = context.benchmarking.test_time * total_benchmarks
+        # Step 5: Run compiled binary (canonical measurements only)
+        expected_runtime = context.benchmarking.test_time * len(canonical_benchmarks)
         detail(f"Running benchmark. Expected runtime: >{expected_runtime:.0f} seconds...")
-        raw_output = run_microbenchmarks(context, binary_path, (b.spec for b in flat_benchmarks.values()))
+        raw_output = run_microbenchmarks(context, binary_path, (b.spec for b in canonical_benchmarks))
 
         # Step 6: Parse results and populate BenchmarkResult objects
-        parse_benchmark_output(flat_benchmarks, raw_output)
+        parse_benchmark_output({b.name: b for b in canonical_benchmarks}, raw_output)
+        _propagate_results(groups)
 
     return isa_suites
 
