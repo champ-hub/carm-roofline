@@ -110,6 +110,7 @@ class TestISACodegen:
             ("x86_avx2", ArithmeticOperation.mul, DataType.f64),
             ("x86_avx512", ArithmeticOperation.div, DataType.f32),
             ("x86_avx512", ArithmeticOperation.fma, DataType.f64),
+            ("x86_avx512", ArithmeticOperation.fma, DataType.bf16),
             ("arm_scalar", ArithmeticOperation.add, DataType.f32),
             ("arm_scalar", ArithmeticOperation.mul, DataType.f64),
             ("arm_neon", ArithmeticOperation.add, DataType.f32),
@@ -969,6 +970,7 @@ class TestIntegerCodegen:
     ADD = ArithmeticOperation.add
     MUL = ArithmeticOperation.mul
     DIV = ArithmeticOperation.div
+    FMA = ArithmeticOperation.fma
     LD = MemoryOperation.ld
     ST = MemoryOperation.st
 
@@ -1004,6 +1006,7 @@ class TestIntegerCodegen:
             DataType.i16: {ADD, MUL, LD, ST},
             DataType.i32: {ADD, MUL, LD, ST},
             DataType.i64: {ADD, MUL, LD, ST},
+            DataType.bf16: {FMA, LD, ST},
         },
     }
 
@@ -1037,6 +1040,7 @@ class TestIntegerCodegen:
             ("x86_avx512", DataType.i32, ArithmeticOperation.mul, "vpmulld"),
             ("x86_avx512", DataType.i64, ArithmeticOperation.add, "vpaddq"),
             ("x86_avx512", DataType.i64, ArithmeticOperation.mul, "vpmullq"),
+            ("x86_avx512", DataType.bf16, ArithmeticOperation.fma, "vdpbf16ps"),
         ],
     )
     def test_integer_arithmetic_codegen(
@@ -1090,6 +1094,7 @@ class TestIntegerCodegen:
             ("x86_sse", DataType.i32, "movaps"),
             ("x86_avx2", DataType.i64, "vmovaps"),
             ("x86_avx512", DataType.i32, "vmovaps"),
+            ("x86_avx512", DataType.bf16, "vmovaps"),
         ],
     )
     def test_integer_memory_codegen(self, mock_context, isa_name: str, data_type: DataType, mnemonic: str):

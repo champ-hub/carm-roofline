@@ -10,6 +10,7 @@ class DataType(Enum):
     i64 = "int64_t"
     f32 = "float"
     f64 = "double"
+    bf16 = "uint16_t"
 
     @staticmethod
     def check_validity(obj: object) -> None:
@@ -32,6 +33,7 @@ class DataType(Enum):
             DataType.i64: 8,
             DataType.f32: 4,
             DataType.f64: 8,
+            DataType.bf16: 2,
         }
         if self not in size_map:
             raise ValueError(f"The size for data type {self} is unknown")

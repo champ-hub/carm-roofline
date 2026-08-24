@@ -339,6 +339,11 @@ class X86AVX512(X86SSE, register=True):
                 MemoryOperation.ld: "vmovaps {off}({ptr}), {reg}",
                 MemoryOperation.st: "vmovaps {reg}, {off}({ptr})",
             },
+            DataType.bf16: {
+                ArithmeticOperation.fma: "vdpbf16ps {}, {}, {}",
+                MemoryOperation.ld: "vmovaps {off}({ptr}), {reg}",
+                MemoryOperation.st: "vmovaps {reg}, {off}({ptr})",
+            },
         }
     )
 
