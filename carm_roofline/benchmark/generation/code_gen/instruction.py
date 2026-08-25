@@ -83,15 +83,17 @@ class _Instruction:
 class LoadImm(_Instruction):
     """Load immediate value into destination register.
 
+    Each element returned by :meth:`fmt` contains one assembly line.
+
     Required fields: {dst} (destination register), {imm} (immediate value)
     """
 
     def required_fields(self) -> tuple[str, ...]:
         return ("{dst}", "{imm}")
 
-    def fmt(self, dst: str, imm: StrLike) -> str:
+    def fmt(self, dst: str, imm: StrLike) -> list[str]:
         formatted = self.pattern.format(dst=dst, imm=imm)
-        return escape_for_inline_asm(formatted)
+        return [escape_for_inline_asm(formatted)]
 
 
 class LoadWord(_Instruction):

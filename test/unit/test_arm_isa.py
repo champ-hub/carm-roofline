@@ -29,7 +29,7 @@ def test_neon_operations_scale_with_vector_width() -> None:
 def test_arm_load_immediate_emits_required_16_bit_words() -> None:
     loader = ArmLoadImm()
 
-    assert loader.fmt("x3", 0x123400000001) == "movz x3, #1\\n\\tmovk x3, #4660, lsl #32"
+    assert loader.fmt("x3", 0x123400000001) == ["movz x3, #1", "movk x3, #4660, lsl #32"]
     with pytest.raises(ValueError, match="unsigned 64-bit"):
         loader.fmt("x3", -1)
 

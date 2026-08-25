@@ -566,7 +566,9 @@ class BaseISA:
             *_add_if(
                 loop_split.instance_inner_loop,
                 # Load the number of iters, add loop label
-                self.control_instructions.load_imm.fmt(self.helper_registers.inner_iterator, loop_split.num_iterations),
+                *self.control_instructions.load_imm.fmt(
+                    self.helper_registers.inner_iterator, loop_split.num_iterations
+                ),
                 self.INNER_LOOP_LABEL + ":",
                 *generate_insts(loop_split.inner_repeats),
                 # Loop control (iterator and pointer operations, branch)
@@ -690,7 +692,7 @@ class BaseISA:
         var_write_ptr = InlineASM.Input(c_name="write_ptr", asm_name="write_ptr")
 
         asm = [
-            self.control_instructions.load_imm.fmt(
+            *self.control_instructions.load_imm.fmt(
                 self.helper_registers.pointer_increment, loop_config.bytes_per_block
             ),
             *self.setup_assembly(params.data_type),
@@ -713,7 +715,7 @@ class BaseISA:
             *_add_if(
                 loop_config.instance_inner_loop,
                 # Load the number of iters, add loop label
-                self.control_instructions.load_imm.fmt(
+                *self.control_instructions.load_imm.fmt(
                     self.helper_registers.inner_iterator, loop_config.num_iterations
                 ),
                 self.INNER_LOOP_LABEL + ":",

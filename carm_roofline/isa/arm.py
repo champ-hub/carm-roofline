@@ -19,7 +19,7 @@ class ArmLoadImm(inst.LoadImm):
     def __init__(self) -> None:
         super().__init__("movz {dst}, {imm}")
 
-    def fmt(self, dst: str, imm: inst.StrLike) -> str:
+    def fmt(self, dst: str, imm: inst.StrLike) -> list[str]:
         if not isinstance(imm, int) or not 0 <= imm < 2**64:
             raise ValueError(f"ARM immediate must fit in an unsigned 64-bit register: {imm}")
 
@@ -28,7 +28,7 @@ class ArmLoadImm(inst.LoadImm):
             value = (imm >> shift) & 0xFFFF
             if value:
                 instructions.append(f"movk {dst}, #{value}, lsl #{shift}")
-        return inst.escape_for_inline_asm("\\n\\t".join(instructions))
+        return instructions
 
 
 class BaseArm(BaseISA):

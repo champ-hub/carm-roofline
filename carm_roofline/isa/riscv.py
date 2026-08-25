@@ -159,7 +159,7 @@ class RISCV_RVV_071(RISCVScalar, register=True):
         elem_size = self.TYPE_TO_VSETVL[data_type]
         # We can reuse the outer iter here, not overwriting anything
         return [
-            self.control_instructions.load_imm.fmt(self.helper_registers.outer_iterator, self.vlen_bits),
+            *self.control_instructions.load_imm.fmt(self.helper_registers.outer_iterator, self.vlen_bits),
             f"vsetvli x0, {self.helper_registers.outer_iterator}, {elem_size}, m{self.lmul}",
         ]
 
