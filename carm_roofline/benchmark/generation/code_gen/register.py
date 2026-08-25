@@ -93,15 +93,14 @@ class CyclicRegisterSet(RegisterCollection):
         super().__init__(format_, index_set)
         self.running_index: int = 0
 
-    def get(self) -> str:
-        """
-        Returns a formatted string for the current register, based on the `running_index`, which is then incremented.
+    def get(self, register_format: str | None = None) -> str:
+        """Return the current register formatted with an optional name format.
 
-        Repeatedly calling this method will cycle through all the registers in the set.
+        The call advances the cycle regardless of the selected format.
         """
-        formatted = self[self.running_index]
+        index = self.indices[self.running_index]
         self.running_index = (self.running_index + 1) % len(self.indices)
-        return formatted
+        return (register_format or self.register_format).format(index)
 
 
 class HelperRegisterSet(RegisterCollection):

@@ -194,11 +194,15 @@ class Arithmetic(_Instruction):
     Pattern uses {} as a placeholder that gets replaced with a register.
     """
 
+    def __init__(self, pattern: str, register_format: str | None = None):
+        super().__init__(pattern)
+        self.register_format = register_format
+
     def required_fields(self) -> tuple[str, ...]:
         return ()
 
     def fmt(self, bench_regs: CyclicRegisterSet) -> str:
-        bench_reg = bench_regs.get()
+        bench_reg = bench_regs.get(self.register_format)
         formatted = self.pattern.replace("{}", bench_reg)
         return escape_for_inline_asm(formatted)
 

@@ -39,6 +39,15 @@ def test_cyclic_register_set_cycles():
 
 
 @pytest.mark.unit
+def test_cyclic_register_set_formats_current_register_without_resetting_cycle():
+    """CyclicRegisterSet should apply an override to the current register."""
+    cyclic = CyclicRegisterSet("q{}", [(0, 1)])
+
+    assert cyclic.get("v{}") == "v0"
+    assert cyclic.get() == "q1"
+
+
+@pytest.mark.unit
 def test_helper_register_set_immutable():
     """HelperRegisterSet should provide named accessors without cycling."""
     helpers = HelperRegisterSet("r{}", [0, 1, 2, 3, 4])

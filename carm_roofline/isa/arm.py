@@ -67,10 +67,10 @@ class ArmScalar(BaseArm, register=True):
 
 def _make_float_instructions_neon(suf: str) -> dict[Operation, str | _Instruction]:
     return {
-        ArithmeticOperation.add: f"fadd {{}}.{suf}, {{}}.{suf}, {{}}.{suf}",
-        ArithmeticOperation.mul: f"fmul {{}}.{suf}, {{}}.{suf}, {{}}.{suf}",
-        ArithmeticOperation.div: f"fdiv {{}}.{suf}, {{}}.{suf}, {{}}.{suf}",
-        ArithmeticOperation.fma: f"fmla {{}}.{suf}, {{}}.{suf}, {{}}.{suf}",
+        ArithmeticOperation.add: inst.Arithmetic(f"fadd {{}}.{suf}, {{}}.{suf}, {{}}.{suf}", register_format="v{}"),
+        ArithmeticOperation.mul: inst.Arithmetic(f"fmul {{}}.{suf}, {{}}.{suf}, {{}}.{suf}", register_format="v{}"),
+        ArithmeticOperation.div: inst.Arithmetic(f"fdiv {{}}.{suf}, {{}}.{suf}, {{}}.{suf}", register_format="v{}"),
+        ArithmeticOperation.fma: inst.Arithmetic(f"fmla {{}}.{suf}, {{}}.{suf}, {{}}.{suf}", register_format="v{}"),
         MemoryOperation.ld: "ldr {reg}, [{ptr}, #{off}]",
         MemoryOperation.st: "str {reg}, [{ptr}, #{off}]",
     }
