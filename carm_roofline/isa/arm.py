@@ -23,11 +23,20 @@ class ArmLoadImm(inst.LoadImm):
         if not isinstance(imm, int) or not 0 <= imm < 2**64:
             raise ValueError(f"ARM immediate must fit in an unsigned 64-bit register: {imm}")
 
-        instructions = [f"movz {dst}, #{imm & 0xFFFF}"]
-        for shift in range(16, 64, 16):
-            value = (imm >> shift) & 0xFFFF
-            if value:
-                instructions.append(f"movk {dst}, #{value}, lsl #{shift}")
+        words = [(imm >> shift) & 0xFFFF for shift in range(0, 64, 16)]
+        if imm == 0:
+            return [f"movz {dst}, #0"]
+
+        first_shift = next(index for index, word in enumerate(words) if word) * 16
+        instructions = [
+            f"movz {dst}, #{words[first_shift // 16]}"
+            if first_shift == 0
+            else f"movz {dst}, #{words[first_shift // 16]}, lsl #{first_shift}"
+        ]
+        for shift in range(first_shift + 16, 64, 16):
+            word = words[shift // 16]
+            if word:
+                instructions.append(f"movk {dst}, #{word}, lsl #{shift}")
         return instructions
 
 
