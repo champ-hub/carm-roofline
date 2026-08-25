@@ -1,12 +1,34 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from carm_roofline.architecture.architecture import Architecture
+
 
 from carm_roofline.benchmark.generation.code_gen import ControlInstructions, TypedInstructions, instruction as inst
 from carm_roofline.benchmark.generation.code_gen.instruction import _Instruction
 from carm_roofline.benchmark.generation.code_gen.register import CyclicRegisterSet, HelperRegisterSet, TypedRegisterSets
 from carm_roofline.core import ArithmeticOperation, DataType, MemoryOperation, Operation
 from carm_roofline.isa.base import BaseISA
+
+
+class ArmLoadImm(inst.LoadImm):
+    """Load an unsigned 64-bit immediate with ``movz`` and ``movk`` instructions."""
+
+    def __init__(self) -> None:
+        super().__init__("movz {dst}, {imm}")
+
+    def fmt(self, dst: str, imm: inst.StrLike) -> str:
+        if not isinstance(imm, int) or not 0 <= imm < 2**64:
+            raise ValueError(f"ARM immediate must fit in an unsigned 64-bit register: {imm}")
+
+        instructions = [f"movz {dst}, #{imm & 0xFFFF}"]
+        for shift in range(16, 64, 16):
+            value = (imm >> shift) & 0xFFFF
+            if value:
+                instructions.append(f"movk {dst}, #{value}, lsl #{shift}")
+        return inst.escape_for_inline_asm("\\n\\t".join(instructions))
 
 
 class BaseArm(BaseISA):
@@ -17,7 +39,7 @@ class BaseArm(BaseISA):
     max_immediate = 2**12 - 1  # unsigned 12-bit
 
     class ControlInsts(ControlInstructions):
-        load_imm = inst.LoadImm("mov {dst}, {imm}")
+        load_imm = ArmLoadImm()
         load_word = inst.LoadWord("ldr {dst}, {ptr}")
         branch_nz = inst.BranchNotZero("cbnz {src}, {tgt}")
         add_imm = inst.AddImm("add {src}, {src}, {imm}")
@@ -87,7 +109,7 @@ class ArmNeon(BaseArm, register=True):
     )
 
     def __init__(self, **kwargs: Any):
-        super().__init__()
+        super().__init__(**kwargs)
 
         self.bench_registers = TypedRegisterSets(
             {
@@ -101,15 +123,20 @@ class ArmNeon(BaseArm, register=True):
     def bytes_per_inst(self, data_type: DataType) -> int:
         return 128 // 8
 
+    def ops_per_inst(self, data_type: DataType, op: ArithmeticOperation) -> int:
+        return 128 // data_type.bits() * op.ops()
 
-def _make_float_instructions_sve(suf: str) -> dict[Operation, str | _Instruction]:
+
+def _make_float_instructions_sve(arith_suf: str, mem_suf: str) -> dict[Operation, str | _Instruction]:
+    arith_reg = f"{{}}.{arith_suf}"
+    mem_reg = f"{{reg}}.{arith_suf}"
     return {
-        ArithmeticOperation.add: f"fadd {{}}.{suf}, {{}}.{suf}, {{}}.{suf}",
-        ArithmeticOperation.mul: f"fmul {{}}.{suf}, {{}}.{suf}, {{}}.{suf}",
-        ArithmeticOperation.div: f"fdiv {{}}.{suf}, {{}}.{suf}, {{}}.{suf}",
-        ArithmeticOperation.fma: f"fmla {{}}.{suf}, {{}}.{suf}, {{}}.{suf}",
-        MemoryOperation.ld: f"ld1w {{reg}}.{suf}, p0/z, [{{ptr}}, #{{off}}, mul vl]",
-        MemoryOperation.st: f"st1w {{reg}}.{suf}, p0, [{{ptr}}, #{{off}}, mul vl]",
+        ArithmeticOperation.add: (f"fadd {arith_reg}, p0/m, {arith_reg}, {arith_reg}"),
+        ArithmeticOperation.mul: (f"fmul {arith_reg}, p0/m, {arith_reg}, {arith_reg}"),
+        ArithmeticOperation.div: (f"fdiv {arith_reg}, p0/m, {arith_reg}, {arith_reg}"),
+        ArithmeticOperation.fma: (f"fmla {arith_reg}, p0/m, {arith_reg}, {arith_reg}"),
+        MemoryOperation.ld: f"ld1{mem_suf} {mem_reg}, p0/z, [{{ptr}}, #{{off}}, mul vl]",
+        MemoryOperation.st: f"st1{mem_suf} {mem_reg}, p0, [{{ptr}}, #{{off}}, mul vl]",
     }
 
 
@@ -118,10 +145,17 @@ class ArmSVE(BaseArm, register=True):
 
     bench_instructions = TypedInstructions(
         {
-            DataType.f32: _make_float_instructions_sve("s"),
-            DataType.f64: _make_float_instructions_sve("d"),
+            DataType.f32: _make_float_instructions_sve("s", "w"),
+            DataType.f64: _make_float_instructions_sve("d", "d"),
         }
     )
+
+    @classmethod
+    def from_architecture(cls, arch: Architecture) -> ArmSVE:
+        """Create an SVE instance with the detected vector length."""
+        if arch.vector_length is None:
+            raise ValueError("Vector length not detected/specified. Provide --vector-length for SVE support.")
+        return cls(vlen_bits=arch.vector_length * 8)
 
     def __init__(self, vlen_bits: int, **kwargs: Any):
         super().__init__(**kwargs)
@@ -154,3 +188,6 @@ class ArmSVE(BaseArm, register=True):
     def bytes_per_inst(self, data_type: DataType) -> int:
         # SVE vector width in bytes (independent of data type)
         return self.vlen_bits // 8
+
+    def ops_per_inst(self, data_type: DataType, op: ArithmeticOperation) -> int:
+        return self.vlen_bits // data_type.bits() * op.ops()

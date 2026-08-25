@@ -1,6 +1,6 @@
 // Detects Arm ISA features
 #include <stdint.h>
-#include <stdlib.h>
+#include <stdio.h>
 
 #define NEON_BIT 1 << 0
 #define SVE_BIT 1 << 1
@@ -24,7 +24,6 @@ static int cpu_features(void)
 
 int main(void)
 {
-    int arm_neon = neon_supported();
     printf("{\"isa\": [\"arm\"");
 
     int features = cpu_features();

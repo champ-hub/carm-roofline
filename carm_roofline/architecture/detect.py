@@ -325,8 +325,9 @@ def _ensure_test_built(src: Path, ctx: TestContext) -> str:
     try:
         debug(f"Compiling architecture probe {src} to {test_bin}...")
 
-        # For tests that need include paths, add them
         compile_args = ["-O2"]
+        if ctx.family == "arm" and src.name == "vlen.c":
+            compile_args.append("-march=armv8-a+sve")
         if src.name == "frequency.c":
             # Add include path for ISA-specific headers
             include_dir = ROOT / "tests" / ctx.family
@@ -375,11 +376,11 @@ def run_test(src: Path, ctx: TestContext, threads: int = 1) -> dict[str, Any]:
     return decoded
 
 
-def run_generic_tests(ctx: TestContext, threads: int = 1) -> DetectedArchitecture:
+def run_generic_tests(ctx: TestContext, threads: int = 1, include_vlen: bool = True) -> DetectedArchitecture:
     """Run all generic detection tests for the given architecture.
 
-    Generic tests include: features, cache, vlen, frequency.
-    Each detection function handles its own probe execution and field extraction.
+    Generic tests include features, cache, vector length, and frequency.
+    Set ``include_vlen`` to ``False`` when vector support needs feature detection first.
 
     Args:
         ctx: TestContext with family and optional ISA
@@ -392,7 +393,7 @@ def run_generic_tests(ctx: TestContext, threads: int = 1) -> DetectedArchitectur
 
     # Log which tests we're running by checking which ones exist
     test_names_found = []
-    for test_name in ["features", "cache", "vlen", "frequency"]:
+    for test_name in ["features", "cache", "frequency"] + (["vlen"] if include_vlen else []):
         if ctx.find_test(test_name):
             test_names_found.append(test_name)
 
@@ -407,9 +408,10 @@ def run_generic_tests(ctx: TestContext, threads: int = 1) -> DetectedArchitectur
     if cache_fields:
         builder.merge_fields("detect_cache", cache_fields)
 
-    vlen_fields = detect_vlen(ctx)
-    if vlen_fields:
-        builder.merge_fields("detect_vlen", vlen_fields)
+    if include_vlen:
+        vlen_fields = detect_vlen(ctx)
+        if vlen_fields:
+            builder.merge_fields("detect_vlen", vlen_fields)
 
     frequency_fields = detect_frequency(ctx, threads=threads)
     if frequency_fields:

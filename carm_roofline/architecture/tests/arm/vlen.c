@@ -1,6 +1,6 @@
 // Detects the Arm SVE vector length in bytes
 #include <stdint.h>
-#include <stdlib.h>
+#include <stdio.h>
 
 static unsigned long detect_sve_vector_bytes(void)
 {
