@@ -342,7 +342,14 @@ def _ensure_test_built(src: Path, ctx: TestContext, spec: ProbeSpec) -> str:
         compile_args.insert(0, f"-I{include_dir}")
         compile_args.append("-pthread")
 
-    cache_key = f"{src.resolve()}|{ctx.family}|{ctx.isa or 'generic'}"
+    cache_fields = [
+        str(src.resolve()),
+        ctx.family,
+        ctx.isa or "generic",
+        exec_iface.compiler,
+        *compile_args,
+    ]
+    cache_key = "\0".join(cache_fields)
     digest = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()[:16]
     test_bin = PROBE_BUILD_ROOT / ctx.family / (ctx.isa or "generic") / f"{src.stem}-{digest}"
     test_bin.parent.mkdir(parents=True, exist_ok=True)
