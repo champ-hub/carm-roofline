@@ -35,30 +35,23 @@ def test_arm_load_immediate_emits_required_16_bit_words() -> None:
 
 
 def test_arm_detection_probes_vector_length_only_for_sve(monkeypatch: pytest.MonkeyPatch) -> None:
-    generic_tests = Mock(return_value=DetectedArchitecture(isa=["arm_neon", "arm_sve"]))
-    vector_probe = Mock(return_value={"vector_length": 16})
+    generic_tests = Mock(return_value=DetectedArchitecture(isa=["arm_neon", "arm_sve"], vector_length=16))
     monkeypatch.setattr(arm_architecture, "run_generic_tests", generic_tests)
-    monkeypatch.setattr(arm_architecture, "detect_vlen", vector_probe)
 
     detected = arm_architecture.detect()
 
     assert detected.isa == ["arm", "arm_neon", "arm_sve"]
     assert detected.vector_length == 16
-    assert generic_tests.call_args.kwargs["include_vlen"] is False
-    vector_probe.assert_called_once()
 
 
 def test_arm_detection_skips_vector_probe_without_sve(monkeypatch: pytest.MonkeyPatch) -> None:
     generic_tests = Mock(return_value=DetectedArchitecture(isa=["arm_neon"]))
-    vector_probe = Mock(return_value={"vector_length": 16})
     monkeypatch.setattr(arm_architecture, "run_generic_tests", generic_tests)
-    monkeypatch.setattr(arm_architecture, "detect_vlen", vector_probe)
 
     detected = arm_architecture.detect()
 
     assert detected.isa == ["arm", "arm_neon"]
     assert detected.vector_length is None
-    vector_probe.assert_not_called()
 
 
 def test_sve_uses_detected_vector_length() -> None:

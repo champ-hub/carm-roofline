@@ -134,17 +134,54 @@ GENERIC_PROBE_SRC = ROOT / "tests" / "probe_arch.c"
 PROBE_BUILD_ROOT = Path(tempfile.gettempdir()) / "carm-arch-probes"
 
 
+@dataclass(frozen=True)
+class ProbeSpec:
+    """Declarative configuration for an architecture detection probe."""
+
+    name: str
+    extra_compile_args: tuple[str, ...] = ()
+    required_features: frozenset[str] = frozenset()
+    needs_frequency_support: bool = False
+    accepts_thread_count: bool = False
+
+
+GENERIC_PROBE_SPECS = (
+    ProbeSpec(name="features"),
+    ProbeSpec(name="cache"),
+    ProbeSpec(name="vlen"),
+    ProbeSpec(name="frequency", needs_frequency_support=True, accepts_thread_count=True),
+)
+ARM_PROBE_SPECS = (
+    GENERIC_PROBE_SPECS[0],
+    GENERIC_PROBE_SPECS[1],
+    ProbeSpec(
+        name="vlen",
+        extra_compile_args=("-march=armv8-a+sve",),
+        required_features=frozenset({"arm_sve"}),
+    ),
+    GENERIC_PROBE_SPECS[3],
+)
+
+
 @dataclass
 class TestContext:
-    """Context for finding and running architecture detection tests.
-
-    Attributes:
-        family: Architecture family (x86, arm, riscv)
-        isa: ISA name (optional, e.g., x86_avx512) for ISA-specific tests
-    """
+    """Context for finding and running architecture detection tests."""
 
     family: str
     isa: str | None = None
+
+    def probe_specs(self) -> tuple[ProbeSpec, ...]:
+        """Return the probe declarations for this architecture family."""
+        if self.family == "arm":
+            return ARM_PROBE_SPECS
+        return GENERIC_PROBE_SPECS
+
+    def probe_spec(self, name: str) -> ProbeSpec:
+        """Return the declared probe specification with the given name."""
+        for spec in self.probe_specs():
+            if spec.name == name:
+                return spec
+        raise ValueError(f"Probe '{name}' is not declared for architecture family '{self.family}'")
 
     def find_test(self, test_name: str) -> Path | None:
         """Find test with ISA > family > generic hierarchy.
@@ -182,21 +219,12 @@ class TestContext:
         return None
 
 
-def _run_detection_test(ctx: TestContext, test_name: str, threads: int = 1) -> dict[str, Any]:
-    """Shared helper: find, compile, and run a detection test, return dict or empty on failure.
-
-    Args:
-        ctx: TestContext to locate the test
-        test_name: Name of test to find (e.g., "features", "cache", "vlen", "frequency")
-        threads: Number of threads for frequency detection
-
-    Returns:
-        Parsed JSON dict from probe, or empty dict if test not found
-    """
-    probe_path = ctx.find_test(test_name)
+def _run_detection_test(ctx: TestContext, spec: ProbeSpec, threads: int = 1) -> dict[str, Any]:
+    """Find, compile, and run a detection probe."""
+    probe_path = ctx.find_test(spec.name)
     if not probe_path:
         return {}
-    return run_test(probe_path, ctx, threads=threads)
+    return run_test(probe_path, ctx, threads=threads, spec=spec)
 
 
 def detect_features(ctx: TestContext) -> dict[str, Any]:
@@ -206,7 +234,7 @@ def detect_features(ctx: TestContext) -> dict[str, Any]:
         Dict with keys: isa (list[str]), arch (str), vendor (str).
         Returns empty dict if test not found.
     """
-    raw = _run_detection_test(ctx, "features")
+    raw = _run_detection_test(ctx, ctx.probe_spec("features"))
     if not raw:
         return {}
 
@@ -266,7 +294,7 @@ def detect_vlen(ctx: TestContext) -> dict[str, Any]:
     Returns:
         Dict with key: vector_length (int), or empty dict if test not found.
     """
-    raw = _run_detection_test(ctx, "vlen")
+    raw = _run_detection_test(ctx, ctx.probe_spec("vlen"))
     if not raw:
         return {}
 
@@ -285,7 +313,7 @@ def detect_frequency(ctx: TestContext, threads: int = 1) -> dict[str, Any]:
         Dict with keys: frequency (Frequency), frequency_nominal (Frequency, optional).
         Returns empty dict if test not found.
     """
-    raw = _run_detection_test(ctx, "frequency", threads=threads)
+    raw = _run_detection_test(ctx, ctx.probe_spec("frequency"), threads=threads)
     if not raw:
         return {}
 
@@ -299,20 +327,21 @@ def detect_frequency(ctx: TestContext, threads: int = 1) -> dict[str, Any]:
     return result
 
 
-def _ensure_test_built(src: Path, ctx: TestContext) -> str:
-    """Compile architecture test into an executable if needed.
-
-    Args:
-        src: Path to the source file
-        ctx: TestContext containing family and optional ISA
-
-    Returns:
-        Path to the compiled binary
-    """
-    # Lazy import to avoid circular dependency with __init__.py
+def _ensure_test_built(src: Path, ctx: TestContext, spec: ProbeSpec) -> str:
+    """Compile an architecture test into an executable if needed."""
     from . import get_execution_interface
 
     exec_iface = get_execution_interface()
+    compile_args = ["-O2", *spec.extra_compile_args]
+    if spec.needs_frequency_support:
+        include_dir = ROOT / "tests" / ctx.family
+        if ctx.isa:
+            isa_include_dir = ROOT / "tests" / ctx.family / ctx.isa
+            if (isa_include_dir / "frequency.h").exists():
+                include_dir = isa_include_dir
+        compile_args.insert(0, f"-I{include_dir}")
+        compile_args.append("-pthread")
+
     cache_key = f"{src.resolve()}|{ctx.family}|{ctx.isa or 'generic'}"
     digest = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()[:16]
     test_bin = PROBE_BUILD_ROOT / ctx.family / (ctx.isa or "generic") / f"{src.stem}-{digest}"
@@ -324,22 +353,6 @@ def _ensure_test_built(src: Path, ctx: TestContext) -> str:
 
     try:
         debug(f"Compiling architecture probe {src} to {test_bin}...")
-
-        compile_args = ["-O2"]
-        if ctx.family == "arm" and src.name == "vlen.c":
-            compile_args.append("-march=armv8-a+sve")
-        if src.name == "frequency.c":
-            # Add include path for ISA-specific headers
-            include_dir = ROOT / "tests" / ctx.family
-            if ctx.isa:
-                isa_include_dir = ROOT / "tests" / ctx.family / ctx.isa
-                if (isa_include_dir / "frequency.h").exists():
-                    include_dir = isa_include_dir
-            include_path = f"-I{include_dir}"
-            compile_args.insert(0, include_path)
-            # Add pthread flag for multithreading support
-            compile_args.append("-pthread")
-
         exec_iface.compile(str(src), str(test_bin), *compile_args, check=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to compile architecture probe {src}: {e}") from e
@@ -347,25 +360,15 @@ def _ensure_test_built(src: Path, ctx: TestContext) -> str:
     return str(test_bin)
 
 
-def run_test(src: Path, ctx: TestContext, threads: int = 1) -> dict[str, Any]:
-    """Runs a given architecture probe test and returns the parsed JSON output.
-
-    Args:
-        src: Path to the test source file
-        ctx: TestContext containing family and optional ISA
-        threads: Number of threads to use for frequency detection
-
-    Returns:
-        Parsed JSON output from the test
-    """
-    bin_path = _ensure_test_built(src, ctx)
+def run_test(src: Path, ctx: TestContext, threads: int = 1, spec: ProbeSpec | None = None) -> dict[str, Any]:
+    """Run an architecture probe test and return its parsed JSON output."""
+    if spec is None:
+        spec = ctx.probe_spec(src.stem)
+    bin_path = _ensure_test_built(src, ctx, spec)
     from . import get_execution_interface
 
     exec_iface = get_execution_interface()
-    # Pass threads argument for frequency test
-    test_args = []
-    if src.name == "frequency.c":
-        test_args = ["--threads", str(threads)]
+    test_args = ["--threads", str(threads)] if spec.accepts_thread_count else []
     proc = exec_iface.run(bin_path, *test_args, check=True, capture_output=True, text=True)
     debug(f"Architecture probe output: {proc.stdout.strip()}")
 
@@ -376,50 +379,34 @@ def run_test(src: Path, ctx: TestContext, threads: int = 1) -> dict[str, Any]:
     return decoded
 
 
-def run_generic_tests(ctx: TestContext, threads: int = 1, include_vlen: bool = True) -> DetectedArchitecture:
-    """Run all generic detection tests for the given architecture.
-
-    Generic tests include features, cache, vector length, and frequency.
-    Set ``include_vlen`` to ``False`` when vector support needs feature detection first.
-
-    Args:
-        ctx: TestContext with family and optional ISA
-        threads: Number of threads to use for frequency detection
-
-    Returns:
-        DetectedArchitecture with merged results from all detection functions
-    """
+def run_generic_tests(ctx: TestContext, threads: int = 1) -> DetectedArchitecture:
+    """Run the declared detection probes for an architecture."""
     builder = DetectionBuilder()
-
-    # Log which tests we're running by checking which ones exist
-    test_names_found = []
-    for test_name in ["features", "cache", "frequency"] + (["vlen"] if include_vlen else []):
-        if ctx.find_test(test_name):
-            test_names_found.append(test_name)
-
+    specs = ctx.probe_specs()
+    test_names_found = [spec.name for spec in specs if ctx.find_test(spec.name)]
     detail(f"Running the available auto-detection tests for {ctx.family}: {', '.join(test_names_found)}")
 
-    # Run each detection test function, merge results with conflict checking
     features_fields = detect_features(ctx)
     if features_fields:
         builder.merge_fields("detect_features", features_fields)
+    feature_set = frozenset(features_fields.get("isa", []))
 
-    cache_fields = detect_cache(ctx)
-    if cache_fields:
-        builder.merge_fields("detect_cache", cache_fields)
-
-    if include_vlen:
-        vlen_fields = detect_vlen(ctx)
-        if vlen_fields:
-            builder.merge_fields("detect_vlen", vlen_fields)
-
-    frequency_fields = detect_frequency(ctx, threads=threads)
-    if frequency_fields:
-        builder.merge_fields("detect_frequency", frequency_fields)
+    for spec in specs[1:]:
+        if not spec.required_features.issubset(feature_set):
+            continue
+        if spec.name == "cache":
+            fields = detect_cache(ctx)
+        elif spec.name == "vlen":
+            fields = detect_vlen(ctx)
+        elif spec.name == "frequency":
+            fields = detect_frequency(ctx, threads=threads)
+        else:
+            raise ValueError(f"Unsupported probe '{spec.name}'")
+        if fields:
+            builder.merge_fields(f"detect_{spec.name}", fields)
 
     detected = builder.build()
 
-    # Populate CPU model name from /proc/cpuinfo (native execution only).
     from . import get_execution_interface
 
     if get_execution_interface().sim_cmd is None:

@@ -16,7 +16,8 @@ static int cpu_features(void)
     if (advsimd_field != ADV_SIMD_MASK) {
         features |= NEON_BIT;
     }
-    if (id_aa64pfr0_el1 >> 32 & 0xF) {
+    const uint8_t sve_field = (id_aa64pfr0_el1 >> 32) & 0xF;
+    if (sve_field == 0b0001) {
         features |= SVE_BIT;
     }
     return features;
