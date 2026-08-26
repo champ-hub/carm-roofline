@@ -11,7 +11,7 @@ class ArithmeticOperation(Enum):
     add = auto()
     mul = auto()
     div = auto()
-    fma = auto()
+    fma = auto()  # fused multiply-add
 
     def ops(self) -> int:
         """Returns the number of operations performed by this instruction."""

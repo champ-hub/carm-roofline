@@ -1008,6 +1008,24 @@ class TestIntegerCodegen:
             DataType.i64: {ADD, MUL, LD, ST},
             DataType.bf16: {FMA, LD, ST},
         },
+        "arm_scalar": {
+            DataType.i8: {ADD, MUL, DIV, FMA, LD, ST},
+            DataType.i16: {ADD, MUL, DIV, FMA, LD, ST},
+            DataType.i32: {ADD, MUL, DIV, FMA, LD, ST},
+            DataType.i64: {ADD, MUL, DIV, FMA, LD, ST},
+        },
+        "arm_neon": {
+            DataType.i8: {ADD, MUL, FMA, LD, ST},
+            DataType.i16: {ADD, MUL, FMA, LD, ST},
+            DataType.i32: {ADD, MUL, FMA, LD, ST},
+            DataType.i64: {ADD, LD, ST},
+        },
+        "arm_sve": {
+            DataType.i8: {ADD, MUL, FMA, LD, ST},
+            DataType.i16: {ADD, MUL, FMA, LD, ST},
+            DataType.i32: {ADD, MUL, DIV, FMA, LD, ST},
+            DataType.i64: {ADD, MUL, DIV, FMA, LD, ST},
+        },
     }
 
     @pytest.mark.parametrize(
@@ -1041,6 +1059,45 @@ class TestIntegerCodegen:
             ("x86_avx512", DataType.i64, ArithmeticOperation.add, "vpaddq"),
             ("x86_avx512", DataType.i64, ArithmeticOperation.mul, "vpmullq"),
             ("x86_avx512", DataType.bf16, ArithmeticOperation.fma, "vdpbf16ps"),
+            ("arm_scalar", DataType.i8, ArithmeticOperation.add, "add"),
+            ("arm_scalar", DataType.i8, ArithmeticOperation.mul, "mul"),
+            ("arm_scalar", DataType.i8, ArithmeticOperation.div, "sdiv"),
+            ("arm_scalar", DataType.i8, ArithmeticOperation.fma, "madd"),
+            ("arm_scalar", DataType.i16, ArithmeticOperation.add, "add"),
+            ("arm_scalar", DataType.i16, ArithmeticOperation.mul, "mul"),
+            ("arm_scalar", DataType.i16, ArithmeticOperation.div, "sdiv"),
+            ("arm_scalar", DataType.i16, ArithmeticOperation.fma, "madd"),
+            ("arm_scalar", DataType.i32, ArithmeticOperation.add, "add"),
+            ("arm_scalar", DataType.i32, ArithmeticOperation.mul, "mul"),
+            ("arm_scalar", DataType.i32, ArithmeticOperation.div, "sdiv"),
+            ("arm_scalar", DataType.i32, ArithmeticOperation.fma, "madd"),
+            ("arm_scalar", DataType.i64, ArithmeticOperation.add, "add"),
+            ("arm_scalar", DataType.i64, ArithmeticOperation.mul, "mul"),
+            ("arm_scalar", DataType.i64, ArithmeticOperation.div, "sdiv"),
+            ("arm_scalar", DataType.i64, ArithmeticOperation.fma, "madd"),
+            ("arm_neon", DataType.i8, ArithmeticOperation.add, "add"),
+            ("arm_neon", DataType.i8, ArithmeticOperation.mul, "mul"),
+            ("arm_neon", DataType.i8, ArithmeticOperation.fma, "mla"),
+            ("arm_neon", DataType.i16, ArithmeticOperation.add, "add"),
+            ("arm_neon", DataType.i16, ArithmeticOperation.mul, "mul"),
+            ("arm_neon", DataType.i16, ArithmeticOperation.fma, "mla"),
+            ("arm_neon", DataType.i32, ArithmeticOperation.add, "add"),
+            ("arm_neon", DataType.i32, ArithmeticOperation.mul, "mul"),
+            ("arm_neon", DataType.i32, ArithmeticOperation.fma, "mla"),
+            ("arm_sve", DataType.i8, ArithmeticOperation.add, "add"),
+            ("arm_sve", DataType.i8, ArithmeticOperation.mul, "mul"),
+            ("arm_sve", DataType.i8, ArithmeticOperation.fma, "mla"),
+            ("arm_sve", DataType.i16, ArithmeticOperation.add, "add"),
+            ("arm_sve", DataType.i16, ArithmeticOperation.mul, "mul"),
+            ("arm_sve", DataType.i16, ArithmeticOperation.fma, "mla"),
+            ("arm_sve", DataType.i32, ArithmeticOperation.add, "add"),
+            ("arm_sve", DataType.i32, ArithmeticOperation.mul, "mul"),
+            ("arm_sve", DataType.i32, ArithmeticOperation.div, "sdiv"),
+            ("arm_sve", DataType.i32, ArithmeticOperation.fma, "mla"),
+            ("arm_sve", DataType.i64, ArithmeticOperation.add, "add"),
+            ("arm_sve", DataType.i64, ArithmeticOperation.mul, "mul"),
+            ("arm_sve", DataType.i64, ArithmeticOperation.div, "sdiv"),
+            ("arm_sve", DataType.i64, ArithmeticOperation.fma, "mla"),
         ],
     )
     def test_integer_arithmetic_codegen(
@@ -1052,7 +1109,7 @@ class TestIntegerCodegen:
         params = ArithmeticBenchmarkParams(
             data_type=data_type,
             operation=operation,
-            num_ops=Operations(64),
+            num_ops=Operations(1024 if isa_name == "arm_sve" else 64),
             thread_affinity=[0],
         )
         spec = isa.generate_arithmetic(params, mock_context)
@@ -1095,6 +1152,18 @@ class TestIntegerCodegen:
             ("x86_avx2", DataType.i64, "vmovaps"),
             ("x86_avx512", DataType.i32, "vmovaps"),
             ("x86_avx512", DataType.bf16, "vmovaps"),
+            ("arm_scalar", DataType.i8, "ldrb"),
+            ("arm_scalar", DataType.i16, "ldrh"),
+            ("arm_scalar", DataType.i32, "ldr"),
+            ("arm_scalar", DataType.i64, "ldr"),
+            ("arm_neon", DataType.i8, "ldr"),
+            ("arm_neon", DataType.i16, "ldr"),
+            ("arm_neon", DataType.i32, "ldr"),
+            ("arm_neon", DataType.i64, "ldr"),
+            ("arm_sve", DataType.i8, "ld1b"),
+            ("arm_sve", DataType.i16, "ld1h"),
+            ("arm_sve", DataType.i32, "ld1w"),
+            ("arm_sve", DataType.i64, "ld1d"),
         ],
     )
     def test_integer_memory_codegen(self, mock_context, isa_name: str, data_type: DataType, mnemonic: str):
@@ -1121,6 +1190,12 @@ class TestIntegerCodegen:
 
         for data_type, expected in TestIntegerCodegen.EXPECTED_AVAILABLE[isa_name].items():
             assert isa.bench_instructions.available_operations(data_type) == frozenset(expected)
+
+    @pytest.mark.parametrize("isa_name", ["arm_scalar", "arm_neon", "arm_sve"])
+    def test_arm_bf16_is_unavailable(self, isa_name: str):
+        isa = TestISACodegen.instantiate_isa(isa_name)
+
+        assert isa.bench_instructions.available_operations(DataType.bf16) == frozenset()
 
     def test_arithmetic_suite_skips_unavailable_instructions(self, monkeypatch, mock_context):
         """Test that the arithmetic suite skips instructions unavailable for a data type."""

@@ -73,6 +73,17 @@ def _make_float_instructions_scalar() -> dict[Operation, str | _Instruction]:
     }
 
 
+def _make_integer_instructions_scalar(load: str, store: str) -> dict[Operation, str | _Instruction]:
+    return {
+        ArithmeticOperation.add: "add {}, {}, {}",
+        ArithmeticOperation.mul: "mul {}, {}, {}",
+        ArithmeticOperation.div: "sdiv {}, {}, {}",
+        ArithmeticOperation.fma: "madd {}, {}, {}, {}",
+        MemoryOperation.ld: f"{load} {{reg}}, [{{ptr}}, #{{off}}]",
+        MemoryOperation.st: f"{store} {{reg}}, [{{ptr}}, #{{off}}]",
+    }
+
+
 class ArmScalar(BaseArm, register=True):
     name = "arm"
 
@@ -80,6 +91,10 @@ class ArmScalar(BaseArm, register=True):
         {
             DataType.f32: _make_float_instructions_scalar(),
             DataType.f64: _make_float_instructions_scalar(),
+            DataType.i8: _make_integer_instructions_scalar("ldrb", "strb"),
+            DataType.i16: _make_integer_instructions_scalar("ldrh", "strh"),
+            DataType.i32: _make_integer_instructions_scalar("ldr", "str"),
+            DataType.i64: _make_integer_instructions_scalar("ldr", "str"),
         }
     )
 
@@ -90,8 +105,10 @@ class ArmScalar(BaseArm, register=True):
             {
                 DataType.f32: CyclicRegisterSet("s{}", [(0, 31)]),
                 DataType.f64: CyclicRegisterSet("d{}", [(0, 31)]),
-                DataType.i32: CyclicRegisterSet("w{}", [(4, 31)]),
-                DataType.i64: CyclicRegisterSet("x{}", [(4, 31)]),
+                DataType.i8: CyclicRegisterSet("w{}", [(5, 29)]),
+                DataType.i16: CyclicRegisterSet("w{}", [(5, 29)]),
+                DataType.i32: CyclicRegisterSet("w{}", [(5, 29)]),
+                DataType.i64: CyclicRegisterSet("x{}", [(5, 29)]),
             }
         )
 
@@ -107,6 +124,21 @@ def _make_float_instructions_neon(suf: str) -> dict[Operation, str | _Instructio
     }
 
 
+def _make_integer_instructions_neon(suf: str, include_multiply_add: bool) -> dict[Operation, str | _Instruction]:
+    instructions: dict[Operation, str | _Instruction] = {
+        ArithmeticOperation.add: inst.Arithmetic(f"add {{}}.{suf}, {{}}.{suf}, {{}}.{suf}", register_format="v{}"),
+        MemoryOperation.ld: "ldr {reg}, [{ptr}, #{off}]",
+        MemoryOperation.st: "str {reg}, [{ptr}, #{off}]",
+    }
+    extra_instructions: dict[Operation, str | _Instruction] = {
+        ArithmeticOperation.mul: inst.Arithmetic(f"mul {{}}.{suf}, {{}}.{suf}, {{}}.{suf}", register_format="v{}"),
+        ArithmeticOperation.fma: inst.Arithmetic(f"mla {{}}.{suf}, {{}}.{suf}, {{}}.{suf}", register_format="v{}"),
+    }
+    if include_multiply_add:
+        instructions.update(extra_instructions)
+    return instructions
+
+
 class ArmNeon(BaseArm, register=True):
     name = "arm_neon"
 
@@ -114,6 +146,10 @@ class ArmNeon(BaseArm, register=True):
         {
             DataType.f32: _make_float_instructions_neon("4s"),
             DataType.f64: _make_float_instructions_neon("2d"),
+            DataType.i8: _make_integer_instructions_neon("16b", include_multiply_add=True),
+            DataType.i16: _make_integer_instructions_neon("8h", include_multiply_add=True),
+            DataType.i32: _make_integer_instructions_neon("4s", include_multiply_add=True),
+            DataType.i64: _make_integer_instructions_neon("2d", include_multiply_add=False),
         }
     )
 
@@ -124,6 +160,8 @@ class ArmNeon(BaseArm, register=True):
             {
                 DataType.f32: CyclicRegisterSet("q{}", [(0, 31)]),
                 DataType.f64: CyclicRegisterSet("q{}", [(0, 31)]),
+                DataType.i8: CyclicRegisterSet("q{}", [(4, 31)]),
+                DataType.i16: CyclicRegisterSet("q{}", [(4, 31)]),
                 DataType.i32: CyclicRegisterSet("q{}", [(4, 31)]),
                 DataType.i64: CyclicRegisterSet("q{}", [(4, 31)]),
             }
@@ -149,6 +187,23 @@ def _make_float_instructions_sve(arith_suf: str, mem_suf: str) -> dict[Operation
     }
 
 
+def _make_integer_instructions_sve(
+    arith_suf: str, mem_suf: str, include_div: bool
+) -> dict[Operation, str | _Instruction]:
+    arith_reg = f"{{}}.{arith_suf}"
+    mem_reg = f"{{reg}}.{arith_suf}"
+    instructions: dict[Operation, str | _Instruction] = {
+        ArithmeticOperation.add: f"add {arith_reg}, p0/m, {arith_reg}, {arith_reg}",
+        ArithmeticOperation.mul: f"mul {arith_reg}, p0/m, {arith_reg}, {arith_reg}",
+        ArithmeticOperation.fma: f"mla {arith_reg}, p0/m, {arith_reg}, {arith_reg}",
+        MemoryOperation.ld: f"ld1{mem_suf} {mem_reg}, p0/z, [{{ptr}}, #{{off}}, mul vl]",
+        MemoryOperation.st: f"st1{mem_suf} {mem_reg}, p0, [{{ptr}}, #{{off}}, mul vl]",
+    }
+    if include_div:
+        instructions[ArithmeticOperation.div] = f"sdiv {arith_reg}, p0/m, {arith_reg}, {arith_reg}"
+    return instructions
+
+
 class ArmSVE(BaseArm, register=True):
     name = "arm_sve"
 
@@ -156,6 +211,10 @@ class ArmSVE(BaseArm, register=True):
         {
             DataType.f32: _make_float_instructions_sve("s", "w"),
             DataType.f64: _make_float_instructions_sve("d", "d"),
+            DataType.i8: _make_integer_instructions_sve("b", "b", include_div=False),
+            DataType.i16: _make_integer_instructions_sve("h", "h", include_div=False),
+            DataType.i32: _make_integer_instructions_sve("s", "w", include_div=True),
+            DataType.i64: _make_integer_instructions_sve("d", "d", include_div=True),
         }
     )
 
@@ -189,10 +248,16 @@ class ArmSVE(BaseArm, register=True):
     def max_unique_offsets(self, data_type: DataType) -> int:
         return 8
 
-    # Setup the predicate register with all 1's
     def setup_assembly(self, data_type: DataType) -> list[str]:
-        type_str = "s" if data_type == DataType.f32 else "d"
-        return [f"ptrue p0.{type_str}"]
+        predicate_suffix = {
+            DataType.i8: "b",
+            DataType.i16: "h",
+            DataType.i32: "s",
+            DataType.i64: "d",
+            DataType.f32: "s",
+            DataType.f64: "d",
+        }[data_type]
+        return [f"ptrue p0.{predicate_suffix}"]
 
     def bytes_per_inst(self, data_type: DataType) -> int:
         # SVE vector width in bytes (independent of data type)
