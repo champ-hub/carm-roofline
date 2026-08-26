@@ -420,9 +420,12 @@ def run_generic_tests(ctx: TestContext, threads: int = 1) -> DetectedArchitectur
         from .identity import read_cpuinfo
 
         cpu_info = read_cpuinfo()
-        if cpu_info.model_name:
+        if not detected.arch:
+            detected.arch = platform.machine()
+        if not detected.vendor:
+            detected.vendor = cpu_info.vendor
+        if not detected.model_name:
             detected.model_name = cpu_info.model_name
-
     return detected
 
 

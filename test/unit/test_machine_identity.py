@@ -4,9 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
+import carm_roofline.architecture.detect as detection
+import carm_roofline.architecture.identity as identity
+from carm_roofline.architecture.detect import TestContext as DetectionTestContext, run_generic_tests
+
+import carm_roofline.architecture as architecture
 from carm_roofline.architecture.identity import (
     CpuInfo,
     MachineSignature,
@@ -172,6 +178,10 @@ def test_read_cpuinfo_parses_family_model_stepping(tmp_path: Path, monkeypatch: 
         family="25",
         model="68",
         stepping="1",
+        implementer=None,
+        part=None,
+        variant=None,
+        revision=None,
     )
 
 
@@ -187,7 +197,104 @@ def test_read_cpuinfo_missing_file_returns_none_fields(tmp_path: Path, monkeypat
     monkeypatch.setattr(identity, "Path", _RedirectingPath)
 
     info = identity.read_cpuinfo()
-    assert info == CpuInfo(model_name=None, vendor=None, family=None, model=None, stepping=None)
+    assert info == CpuInfo(
+        model_name=None,
+        vendor=None,
+        family=None,
+        model=None,
+        stepping=None,
+        implementer=None,
+        part=None,
+        variant=None,
+        revision=None,
+    )
+
+
+def test_read_cpuinfo_resolves_grace_arm_identity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cpuinfo = tmp_path / "cpuinfo"
+    cpuinfo.write_text("processor : 0\nCPU implementer : 0x41\nCPU part : 0xd4f\nCPU variant : 0x0\nCPU revision : 0\n")
+
+    class _RedirectingPath:
+        def __new__(cls, *_args: object, **_kwargs: object) -> Path:
+            return cpuinfo
+
+    monkeypatch.setattr(identity, "Path", _RedirectingPath)
+
+    info = identity.read_cpuinfo()
+
+    assert info.model_name == "ARM Neoverse V2"
+    assert info.vendor == "ARM"
+    assert info.implementer == "0x41"
+    assert info.part == "0xd4f"
+    assert info.variant == "0x0"
+    assert info.revision == "0"
+
+
+def test_unknown_arm_part_uses_architecture_as_signature_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cpuinfo = tmp_path / "cpuinfo"
+    cpuinfo.write_text("processor : 0\nCPU implementer : 0x41\nCPU part : 0xd40\n")
+
+    class _RedirectingPath:
+        def __new__(cls, *_args: object, **_kwargs: object) -> Path:
+            return cpuinfo
+
+    monkeypatch.setattr(identity, "Path", _RedirectingPath)
+    info = identity.read_cpuinfo()
+    assert info.model_name is None
+    assert info.vendor == "ARM"
+
+    monkeypatch.setattr(identity, "read_cpuinfo", lambda: info)
+    monkeypatch.setattr(identity.platform, "machine", lambda: "aarch64")
+    monkeypatch.setattr(identity, "MemoryTopology", _FakeTopology)
+
+    signature = detect_machine_signature()
+
+    assert signature.model_name == "aarch64"
+
+
+def _patch_native_detection_probes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(detection, "detect_features", Mock(return_value={"isa": ["arm"]}))
+    monkeypatch.setattr(detection, "detect_cache", Mock(return_value={}))
+    monkeypatch.setattr(detection, "detect_vlen", Mock(return_value={}))
+    monkeypatch.setattr(detection, "detect_frequency", Mock(return_value={}))
+    monkeypatch.setattr(architecture, "get_execution_interface", lambda: SimpleNamespace(sim_cmd=None))
+
+
+def test_run_generic_tests_uses_native_cpu_identity_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_native_detection_probes(monkeypatch)
+    monkeypatch.setattr(detection.platform, "machine", lambda: "aarch64")
+    monkeypatch.setattr(identity, "read_cpuinfo", lambda: CpuInfo(model_name="ARM Neoverse V2", vendor="ARM"))
+
+    detected = run_generic_tests(DetectionTestContext("arm"))
+
+    assert detected.isa == ["arm"]
+    assert detected.arch == "aarch64"
+    assert detected.vendor == "ARM"
+    assert detected.model_name == "ARM Neoverse V2"
+
+
+def test_run_generic_tests_preserves_probe_identity_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_native_detection_probes(monkeypatch)
+    monkeypatch.setattr(detection.platform, "machine", lambda: "aarch64")
+    monkeypatch.setattr(identity, "read_cpuinfo", lambda: CpuInfo(model_name="ARM Neoverse V2", vendor="ARM"))
+    monkeypatch.setattr(
+        detection,
+        "detect_features",
+        Mock(
+            return_value={
+                "isa": ["arm"],
+                "arch": "probe-arch",
+                "vendor": "probe-vendor",
+                "model_name": "probe-model",
+            }
+        ),
+    )
+
+    detected = run_generic_tests(DetectionTestContext("arm"))
+
+    assert detected.arch == "probe-arch"
+    assert detected.vendor == "probe-vendor"
+    assert detected.model_name == "probe-model"
 
 
 # ---------------------------------------------------------------------------

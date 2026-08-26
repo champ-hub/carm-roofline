@@ -25,6 +25,45 @@ if TYPE_CHECKING:
     from .architecture import Architecture
 
 _BYTES_PER_GIB = 1024**3
+_ARM_IMPLEMENTERS = {
+    0x41: "ARM",
+}
+_ARM_CORE_PARTS = {
+    (0x41, 0xD4F): "Neoverse V2",
+}
+
+
+def _parse_hex_identifier(value: str | None) -> int | None:
+    """Parse an ARM hexadecimal identifier."""
+    if value is None:
+        return None
+    try:
+        return int(value, 0)
+    except ValueError:
+        return None
+
+
+def _resolve_cpu_identity(fields: dict[str, str]) -> tuple[str | None, str | None]:
+    """Resolve model and vendor names from parsed CPU information."""
+    model_name = fields.get("model name") or fields.get("Hardware")
+    vendor = fields.get("vendor_id")
+    implementer_raw = fields.get("CPU implementer")
+    implementer = _parse_hex_identifier(implementer_raw)
+    normalized_vendor = (
+        _ARM_IMPLEMENTERS[implementer]
+        if implementer is not None and implementer in _ARM_IMPLEMENTERS
+        else implementer_raw
+    )
+
+    if vendor is None:
+        vendor = normalized_vendor
+    if model_name is None:
+        part = _parse_hex_identifier(fields.get("CPU part"))
+        core_name = _ARM_CORE_PARTS.get((implementer, part)) if implementer is not None and part is not None else None
+        if core_name is not None and normalized_vendor is not None:
+            model_name = f"{normalized_vendor} {core_name}"
+
+    return model_name, vendor
 
 
 @dataclass(frozen=True)
@@ -36,6 +75,10 @@ class CpuInfo:
     family: str | None = None
     model: str | None = None
     stepping: str | None = None
+    implementer: str | None = None
+    part: str | None = None
+    variant: str | None = None
+    revision: str | None = None
 
 
 @dataclass(frozen=True)
@@ -120,7 +163,8 @@ def read_cpuinfo() -> CpuInfo:
         - x86: "model name" (model), "vendor_id" (vendor), "cpu family" (family),
           "model" (model), "stepping" (stepping)
         - ARM 32-bit: "Hardware" (fallback model name)
-        - ARM 64-bit: "CPU implementer" (vendor)
+        - ARM 64-bit: "CPU implementer", "CPU part", "CPU variant", and
+          "CPU revision"
     """
     cpuinfo = Path("/proc/cpuinfo")
     if not cpuinfo.exists():
@@ -140,17 +184,17 @@ def read_cpuinfo() -> CpuInfo:
             key, _, value = line.partition(":")
             first_block[key.strip()] = value.strip()
 
-    model_name = first_block.get("model name") or first_block.get("Hardware")
-    vendor = first_block.get("vendor_id") or first_block.get("CPU implementer")
-    family = first_block.get("cpu family")
-    model = first_block.get("model")
-    stepping = first_block.get("stepping")
+    model_name, vendor = _resolve_cpu_identity(first_block)
     return CpuInfo(
         model_name=model_name,
         vendor=vendor,
-        family=family,
-        model=model,
-        stepping=stepping,
+        family=first_block.get("cpu family"),
+        model=first_block.get("model"),
+        stepping=first_block.get("stepping"),
+        implementer=first_block.get("CPU implementer"),
+        part=first_block.get("CPU part"),
+        variant=first_block.get("CPU variant"),
+        revision=first_block.get("CPU revision"),
     )
 
 
