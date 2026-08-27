@@ -30,6 +30,7 @@ from carm_roofline.roofline_assembly import (
     FilterOptions,
     RooflineFilter,
     assemble_roofline,
+    matching_mixed_records,
 )
 
 
@@ -628,8 +629,101 @@ def build_roofline_figure(
             level_fractions = dict.fromkeys(_CACHE_LEVEL_ORDER, _BACKGROUND_FRACTION)
 
         _add_roof_ceilings(fig, roof, model, color, divisor, y_min_gops, s, level_fractions)
+        if s.show_mixed_benchmarks:
+            _add_mixed_benchmark_traces(
+                fig,
+                roof,
+                matching_mixed_records(records, roof_to_filter(roof)),
+                color,
+                divisor,
+                s,
+            )
     _finalize_axes_and_layout(fig, x_range, y_range, s)
     return fig
+
+
+def _positive_mixed_metric(value: object) -> float | None:
+    """Return a finite positive mixed metric, or None for invalid input."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) and number > 0 else None
+
+
+def _mixed_points(records: list[BenchmarkRecord], divisor: int) -> list[tuple[float, float, str]]:
+    """Return positive grouped mixed points with their benchmark names."""
+    result: list[tuple[float, float, str]] = []
+    for record in records:
+        points = record.get("points")
+        if not isinstance(points, list):
+            continue
+        for point in points:
+            if not isinstance(point, dict):
+                continue
+            arithmetic_intensity = _positive_mixed_metric(point.get("arithmetic_intensity"))
+            performance_gops = _positive_mixed_metric(point.get("performance_gops"))
+            if arithmetic_intensity is not None and performance_gops is not None:
+                name = point.get("name")
+                point_name = name if isinstance(name, str) else f"Point {point.get('point_index', '?')}"
+                result.append((arithmetic_intensity, performance_gops / divisor, point_name))
+    return result
+
+
+def _latest_mixed_records_by_series(records: list[BenchmarkRecord]) -> list[tuple[str, str, list[BenchmarkRecord]]]:
+    """Return newest matching records grouped by operation and cache level."""
+    series: dict[tuple[str, str], tuple[str, list[BenchmarkRecord]]] = {}
+    for index, record in enumerate(records):
+        operation = record.get("operation")
+        cache_level = record.get("cache_level")
+        if not isinstance(operation, str) or not isinstance(cache_level, str):
+            continue
+        timestamp = record.get("timestamp")
+        timestamp_key = timestamp if isinstance(timestamp, str) else str(index)
+        key = (operation, cache_level)
+        previous = series.get(key)
+        if previous is None or timestamp_key > previous[0]:
+            series[key] = (timestamp_key, [record])
+        elif timestamp_key == previous[0]:
+            previous[1].append(record)
+    return [
+        (operation, cache_level, grouped_records) for (operation, cache_level), (_, grouped_records) in series.items()
+    ]
+
+
+def _add_mixed_benchmark_traces(
+    fig: go.Figure,
+    roof: RoofConfig,
+    records: list[BenchmarkRecord],
+    color: str,
+    divisor: int,
+    settings: GUISettings,
+) -> None:
+    """Draw one sorted line-and-marker trace for each latest mixed cache series."""
+    for operation, cache_level, series_records in _latest_mixed_records_by_series(records):
+        points = sorted(_mixed_points(series_records, divisor))
+        if not points:
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=[arithmetic_intensity for arithmetic_intensity, _performance_gops, _name in points],
+                y=[performance_gops for _arithmetic_intensity, performance_gops, _name in points],
+                customdata=[[name] for _arithmetic_intensity, _performance_gops, name in points],
+                mode="lines+markers",
+                name=f"{roof.label} mixed {operation} {cache_level}",
+                legendgroup=roof.id,
+                showlegend=False,
+                line={"color": color, "dash": "solid", "width": 1.5 * settings.line_width},
+                marker={"color": color, "symbol": "circle"},
+                hovertemplate=(
+                    f"<b>Roof:</b> {roof.label}<br>"
+                    f"<b>Operation:</b> {operation}<br>"
+                    f"<b>Memory level:</b> {cache_level}<br>"
+                    "<b>Benchmark:</b> %{customdata[0]}<br>"
+                    "Arithmetic intensity: %{x:.3g} OPS/Byte<br>"
+                    "Performance: %{y:.3g} GOPS/s<extra></extra>"
+                ),
+            )
+        )
 
 
 def _add_roof_ceilings(

@@ -14,6 +14,7 @@ from carm_roofline.roofline_assembly import (
     discover_filter_options,
     load_all_benchmarks,
     load_benchmarks,
+    matching_mixed_records,
 )
 
 from carm_roofline.core import ArithmeticIntensity, Bandwidth, Performance
@@ -150,6 +151,52 @@ def jsonl_fixture(tmp_path: Path) -> Path:
 def test_load_benchmarks(jsonl_fixture: Path) -> None:
     records = load_benchmarks(jsonl_fixture)
     assert len(records) == 8
+
+
+def test_matching_mixed_records_filters_grouped_jsonl_record(tmp_path: Path) -> None:
+    """Grouped mixed records match every roof filter dimension."""
+    record = {
+        "type": "mixed",
+        "machine": "test_machine",
+        "isa": "test_isa",
+        "num_threads": 2,
+        "data_type": "f64",
+        "operation": "fma",
+        "load_store_ratio": "2:1",
+        "actual_frequency_hz": 3000000000,
+        "points": [{"arithmetic_intensity": 1.0, "performance_gops": 10.0}],
+    }
+    path = tmp_path / "mixed.jsonl"
+    path.write_text(json.dumps(record) + "\n")
+    records = load_benchmarks(path)
+    exact = RooflineFilter(
+        machine="test_machine",
+        isa="test_isa",
+        num_threads=2,
+        data_type="f64",
+        operations=frozenset({"fma"}),
+        load_store_ratio="2:1",
+        actual_frequency_hz=3000000000,
+    )
+
+    assert matching_mixed_records(records, exact) == [record]
+    mismatches = (
+        RooflineFilter(machine="other", isa="test_isa", num_threads=2, data_type="f64"),
+        RooflineFilter(machine="test_machine", isa="other", num_threads=2, data_type="f64"),
+        RooflineFilter(machine="test_machine", isa="test_isa", num_threads=1, data_type="f64"),
+        RooflineFilter(machine="test_machine", isa="test_isa", num_threads=2, data_type="f32"),
+        RooflineFilter(machine="test_machine", isa="test_isa", num_threads=2, data_type="f64", actual_frequency_hz=1),
+        RooflineFilter(machine="test_machine", isa="test_isa", num_threads=2, data_type="f64", load_store_ratio="1:1"),
+        RooflineFilter(
+            machine="test_machine",
+            isa="test_isa",
+            num_threads=2,
+            data_type="f64",
+            operations=frozenset({"add"}),
+        ),
+    )
+    assert all(not matching_mixed_records(records, mismatch) for mismatch in mismatches)
+
 
 
 def test_load_benchmarks_missing_file(tmp_path: Path) -> None:

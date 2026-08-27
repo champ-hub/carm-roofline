@@ -391,6 +391,11 @@ def _matches_filter(record: BenchmarkRecord, flt: RooflineFilter) -> bool:
     )
 
 
+def matching_mixed_records(records: list[BenchmarkRecord], flt: RooflineFilter) -> list[BenchmarkRecord]:
+    """Return grouped mixed records that match a roofline filter."""
+    return [record for record in records if record.get("type") == RecordType.MIXED and _matches_filter(record, flt)]
+
+
 # ── Roofline assembly ─────────────────────────────────────────────────────────
 
 
@@ -578,4 +583,5 @@ __all__ = [
     "load_all_benchmarks",
     "load_applications",
     "load_benchmarks",
+    "matching_mixed_records",
 ]

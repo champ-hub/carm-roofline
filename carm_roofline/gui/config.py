@@ -120,6 +120,7 @@ class GUISettings:
     marker_scale_factor: float = 50.0
     power2_ticks: bool = False
     show_roof_fills: bool = True
+    show_mixed_benchmarks: bool = False
     line_width: float = 1.5
     axis_label_font_size: int = 14
     axis_tick_font_size: int = 12

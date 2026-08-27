@@ -12,6 +12,7 @@ from carm_roofline.gui.config import GUISettings
 from carm_roofline.gui.data import (
     _BW_FILL_OPACITIES,
     _BW_LINE_STYLES,
+    _COLORS,
     _SELECTED_FILL_BASE_OPACITY,
     RoofConfig,
     RoofStore,
@@ -272,6 +273,162 @@ def test_build_roofline_figure_normalize_by_threads() -> None:
     assert list(norm_markers[0].y) == pytest.approx([2.0])
     perf_ceilings_norm = [t for t in fig_norm.data if t.mode == "lines" and t.name.startswith("Test Roof")]
     assert any(t.y[0] == pytest.approx(60.0) for t in perf_ceilings_norm)
+
+
+def test_build_roofline_figure_mixed_benchmarks_toggle_and_style() -> None:
+    """Mixed benchmark overlays stay hidden by default and follow roof styling when enabled."""
+    records: list[BenchmarkRecord] = [
+        {
+            "type": "arithmetic",
+            "name": "fma",
+            "isa": "test_isa",
+            "machine": "test_machine",
+            "data_type": "f32",
+            "num_threads": 2,
+            "operation": "fma",
+            "performance_gops": 120.0,
+            "timestamp": "2026-01-01T00:00:00",
+        },
+        {
+            "type": "memory",
+            "name": "L1",
+            "isa": "test_isa",
+            "machine": "test_machine",
+            "data_type": "f32",
+            "num_threads": 2,
+            "load_store_ratio": "2:1",
+            "cache_level": "L1",
+            "bandwidth_gbps": 400.0,
+            "timestamp": "2026-01-01T00:00:00",
+        },
+        {
+            "type": "mixed",
+            "isa": "test_isa",
+            "machine": "test_machine",
+            "data_type": "f32",
+            "num_threads": 2,
+            "operation": "fma",
+            "load_store_ratio": "2:1",
+            "cache_level": "L1",
+            "points": [
+                {"arithmetic_intensity": 4.0, "performance_gops": 20.0},
+                {"arithmetic_intensity": 1.0, "performance_gops": 10.0},
+                {"arithmetic_intensity": 1000000.0, "performance_gops": 1000000000000.0},
+                {"arithmetic_intensity": -1.0, "performance_gops": 2.0},
+            ],
+        },
+        {
+            "type": "mixed",
+            "isa": "other_isa",
+            "machine": "test_machine",
+            "data_type": "f32",
+            "num_threads": 2,
+            "operation": "fma",
+            "load_store_ratio": "2:1",
+            "cache_level": "L1",
+            "points": [{"arithmetic_intensity": 2.0, "performance_gops": 8.0}],
+        },
+    ]
+    roof = RoofConfig(
+        roof_id="roof-1",
+        label="Test Roof",
+        machine="test_machine",
+        isa="test_isa",
+        num_threads=2,
+        data_type="f32",
+        compute_insts=["fma"],
+        load_store_ratio="2:1",
+    )
+
+    no_mixed_figure = build_roofline_figure(
+        [roof],
+        records,
+        settings=GUISettings(normalize_by_threads=True, line_width=2.0),
+    )
+    assert [trace for trace in no_mixed_figure.data if trace.mode == "lines+markers"] == []
+
+    figure = build_roofline_figure(
+        [roof],
+        records,
+        settings=GUISettings(show_mixed_benchmarks=True, normalize_by_threads=True, line_width=2.0),
+    )
+    mixed_traces = [trace for trace in figure.data if trace.mode == "lines+markers"]
+    assert len(mixed_traces) == 1
+    mixed = mixed_traces[0]
+    assert list(mixed.x) == [1.0, 4.0, 1000000.0]
+    assert list(mixed.y) == pytest.approx([5.0, 10.0, 500000000000.0])
+    assert mixed.name == "Test Roof mixed fma L1"
+    assert mixed.line.color == _COLORS[0]
+    assert mixed.line.dash == "solid"
+    assert mixed.line.width == pytest.approx(3.0)
+    assert mixed.marker.color == _COLORS[0]
+    assert mixed.marker.symbol == "circle"
+    assert mixed.legendgroup == "roof-1"
+    assert mixed.showlegend is False
+    assert list(mixed.customdata) == [["Point ?"], ["Point ?"], ["Point ?"]]
+    assert "<b>Roof:</b> Test Roof" in mixed.hovertemplate
+    assert "<b>Memory level:</b> L1" in mixed.hovertemplate
+    assert "<b>Benchmark:</b> %{customdata[0]}" in mixed.hovertemplate
+    assert list(figure.layout.xaxis.range) == pytest.approx(list(no_mixed_figure.layout.xaxis.range))
+    assert list(figure.layout.yaxis.range) == pytest.approx(list(no_mixed_figure.layout.yaxis.range))
+
+
+def test_build_roofline_figure_uses_latest_mixed_series_per_cache_level() -> None:
+    """Each cache level shows one series from its newest mixed measurement."""
+    def mixed_record(
+        timestamp: str, cache_level: str, performance_gops: float, point_index: int = 0
+    ) -> BenchmarkRecord:
+        return {
+            "type": "mixed",
+            "machine": "test_machine",
+            "isa": "test_isa",
+            "num_threads": 1,
+            "data_type": "f32",
+            "operation": "fma",
+            "load_store_ratio": "2:1",
+            "cache_level": cache_level,
+            "timestamp": timestamp,
+            "points": [
+                {
+                    "name": f"{cache_level}-{timestamp}-{point_index}",
+                    "point_index": point_index,
+                    "arithmetic_intensity": 1.0 + point_index,
+                    "performance_gops": performance_gops,
+                }
+            ],
+        }
+
+    records = [
+        mixed_record("2026-01-01T00:00:00", "L1", 1.0),
+        mixed_record("2026-01-02T00:00:00", "L1", 2.0),
+        mixed_record("2026-01-02T00:00:00", "L1", 3.0, point_index=1),
+        *[mixed_record("2026-01-02T00:00:00", level, 4.0) for level in ("L2", "L3", "DRAM")],
+    ]
+    roof = RoofConfig(
+        roof_id="roof-1",
+        label="Test Roof",
+        machine="test_machine",
+        isa="test_isa",
+        num_threads=1,
+        data_type="f32",
+        compute_insts=["fma"],
+        load_store_ratio="2:1",
+    )
+
+    figure = build_roofline_figure([roof], records, settings=GUISettings(show_mixed_benchmarks=True))
+    mixed_traces = [trace for trace in figure.data if trace.mode == "lines+markers"]
+
+    assert [trace.name for trace in mixed_traces] == [
+        "Test Roof mixed fma L1",
+        "Test Roof mixed fma L2",
+        "Test Roof mixed fma L3",
+        "Test Roof mixed fma DRAM",
+    ]
+    assert list(mixed_traces[0].x) == [1.0, 2.0]
+    assert list(mixed_traces[0].y) == [2.0, 3.0]
+    assert list(mixed_traces[0].customdata) == [["L1-2026-01-02T00:00:00-0"], ["L1-2026-01-02T00:00:00-1"]]
+
+
 
 
 def test_build_roofline_figure_dynamic_ranges() -> None:

@@ -9,9 +9,11 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from carm_roofline.gui.components import build_settings_panel
 from carm_roofline.gui.config import GUIConfig
+from carm_roofline.gui.data import RoofStore
 from carm_roofline.gui.factory import _clicked_point_residency, _selection_payload, create_app
-from carm_roofline.gui.ids import StoreID
+from carm_roofline.gui.ids import SettingsPanelID, StoreID
 from carm_roofline.gui.providers import ParaverData
 from carm_roofline.paraver import ParaverWindowMode
 
@@ -80,6 +82,24 @@ def _find_component(node: Any, comp_id: str) -> Any | None:
             if found is not None:
                 return found
     return None
+
+
+def test_settings_panel_has_mixed_benchmark_switch_off_by_default() -> None:
+    """The mixed benchmark switch exists and starts disabled."""
+    store = RoofStore()
+    panel = build_settings_panel(store)
+    switch = _find_component(panel, SettingsPanelID.SWITCH_SHOW_MIXED_BENCHMARKS)
+    assert switch is not None
+    assert switch.value is False
+
+    serialized = store.to_dict()
+    assert serialized["settings"]["show_mixed_benchmarks"] is False
+    settings = serialized["settings"]
+    assert isinstance(settings, dict)
+    settings["show_mixed_benchmarks"] = True
+    restored = RoofStore.from_dict(serialized)
+    assert restored.settings.show_mixed_benchmarks is True
+
 
 
 def test_paraver_time_slider_uses_explicit_step() -> None:

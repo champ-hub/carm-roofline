@@ -588,12 +588,19 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
     """Settings panel with various plotting and appearance options, grouped into accordion sections."""
     s = store.settings
 
-    # Plotting settings — only the normalize switch
-    normalize_switch = _build_settings_switch(
-        "Normalize performance by threads",
-        SettingsPanelID.SWITCH_NORMALIZE,
-        s.normalize_by_threads,
-    )
+    # Plotting settings — switches that affect the displayed roofline data
+    plotting_switches = [
+        _build_settings_switch(
+            "Normalize performance by threads",
+            SettingsPanelID.SWITCH_NORMALIZE,
+            s.normalize_by_threads,
+        ),
+        _build_settings_switch(
+            "Show mixed benchmarks",
+            SettingsPanelID.SWITCH_SHOW_MIXED_BENCHMARKS,
+            s.show_mixed_benchmarks,
+        ),
+    ]
 
     # Plot style — everything else
     plot_style_switches = [
@@ -623,7 +630,7 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
                     dbc.AccordionItem(
                         title="Plotting settings",
                         item_id="plotting-settings",
-                        children=[normalize_switch],
+                        children=plotting_switches,
                     ),
                     dbc.AccordionItem(
                         title="Plot style",

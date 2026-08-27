@@ -73,6 +73,7 @@ class SettingsPanelID(ID):
     SLIDER_MARKER_SIZE = "slider-marker-size"
     SWITCH_POWER2_TICKS = "switch-power2-ticks"
     SWITCH_SHOW_ROOF_FILLS = "switch-show-roof-fills"
+    SWITCH_SHOW_MIXED_BENCHMARKS = "switch-show-mixed-benchmarks"
     SLIDER_LINE_WIDTH = "slider-line-width"
     SLIDER_FONT_SIZE_AXIS_LABEL = "slider-font-size-axis-label"
     SLIDER_FONT_SIZE_AXIS_TICK = "slider-font-size-axis-tick"
