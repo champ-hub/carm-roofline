@@ -57,9 +57,9 @@ By default the tool auto-detects all available ISAs on your system. Use `--isa` 
 
 The tool auto-detects your cache hierarchy from sysfs. If that fails or you want to model a different system, use `--emit-config` to dump a template TOML file, edit it with your cache parameters, and pass it via `--topology-config`.
 
-### What to measure (`--test`, `--data-type`, `--instruction`, `--mem-target`, `--ld-st-ratio`, `--arith-mem-ratio`, `--mem-test-sizes`, `--num-ops`)
+### What to measure (`--test`, `--data-type`, `--instruction`, `--mem-target`, `--ld-st-ratio`, `--ai-range`, `--ai-points`, `--mem-test-sizes`, `--num-ops`)
 
-These control the test performed on the system. The main selection is `--test`, described above. Within a test you can narrow further: restrict data types (`--data-type`), pick arithmetic instructions (`--instruction`), choose which memory levels to target (`--mem-target`), and control the load-to-store ratio (`--ld-st-ratio`). For the `mixed` test, `--arith-mem-ratio` controls how many arithmetic operations per memory access. `--mem-test-sizes` lets you set exact array sizes per cache level instead of auto-sizing. `--num-ops` sets how many arithmetic operations the inner loop performs.
+These options control the test performed on the system. The main selection is `--test`, described above. Within a test you can narrow further: restrict data types with `--data-type`, pick arithmetic instructions with `--instruction`, choose memory levels with `--mem-target`, and control the load-to-store ratio with `--ld-st-ratio`. For the `mixed` test, use `--ai-range MIN MAX` to sweep an arithmetic-intensity range, and use `--ai-points COUNT` to set how many points to generate. Points are logarithmically spaced. `--mem-test-sizes` lets you set exact array sizes per cache level instead of auto-sizing. `--num-ops` sets the arithmetic-test loop work.
 
 ### How long to run (`--test-time`)
 

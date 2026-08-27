@@ -22,11 +22,9 @@ from carm_roofline.benchmark import (
     MixedBenchmark,
 )
 from carm_roofline.benchmark.benchmarking import LoadStoreRatio
-from carm_roofline.benchmark.generation import ArithmeticBenchmarkParams, MemoryBenchmarkParams
-from carm_roofline.core import DataType
-from carm_roofline.core import ArithmeticOperation
+from carm_roofline.benchmark.generation import ArithmeticBenchmarkParams, MemoryBenchmarkParams, MixedBenchmarkParams
+from carm_roofline.core import ArithmeticIntensity, ArithmeticOperation, Bytes, DataType, Frequency, Operations, Seconds
 from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
-from carm_roofline.core import Bytes, Frequency, Operations, Seconds
 
 
 def make_spec(
@@ -196,29 +194,34 @@ class TestMemoryBenchmark:
 
 
 class TestMixedBenchmark:
-    """Tests for MixedBenchmark class (placeholder for future implementation)."""
+    """Tests for mixed benchmark result processing."""
 
-    def test_creation(self):
-        """Test creating a mixed benchmark."""
-        from carm_roofline.benchmark.generation import BenchmarkParams
-
-        params = BenchmarkParams(data_type=DataType.f32, thread_affinity=[0])
-
-        bench = MixedBenchmark(params=params, spec=make_spec())
-
-        assert isinstance(bench, BaseBenchmark)
-        assert isinstance(bench, MixedBenchmark)
-        assert bench.results is None
-
-    def test_process_results_not_implemented(self):
-        """Test that processing mixed results raises NotImplementedError."""
-        from carm_roofline.benchmark.generation import BenchmarkParams
-
-        params = BenchmarkParams(data_type=DataType.f32, thread_affinity=[0])
-        bench = MixedBenchmark(params=params, spec=make_spec())
-
-        with pytest.raises(NotImplementedError, match="Mixed benchmark result processing"):
-            bench.process_results(time_taken=Seconds.from_milliseconds(100.0), num_repetitions=1000)
+    def test_process_results_scales_threads_and_repetitions(self):
+        """Mixed results preserve achieved AI and scale total work."""
+        params = MixedBenchmarkParams(
+            data_type=DataType.f32,
+            thread_affinity=[0, 1],
+            load_store_ratio=LoadStoreRatio(2, 1),
+            size_per_thread=Bytes(1024),
+            memory_level_name="L1",
+            operation=ArithmeticOperation.fma,
+            point_index=0,
+            requested_arithmetic_intensity=ArithmeticIntensity(0.5),
+            num_arithmetic_instructions=3,
+            memory_pattern_repeats=1,
+            achieved_arithmetic_intensity=ArithmeticIntensity(0.5),
+        )
+        bench = MixedBenchmark(
+            params=params,
+            spec=make_spec(),
+            operations_per_thread=Operations(100),
+            working_set_bytes=Bytes(2048),
+            cache_level="L1",
+        )
+        bench.process_results(time_taken=Seconds(2), num_repetitions=5)
+        assert bench.results is not None
+        assert bench.results.arithmetic_intensity == ArithmeticIntensity(0.5)
+        assert float(bench.results.performance) == 500.0
 
 
 class TestISABenchmarkSuite:
@@ -349,13 +352,26 @@ class TestISABenchmarkSuite:
 
     def test_get_mixed_benchmarks(self):
         """Test filtering mixed benchmarks."""
-        from carm_roofline.benchmark.generation import BenchmarkParams
-
+        params = MixedBenchmarkParams(
+            data_type=DataType.f32,
+            thread_affinity=[0],
+            load_store_ratio=LoadStoreRatio(2, 1),
+            size_per_thread=Bytes(1024),
+            memory_level_name="L1",
+            operation=ArithmeticOperation.fma,
+            point_index=0,
+            requested_arithmetic_intensity=ArithmeticIntensity(0.5),
+            num_arithmetic_instructions=3,
+            memory_pattern_repeats=1,
+            achieved_arithmetic_intensity=ArithmeticIntensity(0.5),
+        )
         suite = ArithmeticBenchmarkSuite(isa_name="avx2")
-
         mixed1 = MixedBenchmark(
-            params=BenchmarkParams(DataType.f32, thread_affinity=[0]),
+            params=params,
             spec=make_spec("mixed1"),
+            operations_per_thread=Operations(100),
+            working_set_bytes=Bytes(1024),
+            cache_level="L1",
         )
         arith1 = ArithmeticBenchmark(
             params=ArithmeticBenchmarkParams(

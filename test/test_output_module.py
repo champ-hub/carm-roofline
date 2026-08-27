@@ -934,8 +934,8 @@ def test_memory_cli_and_plot(monkeypatch, tmp_path, capsys):
     assert any("memory_bandwidth.png" in str(p) for p in saved), f"Plot not saved. Saved: {saved}"
 
 
-def test_mixed_combines_handlers(monkeypatch, tmp_path, capsys):
-    """Mixed handler prints both arithmetic and memory summaries and saves combined plot."""
+def test_mixed_writes_performance_plot(monkeypatch, tmp_path, capsys):
+    """Mixed handler saves the mixed performance plot."""
     from carm_roofline.benchmark.benchmark import (
         ArithmeticBenchmark,
         ArithmeticBenchmarkResult,
@@ -1023,7 +1023,7 @@ def test_mixed_combines_handlers(monkeypatch, tmp_path, capsys):
 
     mixed_mod._write_plot(isa_suites, tmp_path)
     saved = [str(p) for p in mpl.pyplot._saved]
-    assert any("mixed_summary.png" in str(p) for p in saved)
+    assert any("mixed_performance.png" in str(path) for path in saved)
 
 
 class TestJsonlOutput:
@@ -1232,6 +1232,71 @@ class TestJsonlOutput:
         assert entry["time_seconds"] == 0.001
         assert entry["repetitions"] == 1000
         assert entry["cycles"] == 2_000_000.0
+
+    def test_jsonl_groups_mixed_points_by_fixed_configuration(self, tmp_path):
+        """Mixed points share configuration fields but retain point metadata."""
+        import json
+
+        from carm_roofline.benchmark.benchmark import MixedBenchmark, MixedBenchmarkResult
+        from carm_roofline.benchmark.generation import MixedBenchmarkParams
+        from carm_roofline.benchmark.output.jsonl import write_jsonl_benchmarks
+        from carm_roofline.benchmark.suites import MixedBenchmarkSuite
+        from carm_roofline.core import ArithmeticIntensity, ArithmeticOperation, Bytes, DataType
+        from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+
+        context = _make_fake_context(["isa1"], freq_hz=2.0e9)
+        suite = MixedBenchmarkSuite(isa_name="isa1")
+
+        for point_index, (name, requested_ai, performance) in enumerate(
+            (("mixed_l1_p0", 0.25, 10e9), ("mixed_l1_p1", 1.0, 20e9))
+        ):
+            params = MixedBenchmarkParams(
+                data_type=DataType.f32,
+                thread_affinity=[0],
+                load_store_ratio=LoadStoreRatio(2, 1),
+                size_per_thread=Bytes(1024),
+                memory_level_name="L1",
+                operation=ArithmeticOperation.fma,
+                point_index=point_index,
+                requested_arithmetic_intensity=ArithmeticIntensity(requested_ai),
+                num_arithmetic_instructions=2 + point_index,
+                memory_pattern_repeats=1,
+                achieved_arithmetic_intensity=ArithmeticIntensity(requested_ai),
+            )
+            bench = MixedBenchmark(
+                params=params,
+                spec=MicrobenchmarkFunctionSpec(
+                    function_name=name,
+                    body="",
+                    read_array_size=Bytes(1024),
+                    write_array_size=Bytes(0),
+                    frequency=2.0,
+                    thread_affinity=[0],
+                ),
+                operations_per_thread=Operations(100),
+                working_set_bytes=Bytes(1024),
+                cache_level="L1",
+            )
+            bench.results = MixedBenchmarkResult(
+                time_taken=Seconds(0.001),
+                num_repetitions=100,
+                performance=Performance(performance),
+                arithmetic_intensity=ArithmeticIntensity(requested_ai),
+            )
+            suite.add_benchmark(bench.name, bench)
+
+        write_jsonl_benchmarks(context, {"isa1": suite}, output_dir=tmp_path)
+
+        path = tmp_path / "test" / "benchmarks.jsonl"
+        entries = [json.loads(line) for line in path.read_text().splitlines()]
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["type"] == "mixed"
+        assert entry["memory_level_name"] == "L1"
+        assert "performance_gops" not in entry
+        assert [point["name"] for point in entry["points"]] == ["mixed_l1_p0", "mixed_l1_p1"]
+        assert [point["requested_arithmetic_intensity"] for point in entry["points"]] == [0.25, 1.0]
+        assert [point["performance_gops"] for point in entry["points"]] == [10.0, 20.0]
 
     def test_jsonl_skips_null_results(self, tmp_path):
         """Benchmarks with null results do not produce JSONL lines."""

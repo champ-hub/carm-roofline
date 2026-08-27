@@ -1,76 +1,106 @@
-"""Mixed output handler: combines arithmetic and memory summaries."""
+"""Mixed benchmark output."""
 
 from __future__ import annotations
 
+from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from carm_roofline.output_utils import error, info, warn
+from rich.table import Table
 
-from . import arithmetic, memory
+from carm_roofline.output_utils import get_console, warn
+
 from .base import NON_ROOFLINE_CSV_ERROR_MSG, OutputHandler
-from .common import (
-    safe_matplotlib_import,
-    save_or_show_plot,
-)
+from .common import safe_matplotlib_import, save_or_show_plot
 
 if TYPE_CHECKING:
-    from carm_roofline.benchmark.benchmark import ISABenchmarkSuite
+    from carm_roofline.benchmark.benchmark import ISABenchmarkSuite, MixedBenchmark
     from carm_roofline.context import CARMContext
 
 
+def _rows(isa_suites: dict[str, ISABenchmarkSuite]) -> list[tuple[str, MixedBenchmark]]:
+    rows: list[tuple[str, MixedBenchmark]] = []
+    for isa, suite in isa_suites.items():
+        for benchmark in suite.get_mixed_benchmarks().values():
+            if benchmark.results is not None:
+                rows.append((isa, benchmark))
+    return sorted(
+        rows,
+        key=lambda item: (
+            item[0],
+            item[1].cache_level,
+            item[1].params.data_type.name,
+            item[1].params.operation.name,
+            item[1].params.num_threads,
+            item[1].params.load_store_ratio.loads,
+            item[1].params.load_store_ratio.stores,
+            item[1].params.point_index,
+        ),
+    )
+
+
 def _print_table(context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) -> None:
-    info("Mixed test summary:")
+    table = Table(title="Mixed benchmark results")
+    for column in (
+        "ISA",
+        "Memory Level",
+        "Data Type",
+        "Operation",
+        "Threads",
+        "Load:Store",
+        "Requested AI",
+        "Achieved AI",
+        "Performance",
+    ):
+        table.add_column(column)
+    for isa, benchmark in _rows(isa_suites):
+        results = benchmark.results
+        assert results is not None
+        ratio = benchmark.params.load_store_ratio
+        table.add_row(
+            isa,
+            benchmark.cache_level,
+            benchmark.params.data_type.name,
+            benchmark.params.operation.name,
+            str(benchmark.params.num_threads),
+            f"{ratio.loads}:{ratio.stores}",
+            f"{float(benchmark.params.requested_arithmetic_intensity):g}",
+            f"{float(results.arithmetic_intensity):g}",
+            f"{float(results.performance) / 1e9:.3f} GOPS",
+        )
+    get_console().print(table)
 
 
 def _write_plot(isa_suites: dict[str, ISABenchmarkSuite], output_path: Path | None = None) -> None:
-    """Generate and save combined arithmetic and memory plot.
-
-    Creates a single figure with two side-by-side subplots:
-    - Left: Arithmetic GFLOPS by ISA
-    - Right: Memory bandwidth by ISA
-
-    Args:
-        isa_suites: Benchmark results organized by ISA
-        output_path: Directory to save plot (None = display interactively)
-
-    Note:
-        Gracefully handles errors from sub-handlers. Will not raise exceptions.
-        If either subplot fails, the other will still be displayed.
-    """
     plt = safe_matplotlib_import()
     if plt is None:
         return
-
-    fig = None
-    try:
-        # Create a single figure with 2 subplots side-by-side
-        fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-
-        # Plot arithmetic GFLOPS to left subplot
-        try:
-            arithmetic._plot_to_axis(isa_suites, axes[0])
-        except Exception as e:
-            warn(f"Failed to generate arithmetic subplot in mixed plot: {e}")
-            axes[0].text(0.5, 0.5, "Arithmetic data unavailable", ha="center", va="center", transform=axes[0].transAxes)
-
-        # Plot memory bandwidth to right subplot
-        try:
-            memory._plot_to_axis(isa_suites, axes[1])
-        except Exception as e:
-            warn(f"Failed to generate memory subplot in mixed plot: {e}")
-            axes[1].text(0.5, 0.5, "Memory data unavailable", ha="center", va="center", transform=axes[1].transAxes)
-
-        plt.suptitle("Mixed test: Arithmetic + Memory")
-        plt.tight_layout()
-        save_or_show_plot(output_path, "mixed_summary.png", plt=plt)
-
-    except Exception as e:
-        error(f"Failed to generate mixed summary plot: {e}")
-    finally:
-        # Explicitly close the figure to prevent matplotlib from retaining it in memory.
-        if fig is not None:
-            plt.close(fig)
+    series: dict[tuple[str, str, str, str, int, int, int], list[tuple[float, float]]] = defaultdict(list)
+    for isa, benchmark in _rows(isa_suites):
+        results = benchmark.results
+        assert results is not None
+        ratio = benchmark.params.load_store_ratio
+        key = (
+            isa,
+            benchmark.cache_level,
+            benchmark.params.data_type.name,
+            benchmark.params.operation.name,
+            benchmark.params.num_threads,
+            ratio.loads,
+            ratio.stores,
+        )
+        series[key].append((float(results.arithmetic_intensity), float(results.performance) / 1e9))
+    fig, axis = plt.subplots()
+    for key, points in series.items():
+        points.sort()
+        axis.plot(*zip(*points), marker="o", label=" ".join(map(str, key)))
+    axis.set_xscale("log", base=2)
+    axis.set_yscale("log", base=2)
+    axis.set_xlabel("Arithmetic intensity (FLOP/B)")
+    axis.set_ylabel("Performance (GOPS)")
+    axis.legend()
+    save_or_show_plot(output_path, "mixed_performance.png", plt=plt)
+    plt.close(fig)
 
 
 class MixedOutputHandler(OutputHandler):
@@ -80,8 +110,7 @@ class MixedOutputHandler(OutputHandler):
         _print_table(context, isa_suites)
 
     def write_plot(self, context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) -> None:
-        path = context.run_config.output_dir / "mixed"
-        _write_plot(isa_suites, output_path=path)
+        _write_plot(isa_suites, context.run_config.output_dir / "mixed")
 
     def write_csv(self, context: CARMContext, isa_suites: dict[str, ISABenchmarkSuite]) -> None:
         warn(NON_ROOFLINE_CSV_ERROR_MSG)

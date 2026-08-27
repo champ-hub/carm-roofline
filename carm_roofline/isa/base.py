@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from math import log
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from carm_roofline.benchmark.generation.code_gen import ControlInstructions, TypedInstructions, instruction as inst
@@ -11,8 +12,9 @@ from carm_roofline.benchmark.generation.parameters import (
     BenchParamError,
     MemoryBenchmarkParams,
     MemoryLayoutMode,
+    MixedBenchmarkParams,
 )
-from carm_roofline.core import ArithmeticOperation, Bytes, DataType, MemoryOperation
+from carm_roofline.core import ArithmeticIntensity, ArithmeticOperation, Bytes, DataType, MemoryOperation
 from carm_roofline.output_utils import debug
 
 if TYPE_CHECKING:
@@ -262,9 +264,10 @@ class BaseISA:
 
     def _validate_memory_size(
         self,
-        params: MemoryBenchmarkParams,
+        params: MemoryBenchmarkParams | MixedBenchmarkParams,
         bytes_per_inst: int,
-        insts_per_repeat: int,
+        num_loads_per_repeat: int,
+        num_stores_per_repeat: int,
     ) -> SizeInfo:
         """Validate memory benchmark size and derive working set size.
 
@@ -277,6 +280,7 @@ class BaseISA:
             SizeInfo with repeats, bytes per repeat, and working set size.
         """
 
+        insts_per_repeat = num_loads_per_repeat + num_stores_per_repeat
         actual_bytes_per_repeat = insts_per_repeat * bytes_per_inst
         repeats = params.size_per_thread.value // actual_bytes_per_repeat
         debug(
@@ -297,8 +301,8 @@ class BaseISA:
             write_array_size = 0
         else:
             # Split layout: independent read and write buffers.
-            read_array_size = repeats * params.num_ld * bytes_per_inst
-            write_array_size = repeats * params.num_st * bytes_per_inst
+            read_array_size = repeats * num_loads_per_repeat * bytes_per_inst
+            write_array_size = repeats * num_stores_per_repeat * bytes_per_inst
 
         truncation = params.size_per_thread.value - actual_working_set_size
         if truncation != 0:
@@ -319,7 +323,7 @@ class BaseISA:
 
     def _calculate_loop_configuration(
         self,
-        params: MemoryBenchmarkParams,
+        params: MemoryBenchmarkParams | MixedBenchmarkParams,
         repeats: int,
         insts_per_repeat: int,
         branch_distance_limit: int,
@@ -398,95 +402,140 @@ class BaseISA:
             loop_instruction_limit=branch_distance_limit,
         )
 
-    def _generate_memory_instruction_stream(
+    def _generate_instruction_stream(
         self,
-        params: MemoryBenchmarkParams,
+        params: MemoryBenchmarkParams | MixedBenchmarkParams,
         bench_registers: CyclicRegisterSet,
         load_format: inst.Memory,
         store_format: inst.Memory,
         block_size_offsets: int,
         repeats: int,
+        event_schedule: list[MemoryOperation | ArithmeticOperation] | None = None,
+        arithmetic_formatter: Callable[[], str] | None = None,
     ) -> list[str]:
-        """Generate the memory instruction stream for a given repeat count.
-
-        In single layout mode, loads and stores share one pointer and one array.
-        In split layout mode, loads and stores use independent pointers/arrays.
-        """
-
-        insts = []
+        """Generate memory events and optional arithmetic events in one stream."""
+        schedule = event_schedule or [MemoryOperation.ld] * params.num_ld + [MemoryOperation.st] * params.num_st
         offset_increment = self.offset_increment(params.data_type)
         max_offset = block_size_offsets * offset_increment
         hregs = self.helper_registers
+        instructions: list[str] = []
+        read_offset = 0
+        write_offset = 0
+        shared_offset = 0
+
+        for _ in range(repeats):
+            for event in schedule:
+                if event == MemoryOperation.ld:
+                    pointer = hregs.pointer
+                    offset = shared_offset if params.layout_mode == MemoryLayoutMode.single else read_offset
+                    instructions.append(load_format.fmt(bench_registers, pointer, offset=offset))
+                    if params.layout_mode == MemoryLayoutMode.single:
+                        shared_offset += offset_increment
+                        if shared_offset >= max_offset:
+                            shared_offset = 0
+                            instructions.append(
+                                self.control_instructions.add.fmt(pointer, pointer, hregs.pointer_increment)
+                            )
+                    else:
+                        read_offset += offset_increment
+                        if read_offset >= max_offset:
+                            read_offset = 0
+                            instructions.append(
+                                self.control_instructions.add.fmt(pointer, pointer, hregs.pointer_increment)
+                            )
+                elif event == MemoryOperation.st:
+                    pointer = hregs.pointer if params.layout_mode == MemoryLayoutMode.single else hregs.write_pointer
+                    offset = shared_offset if params.layout_mode == MemoryLayoutMode.single else write_offset
+                    instructions.append(store_format.fmt(bench_registers, pointer, offset=offset))
+                    if params.layout_mode == MemoryLayoutMode.single:
+                        shared_offset += offset_increment
+                        if shared_offset >= max_offset:
+                            shared_offset = 0
+                            instructions.append(
+                                self.control_instructions.add.fmt(pointer, pointer, hregs.pointer_increment)
+                            )
+                    else:
+                        write_offset += offset_increment
+                        if write_offset >= max_offset:
+                            write_offset = 0
+                            instructions.append(
+                                self.control_instructions.add.fmt(pointer, pointer, hregs.pointer_increment)
+                            )
+                else:
+                    if arithmetic_formatter is None:
+                        raise BenchParamError("Arithmetic event requires an arithmetic formatter")
+                    instructions.append(arithmetic_formatter())
 
         if params.layout_mode == MemoryLayoutMode.single:
-            # Single-array layout: loads and stores are interleaved over one
-            # sequential pointer (hregs.pointer), advancing through a shared buffer.
-            running_offset = 0
-            for _ in range(repeats):
-                for fmt, num_insts in ((load_format, params.num_ld), (store_format, params.num_st)):
-                    for _ in range(num_insts):
-                        inst_line = fmt.fmt(bench_registers, hregs.pointer, offset=running_offset)
-                        insts.append(inst_line)
-                        running_offset += offset_increment
-                        if running_offset >= max_offset:
-                            running_offset = 0
-                            insts.append(
-                                self.control_instructions.add.fmt(hregs.pointer, hregs.pointer, hregs.pointer_increment)
-                            )
-
-            remaining_offset = self.bytes_per_inst(params.data_type) * running_offset // offset_increment
-            if remaining_offset > 0:
-                insts.append(self.control_instructions.add_imm.fmt(hregs.pointer, hregs.pointer, remaining_offset))
-        else:
-            # Split-array layout: loads advance through read buffer (hregs.pointer),
-            # stores advance through write buffer (hregs.write_pointer) independently.
-            running_read_offset = 0
-            running_write_offset = 0
-
-            for _ in range(repeats):
-                # Loads: advance through read buffer via hregs.pointer
-                for _ in range(params.num_ld):
-                    inst_line = load_format.fmt(bench_registers, hregs.pointer, offset=running_read_offset)
-                    insts.append(inst_line)
-                    running_read_offset += offset_increment
-                    if running_read_offset >= max_offset:
-                        running_read_offset = 0
-                        insts.append(
-                            self.control_instructions.add.fmt(hregs.pointer, hregs.pointer, hregs.pointer_increment)
-                        )
-
-                # Stores: advance through write buffer via hregs.write_pointer
-                for _ in range(params.num_st):
-                    inst_line = store_format.fmt(bench_registers, hregs.write_pointer, offset=running_write_offset)
-                    insts.append(inst_line)
-                    running_write_offset += offset_increment
-                    if running_write_offset >= max_offset:
-                        running_write_offset = 0
-                        insts.append(
-                            self.control_instructions.add.fmt(
-                                hregs.write_pointer, hregs.write_pointer, hregs.pointer_increment
-                            )
-                        )
-
-            # Advance each pointer past any remaining partial block
-            remaining_read_offset = self.bytes_per_inst(params.data_type) * running_read_offset // offset_increment
-            if remaining_read_offset > 0:
-                insts.append(self.control_instructions.add_imm.fmt(hregs.pointer, hregs.pointer, remaining_read_offset))
-
-            remaining_write_offset = self.bytes_per_inst(params.data_type) * running_write_offset // offset_increment
-            if remaining_write_offset > 0:
-                insts.append(
+            if shared_offset:
+                instructions.append(
                     self.control_instructions.add_imm.fmt(
-                        hregs.write_pointer, hregs.write_pointer, remaining_write_offset
+                        hregs.pointer,
+                        hregs.pointer,
+                        self.bytes_per_inst(params.data_type) * shared_offset // offset_increment,
                     )
                 )
-
-        return insts
+        else:
+            if read_offset:
+                instructions.append(
+                    self.control_instructions.add_imm.fmt(
+                        hregs.pointer,
+                        hregs.pointer,
+                        self.bytes_per_inst(params.data_type) * read_offset // offset_increment,
+                    )
+                )
+            if write_offset:
+                instructions.append(
+                    self.control_instructions.add_imm.fmt(
+                        hregs.write_pointer,
+                        hregs.write_pointer,
+                        self.bytes_per_inst(params.data_type) * write_offset // offset_increment,
+                    )
+                )
+        return instructions
 
     def ops_per_inst(self, data_type: DataType, op: ArithmeticOperation) -> int:
-        "Returns the number of operations per instruction for the given operation"
-        # data_type is unused in the base implementation, but may be used by subclasses (e.g. RVV)
+        """Return the number of operations per arithmetic instruction."""
         return op.ops()
+
+    def _select_mixed_instruction_counts(
+        self,
+        data_type: DataType,
+        operation: ArithmeticOperation,
+        load_store_ratio: Any,
+        requested_ai: ArithmeticIntensity,
+    ) -> tuple[int, int, ArithmeticIntensity]:
+        """Select a bounded integer mixed instruction block near the requested AI."""
+        memory_instructions = load_store_ratio.loads + load_store_ratio.stores
+        if memory_instructions < 1:
+            raise BenchParamError("Mixed benchmark requires at least one memory instruction")
+        body_budget = min((self.max_branch_insts - 7) // 2, self.instruction_limit // 2)
+        ops_per_instruction = self.ops_per_inst(data_type, operation)
+        bytes_per_instruction = self.bytes_per_inst(data_type)
+        best: tuple[float, int, int, int, ArithmeticIntensity] | None = None
+        for repeats in range(1, body_budget // memory_instructions + 1):
+            transferred_bytes = bytes_per_instruction * memory_instructions * repeats
+            arithmetic_instructions = min(
+                max(1, round(float(requested_ai) * transferred_bytes / ops_per_instruction)),
+                body_budget - 2 * memory_instructions * repeats,
+            )
+            if arithmetic_instructions < 1:
+                continue
+            emitted_instructions = arithmetic_instructions + 2 * memory_instructions * repeats
+            achieved_ai = ArithmeticIntensity(arithmetic_instructions * ops_per_instruction / transferred_bytes)
+            candidate = (
+                abs(log(float(achieved_ai) / float(requested_ai))),
+                emitted_instructions,
+                repeats,
+                arithmetic_instructions,
+                achieved_ai,
+            )
+            if best is None or candidate[:3] < best[:3]:
+                best = candidate
+        if best is None:
+            raise BenchParamError(f"ISA '{self.name}' cannot generate mixed benchmark for AI {requested_ai}")
+        _, _, repeats, arithmetic_instructions, achieved_ai = best
+        return arithmetic_instructions, repeats, achieved_ai
 
     def bytes_per_inst(self, data_type: DataType) -> int:
         "Returns the number of bytes per memory instruction"
@@ -636,7 +685,7 @@ class BaseISA:
         # Calculate actual bytes per instruction for this ISA (accounts for vector width)
         bytes_per_inst = self.bytes_per_inst(params.data_type)
         insts_per_repeat = params.num_ld + params.num_st
-        size_info = self._validate_memory_size(params, bytes_per_inst, insts_per_repeat)
+        size_info = self._validate_memory_size(params, bytes_per_inst, params.num_ld, params.num_st)
 
         # Generate function name with actual working set size
         func_name = (
@@ -719,7 +768,7 @@ class BaseISA:
                     self.helper_registers.inner_iterator, loop_config.num_iterations
                 ),
                 self.INNER_LOOP_LABEL + ":",
-                *self._generate_memory_instruction_stream(
+                *self._generate_instruction_stream(
                     params,
                     bench_registers,
                     load_format,
@@ -735,7 +784,7 @@ class BaseISA:
                 self.control_instructions.branch_nz.fmt(self.helper_registers.inner_iterator, self.INNER_LOOP_LABEL),
             ),
             # Outer instructions
-            *self._generate_memory_instruction_stream(
+            *self._generate_instruction_stream(
                 params,
                 bench_registers,
                 load_format,
@@ -786,6 +835,137 @@ class BaseISA:
             read_array_size=Bytes(size_info.read_array_size),
             write_array_size=Bytes(size_info.write_array_size),
             frequency=frequency,
+            thread_affinity=params.thread_affinity,
+            nominal_frequency=context.architecture.nominal_frequency,
+        )
+
+    def generate_mixed(self, params: MixedBenchmarkParams, context: CARMContext) -> MicrobenchmarkFunctionSpec:
+        """Generate a mixed arithmetic and memory microbenchmark."""
+        from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
+
+        bytes_per_inst = self.bytes_per_inst(params.data_type)
+        size_info = self._validate_memory_size(
+            params,
+            bytes_per_inst,
+            params.num_ld * params.memory_pattern_repeats,
+            params.num_st * params.memory_pattern_repeats,
+        )
+        func_name = (
+            f"{self.name}_mixed_{params.operation.name}_{params.data_type.name}_p{params.point_index:03d}_"
+            f"{params.num_arithmetic_instructions}a_{params.memory_pattern_repeats}m_"
+            f"{params.num_ld}ld_{params.num_st}st_{params.memory_level_name.lower()}_"
+            f"{size_info.actual_working_set_size}_t{params.num_threads}"
+        )
+        branch_distance_limit = (self.max_branch_insts - 7) // 2
+        pattern = [MemoryOperation.ld] * params.num_ld + [MemoryOperation.st] * params.num_st
+        memory_events = pattern * params.memory_pattern_repeats
+        arithmetic_events = [params.operation] * params.num_arithmetic_instructions
+        schedule: list[MemoryOperation | ArithmeticOperation] = []
+        memory_index = arithmetic_index = 0
+        while memory_index < len(memory_events) or arithmetic_index < len(arithmetic_events):
+            memory_position = (
+                (memory_index + 0.5) / len(memory_events) if memory_index < len(memory_events) else float("inf")
+            )
+            arithmetic_position = (
+                (arithmetic_index + 0.5) / len(arithmetic_events)
+                if arithmetic_index < len(arithmetic_events)
+                else float("inf")
+            )
+            if memory_position <= arithmetic_position:
+                schedule.append(memory_events[memory_index])
+                memory_index += 1
+            else:
+                schedule.append(arithmetic_events[arithmetic_index])
+                arithmetic_index += 1
+        loop_config = self._calculate_loop_configuration(
+            params,
+            size_info.repeats,
+            len(schedule),
+            branch_distance_limit,
+            bytes_per_inst,
+            self.bench_instructions.get(params.data_type, MemoryOperation.ld),
+        )
+        bench_registers = self.bench_registers[params.data_type]
+        load_format = self.bench_instructions.get(params.data_type, MemoryOperation.ld)
+        store_format = self.bench_instructions.get(params.data_type, MemoryOperation.st)
+        arithmetic_format = self.bench_instructions.get(params.data_type, params.operation)
+
+        def arithmetic_formatter() -> str:
+            return arithmetic_format.fmt(bench_registers)
+
+        def stream(repeats: int) -> list[str]:
+            return self._generate_instruction_stream(
+                params,
+                bench_registers,
+                load_format,
+                store_format,
+                loop_config.block_size_offsets,
+                repeats,
+                schedule,
+                arithmetic_formatter,
+            )
+
+        var_num_reps = InlineASM.Input(c_name="num_reps", asm_name="num_reps")
+        var_read_ptr = InlineASM.Input(c_name="read_ptr", asm_name="read_ptr")
+        var_write_ptr = InlineASM.Input(c_name="write_ptr", asm_name="write_ptr")
+        asm = [
+            *self.control_instructions.load_imm.fmt(
+                self.helper_registers.pointer_increment, loop_config.bytes_per_block
+            ),
+            *self.setup_assembly(params.data_type),
+            self.control_instructions.load_word.fmt(
+                self.helper_registers.outer_iterator, self.format_iasm_input(var_num_reps)
+            ),
+            self.OUTER_LOOP_LABEL + ":",
+            self.control_instructions.load_word.fmt(
+                self.helper_registers.pointer, self.format_iasm_input(var_read_ptr)
+            ),
+            *_add_if(
+                params.layout_mode == MemoryLayoutMode.split and params.num_st > 0,
+                self.control_instructions.load_word.fmt(
+                    self.helper_registers.write_pointer, self.format_iasm_input(var_write_ptr)
+                ),
+            ),
+            *_add_if(
+                loop_config.instance_inner_loop,
+                *self.control_instructions.load_imm.fmt(
+                    self.helper_registers.inner_iterator, loop_config.num_iterations
+                ),
+                self.INNER_LOOP_LABEL + ":",
+                *stream(loop_config.inner_repeats),
+                self.control_instructions.sub_imm.fmt(
+                    self.helper_registers.inner_iterator, self.helper_registers.inner_iterator, 1
+                ),
+                self.control_instructions.branch_nz.fmt(self.helper_registers.inner_iterator, self.INNER_LOOP_LABEL),
+            ),
+            *stream(loop_config.outer_repeats),
+            self.control_instructions.sub_imm.fmt(
+                self.helper_registers.outer_iterator, self.helper_registers.outer_iterator, 1
+            ),
+            self.control_instructions.branch_nz.fmt(self.helper_registers.outer_iterator, self.OUTER_LOOP_LABEL),
+        ]
+        asm_inputs = [var_num_reps, var_read_ptr]
+        helper_clobbers = [
+            self.helper_registers.outer_iterator,
+            self.helper_registers.inner_iterator,
+            self.helper_registers.pointer,
+            self.helper_registers.pointer_increment,
+        ]
+        if params.layout_mode == MemoryLayoutMode.split:
+            if params.num_st:
+                asm_inputs.append(var_write_ptr)
+            helper_clobbers.append(self.helper_registers.write_pointer)
+        iasm = InlineASM(
+            asm,
+            asm_inputs,
+            [*bench_registers, *self.implicit_clobbers(params.data_type), *helper_clobbers],
+        )
+        return MicrobenchmarkFunctionSpec(
+            function_name=func_name,
+            body=self.__generate_generic_benchmark(iasm, func_name=func_name),
+            read_array_size=Bytes(size_info.read_array_size),
+            write_array_size=Bytes(size_info.write_array_size),
+            frequency=context.architecture.get_frequency_for_isa(self.name),
             thread_affinity=params.thread_affinity,
             nominal_frequency=context.architecture.nominal_frequency,
         )

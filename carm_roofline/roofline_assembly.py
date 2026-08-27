@@ -26,14 +26,30 @@ from carm_roofline.output_utils import debug, detail, info, warn
 class RecordType(str, Enum):
     ARITHMETIC = "arithmetic"
     MEMORY = "memory"
+    MIXED = "mixed"
+
+
+class MixedBenchmarkPoint(TypedDict, total=False):
+    """One point in a grouped mixed benchmark series."""
+
+    name: str
+    point_index: int
+    requested_arithmetic_intensity: float
+    arithmetic_intensity: float
+    performance_gops: float
+    num_arithmetic_instructions: int
+    memory_pattern_repeats: int
+    operations_per_thread: int
+    time_seconds: float
+    repetitions: int
+    cycles: int
 
 
 class BenchmarkRecord(TypedDict, total=False):
-    """A single JSONL benchmark record — arithmetic or memory.
+    """A single JSONL benchmark record.
 
-    All fields are optional (``total=False``) to reflect that records come
-    from external JSONL files and any field may be absent.  Consumers use
-    ``.get()`` to handle missing fields defensively.
+    Arithmetic and memory records describe one benchmark. Mixed records
+    describe one fixed configuration with a list of measured points.
     """
 
     type: str
@@ -42,15 +58,24 @@ class BenchmarkRecord(TypedDict, total=False):
     machine: str
     data_type: str
     num_threads: int
+    thread_affinity: list[int]
     timestamp: str
     # Arithmetic-specific
     operation: str
     performance_gops: float
     # Memory-specific
     load_store_ratio: str
+    num_loads: int
+    num_stores: int
     cache_level: str
     memory_level_name: str
+    size_per_thread_bytes: int
+    working_set_bytes: int
+    layout_mode: str
     bandwidth_gbps: float
+    # Mixed-specific
+    points: list[MixedBenchmarkPoint]
+    frequency_hz: float
     actual_frequency_hz: int
     frequency_overridden: bool
 
@@ -353,17 +378,15 @@ def _matches_filter(record: BenchmarkRecord, flt: RooflineFilter) -> bool:
     if flt.actual_frequency_hz is not None and record.get("actual_frequency_hz") != flt.actual_frequency_hz:
         return False
 
-    # load_store_ratio only applies to memory records
     if (
         flt.load_store_ratio is not None
-        and record.get("type") == RecordType.MEMORY
+        and record.get("type") in {RecordType.MEMORY, RecordType.MIXED}
         and record.get("load_store_ratio") != flt.load_store_ratio
     ):
         return False
-    # operations only applies to arithmetic records
     return not (
         flt.operations is not None
-        and record.get("type") == RecordType.ARITHMETIC
+        and record.get("type") in {RecordType.ARITHMETIC, RecordType.MIXED}
         and record.get("operation") not in flt.operations
     )
 
@@ -545,7 +568,7 @@ __all__ = [
     "ApplicationRecord",
     "AssembledRoofline",
     "BenchmarkRecord",
-    "FilterOptions",
+    "MixedBenchmarkPoint",
     "RecordType",
     "RooflineFilter",
     "assemble_roofline",

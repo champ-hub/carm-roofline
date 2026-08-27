@@ -8,11 +8,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-from carm_roofline.core import ArithmeticIntensity, Bandwidth, Bytes, Performance, Seconds
+from carm_roofline.core import ArithmeticIntensity, Bandwidth, Bytes, Operations, Performance, Seconds
 from carm_roofline.output_utils import debug
 from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
 
-from .generation import ArithmeticBenchmarkParams, BenchmarkParams, MemoryBenchmarkParams
+from .generation import ArithmeticBenchmarkParams, BenchmarkParams, MemoryBenchmarkParams, MixedBenchmarkParams
 
 # --- Result Classes ---
 
@@ -152,15 +152,23 @@ class MemoryBenchmark(BaseBenchmark):
 
 @dataclass
 class MixedBenchmark(BaseBenchmark):
-    """Mixed arithmetic+memory benchmark for roofline analysis."""
+    """Mixed arithmetic and memory benchmark."""
 
-    params: BenchmarkParams  # TODO: Define MixedBenchmarkParams
+    params: MixedBenchmarkParams
+    operations_per_thread: Operations
+    working_set_bytes: Bytes
+    cache_level: str
     results: MixedBenchmarkResult | None = field(default=None, init=False)
 
     def process_results(self, time_taken: Seconds, num_repetitions: int) -> None:
-        """Calculate GOPS from execution results."""
-        # TODO: Implement when MixedBenchmarkParams is defined
-        raise NotImplementedError("Mixed benchmark result processing not yet implemented")
+        """Calculate aggregate mixed performance."""
+        operations = self.operations_per_thread * num_repetitions * self.params.num_threads
+        self.results = MixedBenchmarkResult(
+            time_taken=time_taken,
+            num_repetitions=num_repetitions,
+            performance=Performance.from_ops_per_second(operations, time_taken),
+            arithmetic_intensity=self.params.achieved_arithmetic_intensity,
+        )
 
 
 # --- ISA Grouping ---

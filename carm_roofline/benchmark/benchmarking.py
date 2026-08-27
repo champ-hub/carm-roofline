@@ -10,7 +10,7 @@ from enum import Enum
 from typing import TypeVar
 
 from carm_roofline.arguments import InsertsArguments, enum_action, positive_float, positive_int
-from carm_roofline.core import ArithmeticOperation, Bytes, DataType, Operations
+from carm_roofline.core import ArithmeticIntensity, ArithmeticOperation, Bytes, DataType, Operations
 from carm_roofline.output_utils import warn
 
 
@@ -127,7 +127,14 @@ class Benchmarking(InsertsArguments):
         self.instructions: set[ArithmeticOperation] = set(args.instruction)
         self.num_ops: Operations = Operations(args.num_ops)
         self.ld_st_ratio: list[LoadStoreRatio] = _dedupe(args.ld_st_ratio)
-        self.arith_mem_ratio: int = args.arith_mem_ratio
+        self.ai_range: tuple[ArithmeticIntensity, ArithmeticIntensity] = tuple(
+            ArithmeticIntensity(value) for value in args.ai_range
+        )  # type: ignore[assignment]
+        self.ai_points: int = args.ai_points
+        if self.ai_points > 1 and self.ai_range[0] >= self.ai_range[1]:
+            raise ValueError("--ai-range MIN must be less than MAX when --ai-points is greater than 1")
+        if self.ai_points == 1 and self.ai_range[0] != self.ai_range[1]:
+            raise ValueError("--ai-range endpoints must be equal when --ai-points is 1")
         self.mem_test_sizes: list[Bytes | None] | None = args.mem_test_sizes
         self.verbose: int = args.verbose
         self.test_time: float = args.test_time
@@ -198,10 +205,18 @@ class Benchmarking(InsertsArguments):
             "integer for 'N:1' ratio. Use '1:0' for load-only or '0:1' for store-only tests. (Default: 2:1)",
         )
         parser.add_argument(
-            "--arith-mem-ratio",
-            default=2,
+            "--ai-range",
+            nargs=2,
+            default=(0.125, 16.0),
+            type=positive_float,
+            metavar=("MIN", "MAX"),
+            help="Inclusive arithmetic-intensity range for the mixed test in FLOP/B (Default: 0.125, 16)",
+        )
+        parser.add_argument(
+            "--ai-points",
+            default=8,
             type=positive_int,
-            help="Ratio between arithmetic and memory operations for 'mixed' test (Default: 2)",
+            help="Number of logarithmically spaced mixed arithmetic-intensity points (Default: 8)",
         )
         parser.add_argument(
             "--mem-test-sizes",

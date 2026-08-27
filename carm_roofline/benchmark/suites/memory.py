@@ -23,6 +23,78 @@ if TYPE_CHECKING:
 _CACHE_COVERAGE = 0.75
 
 
+def iter_memory_benchmark_params(context: CARMContext, isa: BaseISA) -> Iterator[MemoryBenchmarkParams]:
+    """Yield memory benchmark parameters with the shared memory sizing policy."""
+    benchmark = context.benchmarking
+    architecture = context.architecture
+    mem_level_indices = architecture.memory_topology.available_cache_levels()
+
+    for data_type in benchmark.data_type:
+        available_operations = isa.bench_instructions.available_operations(data_type)
+        required_operations = {
+            operation
+            for operation, count in ((MemoryOperation.ld, ratio.loads) for ratio in benchmark.ld_st_ratio)
+            if count
+        } | {
+            operation
+            for operation, count in ((MemoryOperation.st, ratio.stores) for ratio in benchmark.ld_st_ratio)
+            if count
+        }
+        if not required_operations.issubset(available_operations):
+            warn(
+                f"Skipping memory benchmarks for data type '{data_type.name}' on ISA '{isa.name}': "
+                f"no required load/store instructions available"
+            )
+            continue
+        for thread_count, ratio in product(benchmark.threads, benchmark.ld_st_ratio):
+            if (ratio.loads and MemoryOperation.ld not in available_operations) or (
+                ratio.stores and MemoryOperation.st not in available_operations
+            ):
+                warn(
+                    f"Skipping memory benchmark for data type '{data_type.name}' on ISA '{isa.name}': "
+                    f"load/store ratio {ratio} is not supported"
+                )
+                continue
+            previous_size_per_thread: Bytes | None = None
+            user_sizes: Iterator[Bytes | None] | None = (
+                iter(benchmark.mem_test_sizes) if benchmark.mem_test_sizes else None
+            )
+            for mem_level_idx, mem_level_info in zip(mem_level_indices, architecture.memory_topology):
+                if mem_level_info.name not in benchmark.mem_target:
+                    continue
+                thread_affinity = architecture.memory_topology.plan_thread_affinity(thread_count, mem_level_idx)
+                avail_size_per_thread: Bytes = thread_affinity.total_cache_bytes // thread_affinity.num_threads
+                is_final_target = mem_level_idx == mem_level_indices[-1]
+                target_size_per_thread = (
+                    previous_size_per_thread * 16
+                    if is_final_target and previous_size_per_thread is not None
+                    else avail_size_per_thread * _CACHE_COVERAGE
+                )
+                if user_sizes is not None:
+                    user_size = next(user_sizes, None)
+                    if user_size is not None:
+                        target_size_per_thread = user_size
+                total_used = target_size_per_thread * thread_affinity.num_threads
+                for lower_level in range(1, mem_level_idx):
+                    lower_bytes = thread_affinity.cache_bytes_per_level[lower_level]
+                    if total_used <= lower_bytes:
+                        warn(
+                            f"{mem_level_info.name} memory benchmark: dataset "
+                            f"({target_size_per_thread}/thread) fits in "
+                            f"L{lower_level} ({lower_bytes // thread_affinity.num_threads}/thread). "
+                            f"Data may be served from L{lower_level} instead."
+                        )
+                yield MemoryBenchmarkParams(
+                    data_type=data_type,
+                    thread_affinity=thread_affinity.cpu_ids,
+                    load_store_ratio=ratio,
+                    size_per_thread=target_size_per_thread,
+                    memory_level_name=mem_level_info.name,
+                    layout_mode=MemoryLayoutMode.split if is_final_target else MemoryLayoutMode.single,
+                )
+                previous_size_per_thread = avail_size_per_thread
+
+
 @dataclass
 class MemoryBenchmarkSuite(ISABenchmarkSuite):
     """Suite for memory bandwidth benchmarks (TestType.MEMORY).
@@ -66,85 +138,26 @@ class MemoryBenchmarkSuite(ISABenchmarkSuite):
 
         debug(f"Generating memory benchmarks for ISA '{isa.name}'")
 
-        mem_level_indices = architecture.memory_topology.available_cache_levels()
-        for data_type in benchmark.data_type:
-            if MemoryOperation.ld not in isa.bench_instructions.available_operations(data_type):
-                warn(
-                    f"Skipping memory benchmarks for data type '{data_type.name}' on ISA '{isa_name}': "
-                    f"no load/store instructions available"
-                )
-                continue
-            for thread_count, ratio in product(benchmark.threads, benchmark.ld_st_ratio):
-                previous_size_per_thread: Bytes | None = None
-                user_sizes: Iterator[Bytes | None] | None = (
-                    iter(benchmark.mem_test_sizes) if benchmark.mem_test_sizes else None
-                )
-                for mem_level_idx, mem_level_info in zip(mem_level_indices, architecture.memory_topology):
-                    if mem_level_info.name not in benchmark.mem_target:
-                        continue
-                    # Plan thread affinity for this memory level
-                    thread_affinity = architecture.memory_topology.plan_thread_affinity(thread_count, mem_level_idx)
-                    avail_size_per_thread: Bytes = thread_affinity.total_cache_bytes // thread_affinity.num_threads
-                    _is_first_target = mem_level_idx == mem_level_indices[0]
-                    is_final_target = mem_level_idx == mem_level_indices[-1]
-
-                    if is_final_target and previous_size_per_thread is not None:
-                        target_size_per_thread = previous_size_per_thread * 16
-                    else:
-                        target_size_per_thread = avail_size_per_thread * _CACHE_COVERAGE
-
-                    # Override with user-provided size (if any) for this cache level.
-                    if user_sizes is not None:
-                        user_size = next(user_sizes, None)
-                        if user_size is not None:
-                            target_size_per_thread = user_size
-
-                    # Warn if the per-thread dataset also fits in a smaller cache level.
-                    total_used = target_size_per_thread * thread_affinity.num_threads
-                    lower_levels = range(1, mem_level_idx)
-                    for lower_level in lower_levels:
-                        lower_bytes = thread_affinity.cache_bytes_per_level[lower_level]
-                        if total_used <= lower_bytes:
-                            warn(
-                                f"{mem_level_info.name} memory benchmark: dataset "
-                                f"({target_size_per_thread}/thread) fits in "
-                                f"L{lower_level} ({lower_bytes // thread_affinity.num_threads}/thread). "
-                                f"Data may be served from L{lower_level} instead."
-                            )
-
-                    # Generate memory benchmark for this level
-                    layout_mode = MemoryLayoutMode.split if is_final_target else MemoryLayoutMode.single
-                    params = MemoryBenchmarkParams(
-                        data_type=data_type,
-                        thread_affinity=thread_affinity.cpu_ids,
-                        load_store_ratio=ratio,
-                        size_per_thread=target_size_per_thread,
-                        memory_level_name=mem_level_info.name,
-                        layout_mode=layout_mode,
-                    )
-
-                    debug(
-                        f"  [{mem_level_info.name}] size_per_thread={target_size_per_thread}, "
-                        f"threads={thread_affinity.num_threads}, cpu_ids={thread_affinity.cpu_ids}, "
-                        f"ld_st_ratio={ratio}"
-                    )
-
-                    bench_spec = isa.generate_memory(params, context)
-                    test_size = bench_spec.read_array_size + bench_spec.write_array_size
-                    total_size = test_size * thread_affinity.num_threads
-
-                    mem_bench = MemoryBenchmark(
-                        params=params,
-                        spec=bench_spec,
-                        working_set_bytes=total_size,
-                        cache_level=mem_level_info.name,
-                    )
-                    debug(
-                        f"[{mem_level_info.name}] benchmark '{mem_bench.name}' added (working set={total_size}, "
-                        f"per thread={test_size})"
-                    )
-                    suite.add_benchmark(mem_bench.name, mem_bench)
-                    previous_size_per_thread = avail_size_per_thread
+        for params in iter_memory_benchmark_params(context, isa):
+            debug(
+                f"  [{params.memory_level_name}] size_per_thread={params.size_per_thread}, "
+                f"threads={len(params.thread_affinity)}, cpu_ids={params.thread_affinity}, "
+                f"ld_st_ratio={params.load_store_ratio}"
+            )
+            bench_spec = isa.generate_memory(params, context)
+            test_size = bench_spec.read_array_size + bench_spec.write_array_size
+            total_size = test_size * len(params.thread_affinity)
+            mem_bench = MemoryBenchmark(
+                params=params,
+                spec=bench_spec,
+                working_set_bytes=total_size,
+                cache_level=params.memory_level_name,
+            )
+            debug(
+                f"[{params.memory_level_name}] benchmark '{mem_bench.name}' added "
+                f"(working set={total_size}, per thread={test_size})"
+            )
+            suite.add_benchmark(mem_bench.name, mem_bench)
 
         if not suite.benchmarks:
             raise UserError(
