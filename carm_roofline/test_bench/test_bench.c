@@ -254,6 +254,9 @@ measure_benchmark(const benchmark_metadata_t *metadata, wrapper_fn_t wrapper_fn,
     uint64_t median_ns = median(NUM_RUNS, max_elapsed_ns);
     double median_ms = (double) median_ns / 1000000.0;
     printf("%s, %f, %llu\n", test_id, median_ms, (unsigned long long) g_max_reps);
+#if VERBOSITY >= 3
+    fflush(stdout);
+#endif
 
     free(max_elapsed_ns);
 

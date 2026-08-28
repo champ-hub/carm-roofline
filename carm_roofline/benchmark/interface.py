@@ -12,7 +12,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from carm_roofline.output_utils import debug, detail
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeRemainingColumn
+
+from carm_roofline.output_utils import Verbosity, debug, detail, get_console
 from carm_roofline.test_bench.builder import (
     MicrobenchmarkFunctionSpec,
     compile_test_bench,
@@ -93,6 +95,34 @@ def _propagate_results(groups: dict[tuple[object, ...], list[BaseBenchmark]]) ->
             continue
         for alias in group[1:]:
             alias.process_results(canonical.results.time_taken, canonical.results.num_repetitions)
+
+
+def _run_microbenchmarks_with_progress(
+    context: CARMContext,
+    binary_path: Path,
+    canonical_benchmarks: list[BaseBenchmark],
+) -> str:
+    """Run canonical benchmarks and show progress at detail verbosity."""
+    specs = (benchmark.spec for benchmark in canonical_benchmarks)
+    if context.run_config.verbose < Verbosity.CONFIG:
+        return run_microbenchmarks(context, binary_path, specs)
+
+    with Progress(
+        TextColumn("{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeRemainingColumn(),
+        console=get_console(),
+        auto_refresh=False,
+        transient=False,
+    ) as progress:
+        task_id = progress.add_task("Running benchmarks", total=len(canonical_benchmarks))
+
+        def update_progress(count: int) -> None:
+            progress.advance(task_id, count)
+            progress.refresh()
+
+        return run_microbenchmarks(context, binary_path, specs, on_benchmarks_complete=update_progress)
 
 
 def run_full_benchmark(
@@ -183,7 +213,7 @@ def run_full_benchmark(
         # Step 5: Run compiled binary (canonical measurements only)
         expected_runtime = context.benchmarking.test_time * len(canonical_benchmarks)
         detail(f"Running benchmark. Expected runtime: >{expected_runtime:.0f} seconds...")
-        raw_output = run_microbenchmarks(context, binary_path, (b.spec for b in canonical_benchmarks))
+        raw_output = _run_microbenchmarks_with_progress(context, binary_path, canonical_benchmarks)
 
         # Step 6: Parse results and populate BenchmarkResult objects
         parse_benchmark_output({b.name: b for b in canonical_benchmarks}, raw_output)

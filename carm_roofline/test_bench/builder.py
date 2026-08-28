@@ -11,7 +11,11 @@ Also provides compilation and execution utilities for benchmark binaries.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import os
+import selectors
+import subprocess
+import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -324,33 +328,26 @@ def run_microbenchmarks(
     context: CARMContext,
     binary_path: Path,
     specs: Iterable[MicrobenchmarkFunctionSpec],
+    on_benchmarks_complete: Callable[[int], None] | None = None,
 ) -> str:
     """Execute the compiled microbenchmarks and return their output.
 
-    All benchmark configuration (frequency, thread counts, etc.) is embedded
-    in the generated header at compile time. Only the interleaved flag is
-    passed as a runtime argument.
-
-    The execution timeout is derived from the physical byte-transfer cost of
-    every benchmark spec.  Memory benchmarks use a conservative 1 GB/s
-    bandwidth floor; arithmetic benchmarks fall back to 100 ms/run.  A
-    per-benchmark calibration budget (CALIBRATION_START_REPS extra runs)
-    is added before applying the 10x safety factor, covering the expensive
-    first calibration iteration that always runs CARM_BENCH_START_REPS
-    repetitions regardless of the configured NUM_RUNS.  This prevents
-    premature timeouts when test_time is small and the working set is large.
+    All benchmark configuration is embedded in the generated header at compile
+    time. Only the interleaved flag is passed as a runtime argument. The
+    timeout derives from the physical byte-transfer cost of every benchmark.
 
     Args:
         context: Full CARM context with execution interface configuration.
         binary_path: Path to the compiled benchmark binary.
-        specs: Microbenchmark specifications used to estimate the timeout
-               (read/write array sizes and thread counts determine transfer volume).
+        specs: Microbenchmark specifications used to estimate the timeout.
+        on_benchmarks_complete: Callback invoked for complete result lines.
 
     Returns:
         The stdout output from running the benchmarks.
 
     Raises:
         RuntimeError: If execution fails or binary not found.
+        subprocess.TimeoutExpired: If execution exceeds its calculated timeout.
     """
     if not binary_path.exists():
         raise RuntimeError(f"Benchmark binary not found: {binary_path}")
@@ -362,19 +359,84 @@ def run_microbenchmarks(
     debug(f"Running microbenchmarks from {binary_path}")
     debug(f"Calculated timeout: {timeout} for {len(spec_list)} benchmark(s) ({num_runs} runs each)")
 
-    # Build argument list - only interleaved flag is runtime-configurable
     args = []
     if context.benchmarking.interleaved:
         args.append("--interleaved")
 
-    result = context.exec_interface.run(
-        str(binary_path),
-        *args,
-        capture_output=True,
-        text=True,
-        timeout=timeout.value,
-        check=False,
-    )
+    if on_benchmarks_complete is None:
+        result = context.exec_interface.run(
+            str(binary_path),
+            *args,
+            capture_output=True,
+            text=True,
+            timeout=timeout.value,
+            check=False,
+        )
+    else:
+        process = context.exec_interface.popen(
+            str(binary_path),
+            *args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        assert process.stdout is not None
+        assert process.stderr is not None
+
+        stdout = bytearray()
+        stderr = bytearray()
+        stdout_remainder = b""
+        deadline = time.monotonic() + timeout.value
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ, stdout)
+        selector.register(process.stderr, selectors.EVENT_READ, stderr)
+
+        try:
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(
+                        process.args, timeout.value, output=bytes(stdout), stderr=bytes(stderr)
+                    )
+
+                for key, _event in selector.select(remaining):
+                    chunk = os.read(key.fd, 65536)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+
+                    buffer = key.data
+                    buffer.extend(chunk)
+                    if buffer is stdout:
+                        lines = (stdout_remainder + chunk).split(b"\n")
+                        stdout_remainder = lines.pop()
+                        complete_lines = sum(bool(line.strip()) for line in lines)
+                        if complete_lines:
+                            on_benchmarks_complete(complete_lines)
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(process.args, timeout.value, output=bytes(stdout), stderr=bytes(stderr))
+            process.wait(timeout=remaining)
+        except BaseException as exc:
+            if process.poll() is None:
+                process.kill()
+            remaining_stdout, remaining_stderr = process.communicate()
+            stdout.extend(remaining_stdout)
+            stderr.extend(remaining_stderr)
+            if isinstance(exc, subprocess.TimeoutExpired):
+                raise subprocess.TimeoutExpired(
+                    process.args, timeout.value, output=bytes(stdout), stderr=bytes(stderr)
+                ) from None
+            raise
+        finally:
+            selector.close()
+
+        result = subprocess.CompletedProcess(
+            process.args,
+            process.returncode,
+            bytes(stdout).decode(),
+            bytes(stderr).decode(),
+        )
 
     if result.returncode != 0:
         error_msg = f"Benchmark execution failed with return code {result.returncode}\n"

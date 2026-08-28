@@ -108,6 +108,21 @@ class ExecutionInterface(InsertsArguments):
 
         return subprocess.run(cmd, shell=shell, check=check, **kwargs)
 
+    def popen(self, binary_path: str, *args: str, **kwargs: Any) -> subprocess.Popen[Any]:
+        """Launch a binary, optionally via simulator, using subprocess.Popen.
+
+        The command construction and shell handling match :meth:`run`.
+        All keyword arguments are forwarded to :class:`subprocess.Popen`.
+        """
+        cmd: str | list[str] = self._get_command(binary_path, args)
+        debug(f"Launching command: {cmd}")
+
+        shell = kwargs.pop("shell", False)
+        if not shell and isinstance(cmd, str):
+            cmd = shlex.split(cmd)
+
+        return subprocess.Popen(cmd, shell=shell, **kwargs)
+
     def _get_command(self, binary_path: str, args: tuple[str, ...] = ()) -> str:
         """Internal: build the complete command string.
 
