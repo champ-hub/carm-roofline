@@ -59,7 +59,12 @@ def test_validate_memory_size() -> None:
         memory_level_name="L1",
     )
 
-    info = isa._validate_memory_size(params, bytes_per_inst=4, insts_per_repeat=2)
+    info = isa._validate_memory_size(
+        params,
+        bytes_per_inst=4,
+        num_loads_per_repeat=1,
+        num_stores_per_repeat=1,
+    )
 
     assert info.repeats == 8
     assert info.bytes_per_repeat == 8
@@ -78,7 +83,12 @@ def test_validate_memory_size_too_small() -> None:
     )
 
     with pytest.raises(BenchParamError, match="too small"):
-        isa._validate_memory_size(params, bytes_per_inst=4, insts_per_repeat=2)
+        isa._validate_memory_size(
+            params,
+            bytes_per_inst=4,
+            num_loads_per_repeat=1,
+            num_stores_per_repeat=1,
+        )
 
 
 def test_calculate_loop_configuration_ptr_offset() -> None:
