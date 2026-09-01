@@ -12,7 +12,6 @@ from typing import Any
 from carm_roofline.arguments import InsertsArguments, add_verbose_argument
 from carm_roofline.core.error import UserError
 from carm_roofline.output_utils import warn
-from carm_roofline.paraver import ParaverWindowMode, default_legend_path, parse_paraver_header
 from carm_roofline.results_paths import default_results_root
 
 
@@ -82,6 +81,8 @@ class GUIConfig(InsertsArguments):
         if not self.paraver_window_csv.is_file():
             raise UserError(f"paraver window CSV not found: {self.paraver_window_csv}")
         # Code-mode windows require the derived legend CSV; gradient mode needs none.
+        from carm_roofline.paraver import ParaverWindowMode, default_legend_path, parse_paraver_header
+
         with open(self.paraver_window_csv, encoding="utf-8") as fh:
             header = parse_paraver_header(fh.readline().strip())
         if ParaverWindowMode.from_header(header.window_mode) == ParaverWindowMode.CODE:

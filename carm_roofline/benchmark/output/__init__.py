@@ -4,11 +4,16 @@ Dispatches output kinds to test-specific output handlers.
 
 from __future__ import annotations
 
-from carm_roofline.benchmark.benchmark import ISABenchmarkSuite
+from typing import TYPE_CHECKING
+
 from carm_roofline.benchmark.benchmarking import TestType
-from carm_roofline.context import CARMContext
 
 from .base import OutputHandler, OutputKind
+
+if TYPE_CHECKING:
+    from carm_roofline.benchmark.benchmark import ISABenchmarkSuite
+    from carm_roofline.context import CARMContext
+
 
 __all__ = [
     "OutputKind",

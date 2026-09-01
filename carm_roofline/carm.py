@@ -13,21 +13,15 @@ from typing import cast
 import argcomplete
 from rich_argparse import RichHelpFormatter
 
-from carm_roofline.architecture import (
-    generate_run_name,
-    set_execution_interface,
-    signature_from_architecture,
-    write_machine_json,
-)
-from carm_roofline.architecture.frequency import maybe_set_cpu_frequency
+from carm_roofline.architecture.architecture import Architecture
 from carm_roofline.arguments import InsertsArguments, TopLevelHelpFormatter
-from carm_roofline.benchmark.interface import run_full_benchmark
-from carm_roofline.benchmark.output import output_benchmark_results
-from carm_roofline.context import Architecture, Benchmarking, CARMContext, ExecutionInterface, RunConfig
+from carm_roofline.benchmark.benchmarking import Benchmarking
 from carm_roofline.core import UserError
+from carm_roofline.exec_interface import ExecutionInterface
 from carm_roofline.gui.config import GUIConfig
 from carm_roofline.output_utils import configure_verbosity, debug, detail, error, info, warn
-from carm_roofline.profiling import ProfileConfig, profile_main
+from carm_roofline.profiling.config import ProfileConfig
+from carm_roofline.run_config import RunConfig
 
 RichHelpFormatter.styles.update(
     {
@@ -41,6 +35,17 @@ RichHelpFormatter.styles.update(
 
 
 def _handle_benchmark(args: argparse.Namespace) -> int:
+    from carm_roofline.architecture import (
+        generate_run_name,
+        set_execution_interface,
+        signature_from_architecture,
+        write_machine_json,
+    )
+    from carm_roofline.architecture.frequency import maybe_set_cpu_frequency
+    from carm_roofline.benchmark.interface import run_full_benchmark
+    from carm_roofline.benchmark.output import output_benchmark_results
+    from carm_roofline.context import CARMContext
+
     configure_verbosity(args.verbose)
     args_str = ", ".join(f"{k}={v}" for k, v in vars(args).items() if v is not None)
     debug(f"parsed benchmark arguments: {args_str}")
@@ -103,6 +108,8 @@ def _handle_profile(args: argparse.Namespace) -> int:
     configure_verbosity(args.verbose)
     args_str = ", ".join(f"{k}={v}" for k, v in vars(args).items() if v is not None)
     debug(f"parsed profile arguments: {args_str}")
+
+    from carm_roofline.profiling import profile_main
 
     config = ProfileConfig(args)
     return profile_main(config)

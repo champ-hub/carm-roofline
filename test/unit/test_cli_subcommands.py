@@ -5,6 +5,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import carm_roofline.architecture as architecture
+import carm_roofline.benchmark.interface as benchmark_interface
+import carm_roofline.benchmark.output as benchmark_output
+
 
 import carm_roofline.carm as carm
 
@@ -55,11 +59,11 @@ def test_benchmark_mode_smoke_with_monkeypatch(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(carm.Architecture, "__init__", fake_architecture_init)
     monkeypatch.setattr(carm.Benchmarking, "__init__", fake_benchmarking_init)
     monkeypatch.setattr(carm.RunConfig, "__init__", fake_run_config_init)
-    monkeypatch.setattr(carm, "set_execution_interface", fake_set_execution_interface)
-    monkeypatch.setattr(carm, "run_full_benchmark", fake_run_full_benchmark)
-    monkeypatch.setattr(carm, "output_benchmark_results", fail_output)
-    monkeypatch.setattr(carm, "signature_from_architecture", lambda arch: None)
-    monkeypatch.setattr(carm, "generate_run_name", lambda sig: "auto-test-name")
+    monkeypatch.setattr(architecture, "set_execution_interface", fake_set_execution_interface)
+    monkeypatch.setattr(benchmark_interface, "run_full_benchmark", fake_run_full_benchmark)
+    monkeypatch.setattr(benchmark_output, "output_benchmark_results", fail_output)
+    monkeypatch.setattr(architecture, "signature_from_architecture", lambda arch: None)
+    monkeypatch.setattr(architecture, "generate_run_name", lambda sig: "auto-test-name")
 
     exit_code = carm.main(["benchmark", "--dry-run", "--test-time", "1"])
 
