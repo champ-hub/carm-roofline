@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from math import log
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -410,86 +410,66 @@ class BaseISA:
         store_format: inst.Memory,
         block_size_offsets: int,
         repeats: int,
-        event_schedule: list[MemoryOperation | ArithmeticOperation] | None = None,
+        event_schedule: Sequence[MemoryOperation | ArithmeticOperation] | None = None,
         arithmetic_formatter: Callable[[], str] | None = None,
     ) -> list[str]:
         """Generate memory events and optional arithmetic events in one stream."""
-        schedule = event_schedule or [MemoryOperation.ld] * params.num_ld + [MemoryOperation.st] * params.num_st
-        offset_increment = self.offset_increment(params.data_type)
-        max_offset = block_size_offsets * offset_increment
+        schedule = (
+            event_schedule
+            if event_schedule is not None
+            else [MemoryOperation.ld] * params.num_ld + [MemoryOperation.st] * params.num_st
+        )
         hregs = self.helper_registers
+        single_layout = params.layout_mode == MemoryLayoutMode.single
+        offset_increment = self.offset_increment(params.data_type)
+        bytes_per_instruction = self.bytes_per_inst(params.data_type)
+        read_pointer = hregs.pointer
+        write_pointer = read_pointer if single_layout else hregs.write_pointer
+        offset_indices = dict.fromkeys((read_pointer, write_pointer), 0)
         instructions: list[str] = []
-        read_offset = 0
-        write_offset = 0
-        shared_offset = 0
 
         for _ in range(repeats):
             for event in schedule:
                 if event == MemoryOperation.ld:
-                    pointer = hregs.pointer
-                    offset = shared_offset if params.layout_mode == MemoryLayoutMode.single else read_offset
-                    instructions.append(load_format.fmt(bench_registers, pointer, offset=offset))
-                    if params.layout_mode == MemoryLayoutMode.single:
-                        shared_offset += offset_increment
-                        if shared_offset >= max_offset:
-                            shared_offset = 0
-                            instructions.append(
-                                self.control_instructions.add.fmt(pointer, pointer, hregs.pointer_increment)
-                            )
-                    else:
-                        read_offset += offset_increment
-                        if read_offset >= max_offset:
-                            read_offset = 0
-                            instructions.append(
-                                self.control_instructions.add.fmt(pointer, pointer, hregs.pointer_increment)
-                            )
+                    instruction_format = load_format
+                    pointer = read_pointer
                 elif event == MemoryOperation.st:
-                    pointer = hregs.pointer if params.layout_mode == MemoryLayoutMode.single else hregs.write_pointer
-                    offset = shared_offset if params.layout_mode == MemoryLayoutMode.single else write_offset
-                    instructions.append(store_format.fmt(bench_registers, pointer, offset=offset))
-                    if params.layout_mode == MemoryLayoutMode.single:
-                        shared_offset += offset_increment
-                        if shared_offset >= max_offset:
-                            shared_offset = 0
-                            instructions.append(
-                                self.control_instructions.add.fmt(pointer, pointer, hregs.pointer_increment)
-                            )
-                    else:
-                        write_offset += offset_increment
-                        if write_offset >= max_offset:
-                            write_offset = 0
-                            instructions.append(
-                                self.control_instructions.add.fmt(pointer, pointer, hregs.pointer_increment)
-                            )
+                    instruction_format = store_format
+                    pointer = write_pointer
                 else:
                     if arithmetic_formatter is None:
                         raise BenchParamError("Arithmetic event requires an arithmetic formatter")
                     instructions.append(arithmetic_formatter())
+                    continue
 
-        if params.layout_mode == MemoryLayoutMode.single:
-            if shared_offset:
+                offset_index = offset_indices[pointer]
                 instructions.append(
-                    self.control_instructions.add_imm.fmt(
-                        hregs.pointer,
-                        hregs.pointer,
-                        self.bytes_per_inst(params.data_type) * shared_offset // offset_increment,
+                    instruction_format.fmt(
+                        bench_registers,
+                        pointer,
+                        offset=offset_index * offset_increment,
                     )
                 )
-        else:
-            if read_offset:
-                instructions.append(
-                    self.control_instructions.add_imm.fmt(
-                        hregs.pointer,
-                        hregs.pointer,
-                        self.bytes_per_inst(params.data_type) * read_offset // offset_increment,
+                offset_index += 1
+                if offset_index == block_size_offsets:
+                    offset_indices[pointer] = 0
+                    instructions.append(
+                        self.control_instructions.add.fmt(
+                            pointer,
+                            pointer,
+                            hregs.pointer_increment,
+                        )
                     )
-                )
-            if write_offset:
+                else:
+                    offset_indices[pointer] = offset_index
+
+        for pointer, offset_index in offset_indices.items():
+            if offset_index:
                 instructions.append(
                     self.control_instructions.add_imm.fmt(
-                        hregs.write_pointer,
-                        hregs.write_pointer,
-                        self.bytes_per_inst(params.data_type) * write_offset // offset_increment,
+                        pointer,
+                        pointer,
+                        bytes_per_instruction * offset_index,
                     )
                 )
         return instructions
