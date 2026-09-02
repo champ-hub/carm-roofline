@@ -467,6 +467,10 @@ class MemoryTopology:
     def available_cache_levels(self) -> list[int]:
         return sorted(self.cache_instances.keys())
 
+    def has_data_cache_levels(self) -> bool:
+        """Return whether sysfs exposed at least one data-cache level."""
+        return any(level.name != "DRAM" for level in self._levels)
+
     def num_physical_cores(self) -> int:
         return len({cpu.global_core_key for cpu in self.cpus.values()})
 

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 from .config import load_memory_topology_from_toml
 from .detect import DetectedArchitecture, detect_for_isa, native_detect
-from .memory import MemoryTopologyLike
+from .memory import MemoryTopology, MemoryTopologyLike
 
 
 def check_isa_compatibility(selected_isas: list[type[BaseISA]]) -> None:
@@ -154,6 +154,18 @@ def _override_warn(name: str, arg_val: Any, detected_val: Any) -> None:
     warn(f"Overriding auto-detected {name} {detected_val} with user-specified {arg_val}")
 
 
+def _validate_detected_memory_topology(topology: MemoryTopologyLike, test: object) -> None:
+    """Reject incomplete automatic topology for benchmarks that measure memory."""
+    test_name = getattr(test, "value", test)
+    if test_name == "arithmetic" or not isinstance(topology, MemoryTopology) or topology.has_data_cache_levels():
+        return
+
+    raise UserError(
+        "Detected CPU topology, but sysfs does not expose any data-cache levels. "
+        "Use --topology-config <path> to provide the cache hierarchy."
+    )
+
+
 class Architecture(InsertsArguments):
     """Auto-detected and user-configured hardware architecture.
 
@@ -206,6 +218,7 @@ class Architecture(InsertsArguments):
             debug(f"Loading memory topology from TOML config: {config_path}")
             self.memory_topology = load_memory_topology_from_toml(config_path)
         elif detected.memory_topology:
+            _validate_detected_memory_topology(detected.memory_topology, args.test)
             debug("Using auto-detected memory topology from sysfs")
             self.memory_topology = detected.memory_topology
         else:
