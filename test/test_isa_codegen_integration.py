@@ -36,11 +36,10 @@ from carm_roofline.benchmark.generation.parameters import (
     ArithmeticBenchmarkParams,
     BenchParamError,
     MemoryBenchmarkParams,
+    MixedBenchmarkParams,
 )
 from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
-from carm_roofline.core import ArithmeticOperation, Operation
-from carm_roofline.core import Bytes, Operations
-from carm_roofline.core import DataType
+from carm_roofline.core import ArithmeticIntensity, ArithmeticOperation, Bytes, DataType, Operation, Operations
 from carm_roofline.benchmark.suites.arithmetic import ArithmeticBenchmarkSuite
 from carm_roofline.benchmark.suites.memory import MemoryBenchmarkSuite
 from carm_roofline.core import MemoryOperation, UserError
@@ -425,6 +424,32 @@ class TestCodeGenerationConsistency:
         assert isinstance(spec2_arith, MicrobenchmarkFunctionSpec)
         assert spec1_arith.body == spec2_arith.body, "Arithmetic code generation is not deterministic"
         assert spec1_mem.body == spec2_mem.body, "Memory code generation is not deterministic"
+
+
+    @pytest.mark.parametrize("isa_class", [X86AVX2, ArmNeon, RISCVScalar])
+    def test_mixed_codegen_uses_port_schedule_name(self, mock_context, isa_class: type[BaseISA]):
+        isa1 = isa_class()
+        isa2 = isa_class()
+        params = MixedBenchmarkParams(
+            data_type=DataType.f32,
+            thread_affinity=[0],
+            load_store_ratio=LoadStoreRatio(2, 1),
+            size_per_thread=Bytes(1024),
+            memory_level_name="L1",
+            operation=ArithmeticOperation.add,
+            point_index=0,
+            requested_arithmetic_intensity=ArithmeticIntensity(0.125),
+            num_arithmetic_instructions=2,
+            memory_pattern_repeats=2,
+            arith_mem_ratio=(2, 3),
+            achieved_arithmetic_intensity=ArithmeticIntensity(1 / 6),
+        )
+        spec1 = isa1.generate_mixed(params, mock_context)
+        spec2 = isa2.generate_mixed(params, mock_context)
+        assert spec1.function_name == spec2.function_name
+        assert spec1.body == spec2.body
+        assert "_ports_2a_3m_" in spec1.function_name
+        assert isa1.OUTER_LOOP_LABEL.removesuffix("%=") in spec1.body
 
     def test_rvv_vlen_lmul_sensitivity(self, mock_context):
         """Test that RVV code generation is sensitive to VLEN and LMUL parameters."""

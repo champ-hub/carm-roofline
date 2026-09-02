@@ -1233,7 +1233,7 @@ class TestJsonlOutput:
         assert entry["repetitions"] == 1000
         assert entry["cycles"] == 2_000_000.0
 
-    def test_jsonl_groups_mixed_points_by_fixed_configuration(self, tmp_path):
+    def test_jsonl_groups_mixed_points_by_fixed_configuration(self, tmp_path, monkeypatch):
         """Mixed points share configuration fields but retain point metadata."""
         import json
 
@@ -1261,6 +1261,7 @@ class TestJsonlOutput:
                 requested_arithmetic_intensity=ArithmeticIntensity(requested_ai),
                 num_arithmetic_instructions=2 + point_index,
                 memory_pattern_repeats=1,
+                arith_mem_ratio=(2, 3),
                 achieved_arithmetic_intensity=ArithmeticIntensity(requested_ai),
             )
             bench = MixedBenchmark(
@@ -1285,6 +1286,14 @@ class TestJsonlOutput:
             )
             suite.add_benchmark(bench.name, bench)
 
+        from unittest.mock import Mock
+
+        from carm_roofline.benchmark.output import mixed
+
+        console = Mock()
+        monkeypatch.setattr(mixed, "get_console", lambda: console)
+        mixed._print_table(context, {"isa1": suite})
+        assert "Arith:Mem" in [column.header for column in console.print.call_args.args[0].columns]
         write_jsonl_benchmarks(context, {"isa1": suite}, output_dir=tmp_path)
 
         path = tmp_path / "test" / "benchmarks.jsonl"
@@ -1293,6 +1302,7 @@ class TestJsonlOutput:
         entry = entries[0]
         assert entry["type"] == "mixed"
         assert entry["memory_level_name"] == "L1"
+        assert entry["arith_mem_ratio"] == "2:3"
         assert "performance_gops" not in entry
         assert [point["name"] for point in entry["points"]] == ["mixed_l1_p0", "mixed_l1_p1"]
         assert [point["requested_arithmetic_intensity"] for point in entry["points"]] == [0.25, 1.0]

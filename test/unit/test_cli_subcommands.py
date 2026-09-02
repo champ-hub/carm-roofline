@@ -72,6 +72,21 @@ def test_benchmark_mode_smoke_with_monkeypatch(monkeypatch: pytest.MonkeyPatch) 
     assert calls["bench_args"].test_time == 1.0
 
 
+def test_mixed_ratio_reaches_benchmarking_configuration() -> None:
+    """The mixed ratio reaches the benchmark configuration unchanged."""
+    args = carm._create_parser().parse_args(
+        ["benchmark", "--test", "mixed", "--arith-mem-ratio", "1:2", "--dry-run"]
+    )
+    assert carm.Benchmarking(args).arith_mem_ratio == (1, 2)
+
+
+def test_invalid_mixed_ratio_exits_parser() -> None:
+    """The parser rejects invalid arithmetic-memory ratios."""
+    with pytest.raises(SystemExit) as exc_info:
+        carm._create_parser().parse_args(["benchmark", "--arith-mem-ratio", "0:2"])
+    assert exc_info.value.code == 2
+
+
 def test_no_command_profile_returns_non_zero(capsys: pytest.CaptureFixture[str]) -> None:
     """Calling 'carm profile' without a command should return non-zero."""
     exit_code = carm.main(["profile"])

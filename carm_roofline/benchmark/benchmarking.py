@@ -64,6 +64,22 @@ def ld_st_ratio_type(arg: str) -> LoadStoreRatio:
     return LoadStoreRatio(ld, st)
 
 
+def arith_mem_ratio_type(arg: str) -> tuple[int, int]:
+    """Parse an arithmetic-instruction to memory-instruction ratio."""
+    parts = str(arg).strip().split(":")
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError(f"invalid arithmetic-memory ratio: {arg!r}")
+    try:
+        arithmetic, memory = (int(part) for part in parts)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"invalid arithmetic-memory ratio, could not parse integers: {arg!r}"
+        ) from None
+    if arithmetic <= 0 or memory <= 0:
+        raise argparse.ArgumentTypeError(f"invalid arithmetic-memory ratio, values must be positive: {arg!r}")
+    return arithmetic, memory
+
+
 def mem_test_size_type(arg: str) -> Bytes | None:
     """Parse a memory test size specifier.
 
@@ -127,6 +143,7 @@ class Benchmarking(InsertsArguments):
         self.instructions: set[ArithmeticOperation] = set(args.instruction)
         self.num_ops: Operations = Operations(args.num_ops)
         self.ld_st_ratio: list[LoadStoreRatio] = _dedupe(args.ld_st_ratio)
+        self.arith_mem_ratio: tuple[int, int] = args.arith_mem_ratio
         self.ai_range: tuple[ArithmeticIntensity, ArithmeticIntensity] = tuple(
             ArithmeticIntensity(value) for value in args.ai_range
         )  # type: ignore[assignment]
@@ -205,18 +222,25 @@ class Benchmarking(InsertsArguments):
             "integer for 'N:1' ratio. Use '1:0' for load-only or '0:1' for store-only tests. (Default: 2:1)",
         )
         parser.add_argument(
+            "--arith-mem-ratio",
+            default=(2, 3),
+            type=arith_mem_ratio_type,
+            metavar="ARITH:MEM",
+            help="Arithmetic-instruction to memory-instruction ratio for the repeating mixed block. (Default: 2:3)",
+        )
+        parser.add_argument(
             "--ai-range",
             nargs=2,
-            default=(0.125, 16.0),
+            default=(2**-4, 2**5),
             type=positive_float,
             metavar=("MIN", "MAX"),
-            help="Inclusive arithmetic-intensity range for the mixed test in FLOP/B (Default: 0.125, 16)",
+            help="Inclusive arithmetic-intensity range for the mixed test in FLOP/B (Default: 2^-4, 2^5)",
         )
         parser.add_argument(
             "--ai-points",
-            default=8,
+            default=10,
             type=positive_int,
-            help="Number of logarithmically spaced mixed arithmetic-intensity points (Default: 8)",
+            help="Number of logarithmically spaced mixed arithmetic-intensity points (Default: 10)",
         )
         parser.add_argument(
             "--mem-test-sizes",

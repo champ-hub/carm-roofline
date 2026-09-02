@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import argparse
+
 from typing import Any
 
 import pytest
 
-from carm_roofline.benchmark.benchmarking import LoadStoreRatio
-from carm_roofline.core import DataType
+from carm_roofline.benchmark.benchmarking import LoadStoreRatio, arith_mem_ratio_type
 from carm_roofline.benchmark.generation.code_gen import instruction as inst
 from carm_roofline.benchmark.generation.code_gen.register import RegisterCollection
-from carm_roofline.isa.base import BaseISA, InlineASM
 from carm_roofline.benchmark.generation.parameters import BenchParamError, MemoryBenchmarkParams
-from carm_roofline.core import Bytes
+from carm_roofline.core import ArithmeticIntensity, ArithmeticOperation, Bytes, DataType, MemoryOperation
+from carm_roofline.isa.base import BaseISA, InlineASM
 
 
 class DummyISA(BaseISA):
@@ -206,3 +207,65 @@ def test_inline_asm_formatting() -> None:
     assert ': [data_ptr] "m" (data_ptr)' in formatted
     assert ': "r0", "r1"' in formatted
     assert asm.as_function_body() == formatted
+
+
+@pytest.mark.parametrize("value", ["invalid", "2", "2:3:4", "0:1", "1:0", "-1:2"])
+def test_arith_mem_ratio_type_rejects_invalid_values(value: str) -> None:
+    """Arithmetic-memory ratios require two positive integers."""
+    with pytest.raises(argparse.ArgumentTypeError):
+        arith_mem_ratio_type(value)
+
+
+def test_arith_mem_ratio_type_parses_positive_values() -> None:
+    """Arithmetic-memory ratios preserve both values."""
+    assert arith_mem_ratio_type("2:3") == (2, 3)
+
+
+def test_build_mixed_schedule_appends_memory_remainder() -> None:
+    """Low-AI schedules append complete memory patterns after balanced units."""
+    schedule = DummyISA._build_mixed_schedule(
+        ArithmeticOperation.fma, LoadStoreRatio(2, 1), (2, 3), 4, 4
+    )
+    unit = [MemoryOperation.ld, MemoryOperation.ld, MemoryOperation.st, ArithmeticOperation.fma, ArithmeticOperation.fma]
+    assert schedule == unit * 2 + [MemoryOperation.ld, MemoryOperation.ld, MemoryOperation.st, MemoryOperation.ld, MemoryOperation.ld, MemoryOperation.st]
+
+
+def test_build_mixed_schedule_appends_arithmetic_remainder() -> None:
+    """High-AI schedules append arithmetic instructions after balanced units."""
+    schedule = DummyISA._build_mixed_schedule(
+        ArithmeticOperation.fma, LoadStoreRatio(2, 1), (2, 3), 6, 2
+    )
+    unit = [MemoryOperation.ld, MemoryOperation.ld, MemoryOperation.st, ArithmeticOperation.fma, ArithmeticOperation.fma]
+    assert schedule == unit * 2 + [ArithmeticOperation.fma, ArithmeticOperation.fma]
+
+
+@pytest.mark.parametrize("requested_ai", [0.125, 2 / 3, 4.0])
+def test_select_mixed_instruction_counts_uses_one_sided_remainders(requested_ai: float) -> None:
+    """Mixed count selection preserves balanced units and one-sided remainders."""
+    isa = DummyISA()
+    arithmetic, patterns, achieved = isa._select_mixed_instruction_counts(
+        DataType.f32,
+        ArithmeticOperation.fma,
+        LoadStoreRatio(2, 1),
+        (2, 3),
+        ArithmeticIntensity(requested_ai),
+    )
+    body_budget = min((isa.max_branch_insts - 7) // 2, isa.instruction_limit // 2)
+    assert arithmetic > 0
+    assert patterns > 0
+    assert arithmetic + 2 * 3 * patterns <= body_budget
+    assert achieved == ArithmeticIntensity(arithmetic * 2 / (patterns * 3 * 4))
+    balanced_units = min(arithmetic // 2, patterns)
+    assert arithmetic == balanced_units * 2 or patterns == balanced_units
+
+
+def test_select_mixed_instruction_counts_prefers_maximum_balanced_units() -> None:
+    """An exact balanced AI tie selects the largest balanced block."""
+    arithmetic, patterns, _ = DummyISA()._select_mixed_instruction_counts(
+        DataType.f32,
+        ArithmeticOperation.fma,
+        LoadStoreRatio(2, 1),
+        (2, 3),
+        ArithmeticIntensity(1 / 3),
+    )
+    assert (arithmetic, patterns) == (6, 3)

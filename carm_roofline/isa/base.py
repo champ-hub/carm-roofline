@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from math import log
+from math import lcm, log
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from carm_roofline.benchmark.generation.code_gen import ControlInstructions, TypedInstructions, instruction as inst
@@ -483,30 +483,66 @@ class BaseISA:
         data_type: DataType,
         operation: ArithmeticOperation,
         load_store_ratio: Any,
+        arith_mem_ratio: tuple[int, int],
         requested_ai: ArithmeticIntensity,
     ) -> tuple[int, int, ArithmeticIntensity]:
-        """Select a bounded integer mixed instruction block near the requested AI."""
+        """Select a port-balanced mixed block near the requested AI."""
         memory_instructions = load_store_ratio.loads + load_store_ratio.stores
         if memory_instructions < 1:
             raise BenchParamError("Mixed benchmark requires at least one memory instruction")
+        arithmetic_ratio, memory_ratio = arith_mem_ratio
+        if arithmetic_ratio < 1 or memory_ratio < 1:
+            raise BenchParamError("Mixed benchmark requires a positive arithmetic-memory ratio")
         body_budget = min((self.max_branch_insts - 7) // 2, self.instruction_limit // 2)
         ops_per_instruction = self.ops_per_inst(data_type, operation)
         bytes_per_instruction = self.bytes_per_inst(data_type)
-        best: tuple[float, int, int, int, ArithmeticIntensity] | None = None
-        for repeats in range(1, body_budget // memory_instructions + 1):
-            transferred_bytes = bytes_per_instruction * memory_instructions * repeats
-            arithmetic_instructions = min(
-                max(1, round(float(requested_ai) * transferred_bytes / ops_per_instruction)),
-                body_budget - 2 * memory_instructions * repeats,
-            )
-            if arithmetic_instructions < 1:
+        unit_size = lcm(memory_instructions, memory_ratio)
+        unit_pattern_repeats = unit_size // memory_instructions
+        unit_memory_instructions = unit_size
+        unit_arithmetic_instructions = arithmetic_ratio * unit_size // memory_ratio
+        unit_ai = ArithmeticIntensity(
+            unit_arithmetic_instructions * ops_per_instruction / (unit_memory_instructions * bytes_per_instruction)
+        )
+        best: tuple[float, int, int, int, int, ArithmeticIntensity] | None = None
+        for balanced_repeats in range(1, body_budget + 1):
+            minimum_arithmetic = balanced_repeats * unit_arithmetic_instructions
+            minimum_patterns = balanced_repeats * unit_pattern_repeats
+            if float(requested_ai) < float(unit_ai):
+                arithmetic_instructions = minimum_arithmetic
+                desired_patterns = round(
+                    arithmetic_instructions
+                    * ops_per_instruction
+                    / (float(requested_ai) * bytes_per_instruction * memory_instructions)
+                )
+                memory_pattern_repeats = max(minimum_patterns, desired_patterns)
+                memory_pattern_repeats = min(
+                    memory_pattern_repeats,
+                    (body_budget - arithmetic_instructions) // (2 * memory_instructions),
+                )
+            else:
+                memory_pattern_repeats = minimum_patterns
+                desired_arithmetic = round(
+                    float(requested_ai)
+                    * bytes_per_instruction
+                    * memory_instructions
+                    * memory_pattern_repeats
+                    / ops_per_instruction
+                )
+                arithmetic_instructions = max(minimum_arithmetic, desired_arithmetic)
+                arithmetic_instructions = min(
+                    arithmetic_instructions,
+                    body_budget - 2 * memory_instructions * memory_pattern_repeats,
+                )
+            if arithmetic_instructions < minimum_arithmetic or memory_pattern_repeats < minimum_patterns:
                 continue
-            emitted_instructions = arithmetic_instructions + 2 * memory_instructions * repeats
+            emitted_instructions = arithmetic_instructions + 2 * memory_instructions * memory_pattern_repeats
+            transferred_bytes = bytes_per_instruction * memory_instructions * memory_pattern_repeats
             achieved_ai = ArithmeticIntensity(arithmetic_instructions * ops_per_instruction / transferred_bytes)
             candidate = (
                 abs(log(float(achieved_ai) / float(requested_ai))),
+                -balanced_repeats,
                 emitted_instructions,
-                repeats,
+                memory_pattern_repeats,
                 arithmetic_instructions,
                 achieved_ai,
             )
@@ -514,8 +550,34 @@ class BaseISA:
                 best = candidate
         if best is None:
             raise BenchParamError(f"ISA '{self.name}' cannot generate mixed benchmark for AI {requested_ai}")
-        _, _, repeats, arithmetic_instructions, achieved_ai = best
-        return arithmetic_instructions, repeats, achieved_ai
+        _, _, _, memory_pattern_repeats, arithmetic_instructions, achieved_ai = best
+        return arithmetic_instructions, memory_pattern_repeats, achieved_ai
+
+    @staticmethod
+    def _build_mixed_schedule(
+        operation: ArithmeticOperation,
+        load_store_ratio: Any,
+        arith_mem_ratio: tuple[int, int],
+        num_arithmetic_instructions: int,
+        memory_pattern_repeats: int,
+    ) -> list[MemoryOperation | ArithmeticOperation]:
+        """Build balanced mixed units followed by one arithmetic or memory remainder."""
+        memory_pattern = [MemoryOperation.ld] * load_store_ratio.loads + [MemoryOperation.st] * load_store_ratio.stores
+        memory_instructions = len(memory_pattern)
+        arithmetic_ratio, memory_ratio = arith_mem_ratio
+        unit_size = lcm(memory_instructions, memory_ratio)
+        unit_pattern_repeats = unit_size // memory_instructions
+        unit_arithmetic_instructions = arithmetic_ratio * unit_size // memory_ratio
+        balanced_repeats = min(
+            num_arithmetic_instructions // unit_arithmetic_instructions,
+            memory_pattern_repeats // unit_pattern_repeats,
+        )
+        schedule: list[MemoryOperation | ArithmeticOperation] = []
+        unit = memory_pattern * unit_pattern_repeats + [operation] * unit_arithmetic_instructions
+        schedule.extend(unit * balanced_repeats)
+        schedule.extend(memory_pattern * (memory_pattern_repeats - balanced_repeats * unit_pattern_repeats))
+        schedule.extend([operation] * (num_arithmetic_instructions - balanced_repeats * unit_arithmetic_instructions))
+        return schedule
 
     def bytes_per_inst(self, data_type: DataType) -> int:
         "Returns the number of bytes per memory instruction"
@@ -779,29 +841,17 @@ class BaseISA:
             ),
             self.control_instructions.branch_nz.fmt(self.helper_registers.outer_iterator, self.OUTER_LOOP_LABEL),
         ]
-
-        # Build inputs list and clobbers depending on array mode
         asm_inputs = [var_num_reps, var_read_ptr]
-        hregs = self.helper_registers
-        if params.layout_mode == MemoryLayoutMode.single:
-            # Single-array: write_ptr argument is not used in the asm; no write_pointer clobber.
-            helper_clobbers = [
-                hregs.outer_iterator,
-                hregs.inner_iterator,
-                hregs.pointer,
-                hregs.pointer_increment,
-            ]
-        else:
-            # Split-array: include write_ptr if there are stores.
-            if params.num_st > 0:
+        helper_clobbers = [
+            self.helper_registers.outer_iterator,
+            self.helper_registers.inner_iterator,
+            self.helper_registers.pointer,
+            self.helper_registers.pointer_increment,
+        ]
+        if params.layout_mode == MemoryLayoutMode.split:
+            if params.num_st:
                 asm_inputs.append(var_write_ptr)
-            helper_clobbers = [
-                hregs.outer_iterator,
-                hregs.inner_iterator,
-                hregs.pointer,
-                hregs.pointer_increment,
-                hregs.write_pointer,
-            ]
+            helper_clobbers.append(self.helper_registers.write_pointer)
         clobbers = [*bench_registers, *self.implicit_clobbers(params.data_type), *helper_clobbers]
         iasm = InlineASM(asm, asm_inputs, clobbers)
         bench_code = self.__generate_generic_benchmark(iasm, func_name=func_name)
@@ -833,30 +883,18 @@ class BaseISA:
         func_name = (
             f"{self.name}_mixed_{params.operation.name}_{params.data_type.name}_p{params.point_index:03d}_"
             f"{params.num_arithmetic_instructions}a_{params.memory_pattern_repeats}m_"
+            f"_ports_{params.arith_mem_ratio[0]}a_{params.arith_mem_ratio[1]}m_"
             f"{params.num_ld}ld_{params.num_st}st_{params.memory_level_name.lower()}_"
             f"{size_info.actual_working_set_size}_t{params.num_threads}"
         )
         branch_distance_limit = (self.max_branch_insts - 7) // 2
-        pattern = [MemoryOperation.ld] * params.num_ld + [MemoryOperation.st] * params.num_st
-        memory_events = pattern * params.memory_pattern_repeats
-        arithmetic_events = [params.operation] * params.num_arithmetic_instructions
-        schedule: list[MemoryOperation | ArithmeticOperation] = []
-        memory_index = arithmetic_index = 0
-        while memory_index < len(memory_events) or arithmetic_index < len(arithmetic_events):
-            memory_position = (
-                (memory_index + 0.5) / len(memory_events) if memory_index < len(memory_events) else float("inf")
-            )
-            arithmetic_position = (
-                (arithmetic_index + 0.5) / len(arithmetic_events)
-                if arithmetic_index < len(arithmetic_events)
-                else float("inf")
-            )
-            if memory_position <= arithmetic_position:
-                schedule.append(memory_events[memory_index])
-                memory_index += 1
-            else:
-                schedule.append(arithmetic_events[arithmetic_index])
-                arithmetic_index += 1
+        schedule = self._build_mixed_schedule(
+            params.operation,
+            params.load_store_ratio,
+            params.arith_mem_ratio,
+            params.num_arithmetic_instructions,
+            params.memory_pattern_repeats,
+        )
         loop_config = self._calculate_loop_configuration(
             params,
             size_info.repeats,

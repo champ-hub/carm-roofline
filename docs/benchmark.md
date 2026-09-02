@@ -46,6 +46,7 @@ carm benchmark --emit-config my_topology.toml
 | `arithmetic` | Measure GFLOP/s for specific instruction/data-type combinations. Useful when you only care about peak performance. |
 | `memory` | Measure bandwidth for specific cache levels. Useful when you only care about memory bandwidth. |
 | `memory_sweep` | Profile bandwidth across a range of buffer sizes to observe the full memory bandwidth curve. |
+| `mixed` | Measure arithmetic performance and memory bandwidth at selected arithmetic intensities. |
 
 ## Arguments by Category
 
@@ -57,9 +58,9 @@ By default the tool auto-detects all available ISAs on your system. Use `--isa` 
 
 The tool auto-detects your cache hierarchy from sysfs. If that fails or you want to model a different system, use `--emit-config` to dump a template TOML file, edit it with your cache parameters, and pass it via `--topology-config`.
 
-### What to measure (`--test`, `--data-type`, `--instruction`, `--mem-target`, `--ld-st-ratio`, `--ai-range`, `--ai-points`, `--mem-test-sizes`, `--num-ops`)
+### What to measure (`--test`, `--data-type`, `--instruction`, `--mem-target`, `--ld-st-ratio`, `--arith-mem-ratio`, `--ai-range`, `--ai-points`, `--mem-test-sizes`, `--num-ops`)
 
-These options control the test performed on the system. The main selection is `--test`, described above. Within a test you can narrow further: restrict data types with `--data-type`, pick arithmetic instructions with `--instruction`, choose memory levels with `--mem-target`, and control the load-to-store ratio with `--ld-st-ratio`. For the `mixed` test, use `--ai-range MIN MAX` to sweep an arithmetic-intensity range, and use `--ai-points COUNT` to set how many points to generate. Points are logarithmically spaced. `--mem-test-sizes` lets you set exact array sizes per cache level instead of auto-sizing. `--num-ops` sets the arithmetic-test loop work.
+These options control the test performed on the system. The main selection is `--test`, described above. Within a test you can narrow further: restrict data types with `--data-type`, pick arithmetic instructions with `--instruction`, choose memory levels with `--mem-target`, and control the load-to-store ratio with `--ld-st-ratio`. For the `mixed` test, use `--ai-range MIN MAX` to sweep an arithmetic-intensity range, and use `--ai-points COUNT` to set how many points to generate. Points are logarithmically spaced. Use `--arith-mem-ratio ARITH:MEM` to set the arithmetic-instruction to memory-instruction ratio for the repeating balanced block. This should match the microarchitecture's ports, e.g., `2:3` for a microarchitecture with 2 arithmetic ports, 2 load ports and 1 store port. `--mem-test-sizes` lets you set exact array sizes per cache level instead of auto-sizing. `--num-ops` sets the arithmetic-test loop work.
 
 ### How long to run (`--test-time`)
 

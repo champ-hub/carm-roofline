@@ -55,7 +55,11 @@ class MixedBenchmarkSuite(ISABenchmarkSuite):
                 for point_index, requested_ai in enumerate(requested_ais):
                     try:
                         arithmetic_count, pattern_repeats, achieved_ai = isa._select_mixed_instruction_counts(
-                            memory_params.data_type, operation, memory_params.load_store_ratio, requested_ai
+                            memory_params.data_type,
+                            operation,
+                            memory_params.load_store_ratio,
+                            context.benchmarking.arith_mem_ratio,
+                            requested_ai,
                         )
                     except BenchParamError as error:
                         warn(
@@ -74,6 +78,7 @@ class MixedBenchmarkSuite(ISABenchmarkSuite):
                         requested_arithmetic_intensity=requested_ai,
                         num_arithmetic_instructions=arithmetic_count,
                         memory_pattern_repeats=pattern_repeats,
+                        arith_mem_ratio=context.benchmarking.arith_mem_ratio,
                         achieved_arithmetic_intensity=achieved_ai,
                         layout_mode=memory_params.layout_mode,
                     )

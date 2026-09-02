@@ -100,6 +100,7 @@ class MixedBenchmarkParams(MemoryAccessParams):
     requested_arithmetic_intensity: ArithmeticIntensity
     num_arithmetic_instructions: int
     memory_pattern_repeats: int
+    arith_mem_ratio: tuple[int, int]
     achieved_arithmetic_intensity: ArithmeticIntensity
     layout_mode: MemoryLayoutMode = MemoryLayoutMode.split
 
@@ -109,6 +110,8 @@ class MixedBenchmarkParams(MemoryAccessParams):
             raise BenchParamError("Mixed benchmark point index must be nonnegative")
         if self.num_arithmetic_instructions < 1 or self.memory_pattern_repeats < 1:
             raise BenchParamError("Mixed benchmark instruction counts must be positive")
+        if len(self.arith_mem_ratio) != 2 or any(value < 1 for value in self.arith_mem_ratio):
+            raise BenchParamError("Arithmetic-memory ratio must contain two positive values")
         if self.requested_arithmetic_intensity <= ArithmeticIntensity(0):
             raise BenchParamError("Requested arithmetic intensity must be positive")
         if self.achieved_arithmetic_intensity <= ArithmeticIntensity(0):

@@ -209,6 +209,7 @@ class TestMixedBenchmark:
             requested_arithmetic_intensity=ArithmeticIntensity(0.5),
             num_arithmetic_instructions=3,
             memory_pattern_repeats=1,
+            arith_mem_ratio=(2, 3),
             achieved_arithmetic_intensity=ArithmeticIntensity(0.5),
         )
         bench = MixedBenchmark(
@@ -363,6 +364,7 @@ class TestISABenchmarkSuite:
             requested_arithmetic_intensity=ArithmeticIntensity(0.5),
             num_arithmetic_instructions=3,
             memory_pattern_repeats=1,
+            arith_mem_ratio=(2, 3),
             achieved_arithmetic_intensity=ArithmeticIntensity(0.5),
         )
         suite = ArithmeticBenchmarkSuite(isa_name="avx2")
