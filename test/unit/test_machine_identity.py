@@ -230,6 +230,36 @@ def test_read_cpuinfo_resolves_grace_arm_identity(tmp_path: Path, monkeypatch: p
     assert info.revision == "0"
 
 
+def test_read_cpuinfo_resolves_a64fx_identity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cpuinfo = tmp_path / "cpuinfo"
+    cpuinfo.write_text(
+        "processor\t: 0\n"
+        "BogoMIPS\t: 200.00\n"
+        "Features\t: fp asimd sve\n"
+        "CPU implementer\t: 0x46\n"
+        "CPU architecture: 8\n"
+        "CPU variant\t: 0x1\n"
+        "CPU part\t: 0x001\n"
+        "CPU revision\t: 0\n"
+    )
+
+    class _RedirectingPath:
+        def __new__(cls, *_args: object, **_kwargs: object) -> Path:
+            return cpuinfo
+
+    monkeypatch.setattr(identity, "Path", _RedirectingPath)
+
+    info = identity.read_cpuinfo()
+
+    assert info.model_name == "Fujitsu A64FX"
+    assert info.vendor == "Fujitsu"
+    assert info.implementer == "0x46"
+    assert info.part == "0x001"
+    assert info.model_name is not None
+    assert generate_run_name(_make_signature(model_name=info.model_name)).startswith("Fujitsu-A64FX_")
+
+
+
 def test_unknown_arm_part_uses_architecture_as_signature_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cpuinfo = tmp_path / "cpuinfo"
     cpuinfo.write_text("processor : 0\nCPU implementer : 0x41\nCPU part : 0xd40\n")

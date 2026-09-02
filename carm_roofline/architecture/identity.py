@@ -27,9 +27,11 @@ if TYPE_CHECKING:
 _BYTES_PER_GIB = 1024**3
 _ARM_IMPLEMENTERS = {
     0x41: "ARM",
+    0x46: "Fujitsu",
 }
 _ARM_CORE_PARTS = {
     (0x41, 0xD4F): "Neoverse V2",
+    (0x46, 0x001): "A64FX",
 }
 
 
