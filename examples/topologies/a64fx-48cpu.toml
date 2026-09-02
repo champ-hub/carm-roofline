@@ -1,0 +1,30 @@
+# Fujitsu A64FX full-node topology.
+#
+# Use this file when the node exposes CPUs but not cache metadata through
+# /sys/devices/system/cpu/cpu*/cache, as on some batch-system allocations.
+# This layout describes 48 cores in four 12-core CMGs.
+#
+# Check the allocated CPU count and memory before use. Adjust total_cpus,
+# instances, and DRAM size for partial-node allocations.
+total_cpus = 48
+smt_degree = 1
+cpu_offset = 0
+
+[[cache_levels]]
+# 64 KiB L1 data cache per A64FX core.
+level = 1
+instances = 48
+size = "64KiB"
+
+[[cache_levels]]
+# 8 MiB L2 cache shared by each 12-core CMG.
+level = 2
+instances = 4
+size = "8MiB"
+
+[[cache_levels]]
+# 32 GiB HBM2 attached to one A64FX processor.
+# The final configured level is represented as DRAM by CARM.
+level = 3
+instances = 1
+size = "32GiB"
