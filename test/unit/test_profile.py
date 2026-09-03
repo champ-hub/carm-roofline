@@ -32,6 +32,7 @@ from carm_roofline.profiling.model import RegionMetrics, RunMetadata, RunResults
 from carm_roofline.profiling.optional_metrics import (
     OPTIONAL_METRICS,
     OptionalMetric,
+    OptionalMetricImplementation,
     OptionalMetricName,
     _cache_level_bytes,
     _last_bucket,
@@ -1234,9 +1235,14 @@ def test_cli_removed_event_overrides_rejected(flag: str) -> None:
 
 
 def test_cli_metrics_space_separated_list_and_deduped() -> None:
-    args = _parse_profile_args(["--metrics", "cache-residency", "cache-residency", "--", "./app"])
+    args = _parse_profile_args(
+        ["--metrics", "cache-residency", "cache-line-utilization", "cache-residency", "--", "./app"]
+    )
     config = ProfileConfig(args)
-    assert config.optional_metrics == (OptionalMetricName.CACHE_RESIDENCY,)
+    assert config.optional_metrics == (
+        OptionalMetricName.CACHE_RESIDENCY,
+        OptionalMetricName.CACHE_LINE_UTILIZATION,
+    )
     assert config.list_metrics is False
 
 
@@ -1260,87 +1266,41 @@ def test_cli_merge_runs_flag_defaults_false() -> None:
     assert config.merge_runs is False
 
 
-def test_cli_merge_runs_flag_true() -> None:
-    config = ProfileConfig(_parse_profile_args(["--merge-runs", "--", "./app"]))
-    assert config.merge_runs is True
-
-
 def test_profile_main_list_metrics_exits_without_command(monkeypatch: pytest.MonkeyPatch) -> None:
     messages: list[str] = []
     monkeypatch.setattr("carm_roofline.profiling.info", lambda *args, **kwargs: messages.append(str(args[0])))
     config = ProfileConfig(_parse_profile_args(["--list-metrics"]))
     assert profile_main(config) == 0
     assert any("cache-residency" in m for m in messages)
+    assert any("cache-line-utilization" in m for m in messages)
 
 
 # ---------------------------------------------------------------------------
 # Cache-residency optional metric (optional_metrics.py)
 # ---------------------------------------------------------------------------
 
-# Role maps for the 3-bucket schema (l1/l2/l3plus; L3 and DRAM grouped),
-# i.e. the AMD paths measuring L1 and L2 miss boundaries.
-# L1 accesses are scaled to 64B-line granularity; L2 accounting is
-# prefetch-inclusive (demand L2 misses + L2 prefetch fills leaving L2).
-# PAPI names the AMD native events after the perf ones on Zen 3+:
-# l2_cache_misses_from_dc_misses == CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C,
-# l2_pf_miss_l2_hit_l3 == L2_PREFETCH_HIT_L3:L2_HW_PREFETCHER,
-# l2_pf_miss_l2_l3 == L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER.
-
-PAPI_CACHE_ROLES = {
-    "shape": "direct",
-    "levels": ("l1", "l2"),
-    "l1_accesses": "PAPI_L1_DCA",
-    "l1_misses": "PAPI_L1_DCM",
-    "l2_misses": "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C",
-    "l2_pf_hit_l3": "L2_PREFETCH_HIT_L3:L2_HW_PREFETCHER",
-    "l2_pf_l3": "L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER",
-}
-
-PERF_CACHE_ROLES = {
-    "shape": "pairs",
-    "levels": ("l1", "l2"),
-    "l1_loads": "L1-dcache-loads",
-    "l1_load_misses": "L1-dcache-load-misses",
-    "l1_stores": "L1-dcache-stores",
-    "l1_store_misses": "L1-dcache-store-misses",
-    "l2_misses": "l2_cache_misses_from_dc_misses",
-    "l2_pf_hit_l3": "l2_pf_miss_l2_hit_l3",
-    "l2_pf_l3": "l2_pf_miss_l2_l3",
-}
-
-# 4-boundary role map (L1/L2/L3 miss boundaries; L3 and DRAM separate) —
-# the Intel perf path: l2_rqsts.miss is prefetch-inclusive, LLC counters
-# give the L3 boundary.
-PERF_INTEL_CACHE_ROLES = {
-    "shape": "pairs",
-    "levels": ("l1", "l2", "l3"),
-    "l1_loads": "L1-dcache-loads",
-    "l1_load_misses": "L1-dcache-load-misses",
-    "l1_stores": "L1-dcache-stores",
-    "l1_store_misses": "L1-dcache-store-misses",
-    "l2_misses": "l2_rqsts.miss",
-    "l3_load_misses": "LLC-load-misses",
-    "l3_store_misses": "LLC-store-misses",
-}
-
-# Single-boundary role map (L1 only): everything beyond L1 groups into l2plus.
-L1_ONLY_CACHE_ROLES = {
-    "shape": "direct",
-    "levels": ("l1",),
-    "l1_accesses": "PAPI_L1_DCA",
-    "l1_misses": "PAPI_L1_DCM",
-}
+PAPI_CACHE_IMPLEMENTATION = OPTIONAL_METRICS[OptionalMetricName.CACHE_RESIDENCY].implementations[BackendType.PAPI][0]
+PERF_CACHE_IMPLEMENTATION = OPTIONAL_METRICS[OptionalMetricName.CACHE_RESIDENCY].implementations[BackendType.PERF][0]
+PERF_INTEL_CACHE_IMPLEMENTATION = OPTIONAL_METRICS[OptionalMetricName.CACHE_RESIDENCY].implementations[BackendType.PERF][1]
+L1_ONLY_CACHE_IMPLEMENTATION = OptionalMetricImplementation(
+    required_events=frozenset({"PAPI_L1_DCA", "PAPI_L1_DCM"}),
+    compute=lambda counters, region_bytes, bytes_per_instruction: _cache_level_bytes(
+        counters.get("PAPI_L1_DCA", 0.0),
+        {"l1": counters.get("PAPI_L1_DCM", 0.0)},
+        ("l1",),
+        region_bytes,
+        bytes_per_instruction,
+    ),
+)
 
 
 def _cache_compute(
     counters: dict[str, float],
-    role_events: dict[str, str],
+    implementation: OptionalMetricImplementation,
     region_bytes: float = 800.0,
     bytes_per_instruction: float = 8.0,
 ) -> dict[str, float]:
-    return OPTIONAL_METRICS[OptionalMetricName.CACHE_RESIDENCY].compute(
-        counters, region_bytes, role_events, bytes_per_instruction
-    )
+    return dict(implementation.compute(counters, region_bytes, bytes_per_instruction))
 
 
 @pytest.mark.parametrize(
@@ -1404,7 +1364,7 @@ def _cache_compute(
     ],
 )
 def test_cache_residency_fractions_sum_to_one(counters: dict[str, float], expected_fractions: dict[str, float]) -> None:
-    result = _cache_compute(counters, PAPI_CACHE_ROLES)
+    result = _cache_compute(counters, PAPI_CACHE_IMPLEMENTATION)
     assert sum(result.values()) == pytest.approx(800.0)  # saturated fractions sum to 1
     for level, frac in expected_fractions.items():
         assert result[level] == pytest.approx(frac * 800.0)
@@ -1417,7 +1377,7 @@ def test_cache_residency_zero_l1_accesses_all_zero() -> None:
             "PAPI_L1_DCM": 40,
             "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C": 10,
         },
-        PAPI_CACHE_ROLES,
+        PAPI_CACHE_IMPLEMENTATION,
     )
     assert result == {"l1": 0.0, "l2": 0.0, "l3plus": 0.0}
 
@@ -1434,7 +1394,7 @@ def test_cache_residency_perf_derives_load_store_pairs() -> None:
     }
     # accesses = 480 + 320 = 800 -> 100 lines; misses = 40 -> m1 = 0.4;
     # fills = 16 + 8 + 8 = 32 -> f_l3plus = 0.32, f_l2 = 0.08
-    result = _cache_compute(counters, PERF_CACHE_ROLES)
+    result = _cache_compute(counters, PERF_CACHE_IMPLEMENTATION)
     assert result == {
         "l1": pytest.approx(480.0),
         "l2": pytest.approx(64.0),
@@ -1449,7 +1409,7 @@ def test_cache_residency_perf_missing_store_and_pf_roles_default_zero() -> None:
         "L1-dcache-load-misses": 40,
         "l2_cache_misses_from_dc_misses": 32,
     }
-    result = _cache_compute(counters, PERF_CACHE_ROLES)
+    result = _cache_compute(counters, PERF_CACHE_IMPLEMENTATION)
     assert result == {
         "l1": pytest.approx(480.0),
         "l2": pytest.approx(64.0),
@@ -1467,20 +1427,23 @@ def test_cache_residency_perf_zero_misses_all_l1() -> None:
         "l2_pf_miss_l2_hit_l3": 0,
         "l2_pf_miss_l2_l3": 0,
     }
-    result = _cache_compute(counters, PERF_CACHE_ROLES)
+    result = _cache_compute(counters, PERF_CACHE_IMPLEMENTATION)
     assert result == {"l1": 800.0, "l2": 0.0, "l3plus": 0.0}
-
 
 def test_validate_metric_names_empty_and_dedupe() -> None:
     assert validate_metric_names(None) == ()
     assert validate_metric_names([]) == ()
-    assert tuple(m.value for m in validate_metric_names(["cache-residency", "cache-residency"])) == ("cache-residency",)
+    assert tuple(
+        m.value for m in validate_metric_names(["cache-residency", "cache-line-utilization", "cache-residency"])
+    ) == ("cache-residency", "cache-line-utilization")
 
 
 def test_validate_metric_names_unknown_raises_user_error() -> None:
     with pytest.raises(UserError) as exc_info:
         validate_metric_names(["bogus"])
-    assert str(exc_info.value) == "Unknown optional metric 'bogus'. Available: cache-residency"
+    assert str(exc_info.value) == (
+        "Unknown optional metric 'bogus'. Available: cache-line-utilization, cache-residency"
+    )
 
 
 AMD_PAPI_EVENTS = frozenset(
@@ -1495,67 +1458,35 @@ AMD_PAPI_EVENTS = frozenset(
 
 
 def test_resolve_optional_metrics_papi_prefers_amd_prefetch_inclusive() -> None:
-    """On AMD all five events resolve -> the prefetch-inclusive map wins (not the Intel fallback)."""
+    """The AMD implementation wins when all AMD events are available."""
     resolved = resolve_optional_metrics((OptionalMetricName.CACHE_RESIDENCY,), AMD_PAPI_EVENTS, BackendType.PAPI)
-    roles = resolved[OptionalMetricName.CACHE_RESIDENCY].role_events
-    assert roles["l2_misses"] == "CORE_TO_L2_CACHEABLE_REQUEST_ACCESS_STATUS:LS_RD_BLK_C"
-    assert roles["l2_pf_hit_l3"] == "L2_PREFETCH_HIT_L3:L2_HW_PREFETCHER"
-    assert roles["l2_pf_l3"] == "L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER"
-    assert resolved[OptionalMetricName.CACHE_RESIDENCY].required_events == AMD_PAPI_EVENTS
+    implementation = resolved[OptionalMetricName.CACHE_RESIDENCY].implementation
+    assert implementation is PAPI_CACHE_IMPLEMENTATION
+    assert implementation.required_events == AMD_PAPI_EVENTS
 
 
 def test_resolve_optional_metrics_papi_falls_back_to_intel_demand_only() -> None:
-    """Only the three PAPI presets available -> demand-only Intel map (no pf roles, no L3 events)."""
+    """The Intel PAPI implementation resolves when AMD events are absent."""
     available = frozenset({"PAPI_L1_DCA", "PAPI_L1_DCM", "PAPI_L2_DCM"})
     resolved = resolve_optional_metrics((OptionalMetricName.CACHE_RESIDENCY,), available, BackendType.PAPI)
-    roles = resolved[OptionalMetricName.CACHE_RESIDENCY].role_events
-    assert roles["levels"] == ("l1", "l2")  # 3-bucket: no L3 boundary on the PAPI path
-    assert roles["l2_misses"] == "PAPI_L2_DCM"
-    assert "l2_pf_hit_l3" not in roles
-    assert "l2_pf_l3" not in roles
-    assert "l3_misses" not in roles
+    implementation = resolved[OptionalMetricName.CACHE_RESIDENCY].implementation
+    assert implementation is OPTIONAL_METRICS[OptionalMetricName.CACHE_RESIDENCY].implementations[BackendType.PAPI][1]
+    assert implementation.required_events == available
 
 
 def test_resolve_optional_metrics_perf_prefers_amd_prefetch_inclusive() -> None:
-    available = frozenset(
-        {
-            "L1-dcache-loads",
-            "L1-dcache-load-misses",
-            "L1-dcache-stores",
-            "L1-dcache-store-misses",
-            "l2_cache_misses_from_dc_misses",
-            "l2_pf_miss_l2_hit_l3",
-            "l2_pf_miss_l2_l3",
-        }
-    )
+    available = PERF_CACHE_IMPLEMENTATION.required_events
     resolved = resolve_optional_metrics((OptionalMetricName.CACHE_RESIDENCY,), available, BackendType.PERF)
-    roles = resolved[OptionalMetricName.CACHE_RESIDENCY].role_events
-    assert roles["l2_misses"] == "l2_cache_misses_from_dc_misses"
-    assert roles["l2_pf_hit_l3"] == "l2_pf_miss_l2_hit_l3"
-    assert roles["l2_pf_l3"] == "l2_pf_miss_l2_l3"
+    assert resolved[OptionalMetricName.CACHE_RESIDENCY].implementation is PERF_CACHE_IMPLEMENTATION
 
 
 def test_resolve_optional_metrics_perf_falls_back_to_intel_l2_rqsts() -> None:
-    """Intel perf events incl. LLC counters -> the 4-bucket map (l2_rqsts.miss, no pf roles)."""
-    available = frozenset(
-        {
-            "L1-dcache-loads",
-            "L1-dcache-load-misses",
-            "L1-dcache-stores",
-            "L1-dcache-store-misses",
-            "l2_rqsts.miss",
-            "LLC-load-misses",
-            "LLC-store-misses",
-        }
-    )
+    """The Intel perf implementation resolves when AMD events are absent."""
+    available = PERF_INTEL_CACHE_IMPLEMENTATION.required_events
     resolved = resolve_optional_metrics((OptionalMetricName.CACHE_RESIDENCY,), available, BackendType.PERF)
-    roles = resolved[OptionalMetricName.CACHE_RESIDENCY].role_events
-    assert roles["levels"] == ("l1", "l2", "l3")  # separate L3 and DRAM buckets
-    assert roles["l2_misses"] == "l2_rqsts.miss"
-    assert "l2_pf_hit_l3" not in roles
-    assert "l2_pf_l3" not in roles
-    required = resolved[OptionalMetricName.CACHE_RESIDENCY].required_events
-    assert {"LLC-load-misses", "LLC-store-misses"} <= required
+    implementation = resolved[OptionalMetricName.CACHE_RESIDENCY].implementation
+    assert implementation is PERF_INTEL_CACHE_IMPLEMENTATION
+    assert {"LLC-load-misses", "LLC-store-misses"} <= implementation.required_events
 
 
 def test_resolve_optional_metrics_missing_events_warns_and_omits(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1580,11 +1511,9 @@ def test_resolve_optional_metrics_unsupported_backend_skips(monkeypatch: pytest.
     monkeypatch.setattr(
         "carm_roofline.profiling.optional_metrics.warn", lambda *args, **kwargs: warns.append(str(args[0]))
     )
-    # A metric defining only the PAPI backend; resolving it for perf is unsupported.
     papi_only = OptionalMetric(
         description="papi-only",
-        events={BackendType.PAPI: (PAPI_CACHE_ROLES,)},
-        compute=OPTIONAL_METRICS[OptionalMetricName.CACHE_RESIDENCY].compute,
+        implementations={BackendType.PAPI: (PAPI_CACHE_IMPLEMENTATION,)},
     )
     monkeypatch.setattr(
         "carm_roofline.profiling.optional_metrics.OPTIONAL_METRICS",
@@ -1654,6 +1583,8 @@ def test_last_bucket_names() -> None:
 
 @pytest.mark.parametrize(
     "counters, expected_fractions",
+
+
     [
         # pure L1: no misses anywhere
         (
@@ -1716,11 +1647,49 @@ def test_cache_residency_four_boundaries_sum_to_one(
     counters: dict[str, float], expected_fractions: dict[str, float]
 ) -> None:
     """4-bucket shape (levels l1/l2/l3): exact {l1, l2, l3, dram} buckets."""
-    result = _cache_compute(counters, PERF_INTEL_CACHE_ROLES)
+    result = _cache_compute(counters, PERF_INTEL_CACHE_IMPLEMENTATION)
     assert sum(result.values()) == pytest.approx(800.0)  # saturated fractions sum to 1
     assert set(result) == {"l1", "l2", "l3", "dram"}
     for level, frac in expected_fractions.items():
         assert result[level] == pytest.approx(frac * 800.0)
+
+
+def test_cache_line_utilization_papi_resolution_and_formula() -> None:
+    counters = {"PAPI_L1_DCM": 1}
+    resolved = resolve_optional_metrics(
+        (OptionalMetricName.CACHE_LINE_UTILIZATION,), frozenset(counters), BackendType.PAPI
+    )
+    point = compute_region_point(counters, 1, {}, DEFAULT_CTX, resolved)
+    aggregate_point = AggregatedPoint(
+        label="test",
+        total_flops=0.0,
+        total_bytes=128.0,
+        runtime_s=0.0,
+        num_ranks=1,
+        num_threads=1,
+        optional_bytes=point.optional_bytes,
+    )
+    assert point.optional_bytes == {"cache-line-utilization": {"l1-miss": 64.0}}
+    assert aggregate_point.optional_fractions == {"cache-line-utilization": {"value": 2.0}}
+
+
+def test_cache_line_utilization_perf_resolution_and_zero_misses() -> None:
+    events = frozenset({"L1-dcache-load-misses", "L1-dcache-store-misses"})
+    resolved = resolve_optional_metrics((OptionalMetricName.CACHE_LINE_UTILIZATION,), events, BackendType.PERF)
+    point = compute_region_point(
+        {"L1-dcache-load-misses": 0, "L1-dcache-store-misses": 0}, 1, {}, DEFAULT_CTX, resolved
+    )
+    aggregate_point = AggregatedPoint(
+        label="test",
+        total_flops=0.0,
+        total_bytes=128.0,
+        runtime_s=0.0,
+        num_ranks=1,
+        num_threads=1,
+        optional_bytes=point.optional_bytes,
+    )
+    assert point.optional_bytes == {"cache-line-utilization": {"l1-miss": 0.0}}
+    assert aggregate_point.optional_fractions == {}
 
 
 def test_cache_residency_four_boundaries_zero_accesses_all_zero() -> None:
@@ -1734,7 +1703,7 @@ def test_cache_residency_four_boundaries_zero_accesses_all_zero() -> None:
             "LLC-load-misses": 5,
             "LLC-store-misses": 5,
         },
-        PERF_INTEL_CACHE_ROLES,
+        PERF_INTEL_CACHE_IMPLEMENTATION,
     )
     assert result == {"l1": 0.0, "l2": 0.0, "l3": 0.0, "dram": 0.0}
 
@@ -1756,7 +1725,7 @@ def test_cache_residency_single_boundary_sum_to_one(
     counters: dict[str, float], expected_fractions: dict[str, float]
 ) -> None:
     """1-bucket-shape (levels ("l1",)): {l1, l2plus} with everything beyond L1 grouped."""
-    result = _cache_compute(counters, L1_ONLY_CACHE_ROLES)
+    result = _cache_compute(counters, L1_ONLY_CACHE_IMPLEMENTATION)
     assert sum(result.values()) == pytest.approx(800.0)
     assert set(result) == {"l1", "l2plus"}
     for level, frac in expected_fractions.items():

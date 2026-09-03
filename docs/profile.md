@@ -86,7 +86,18 @@ carm profile --merge-runs --metrics cache-residency -- ./my_app
 
 Each optional metric maps to a set of hardware events chosen from what your system supports. A profile always runs the command once by default; over-budget events are dropped and a warning lists them. `--merge-runs` will run the command multiple times to collect all requested metrics, merging the results from multiple runs.
 
-The cache-residency metric reports, per region, the fraction of memory traffic served at each cache level, with per-level resident bytes. On AMD, the L1 miss rate is scaled to using the declared data-type/ISA bytes-per-instruction, so pass `--data-type` matching the workload (e.g. `--data-type f64` for f64 code) and `--isa` when vectorized. The AMD event set can exceed the hardware counter budget, so use `--merge-runs` to collect it across multiple runs.
+The `cache-residency` metric reports, per region, the fraction of memory traffic served at each cache level, with per-level resident bytes. On AMD, the L1 miss rate is scaled to using the declared data-type/ISA bytes-per-instruction, so pass `--data-type` matching the workload (e.g. `--data-type f64` for f64 code) and `--isa` when vectorized. The AMD event set can exceed the hardware counter budget, so use `--merge-runs` to collect it across multiple runs.
+
+The `cache-line-utilization` metric reports `CLU = application_bytes / (L1_data_misses * 64)`. It uses a fixed 64-byte cache-line assumption. CLU can exceed 100% because repeated accesses count in application bytes. Note that this is a core-centric approximation of the actual cache-line utilization, and will report inaccurate results in certain cases (e.g. the application repeatedly reads and writes the same 4-8 bytes of each cache line)
+
+Build and profile the example:
+
+```bash
+make -C examples/cache-line-utilization
+carm profile --backend papi --aggregation global --data-type f32 --isa x86 \
+  --metrics cache-line-utilization --merge-runs -- \
+  ./examples/cache-line-utilization/cache_line_utilization 32 200 100
+```
 
 ### Output and naming (`--verbose`, `--machine-name`, `--app-name`, `--output-dir`, `--keep-artifacts`)
 

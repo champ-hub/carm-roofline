@@ -56,6 +56,11 @@ class OptionalMetricName(Enum):
     """Names of the available optional metrics (the ``--metrics`` values)."""
 
     CACHE_RESIDENCY = "cache-residency"
+    CACHE_LINE_UTILIZATION = "cache-line-utilization"
+
+
+# This is the existing fixed cache-line assumption for optional cache metrics.
+CACHE_LINE_BYTES = 64.0
 
 
 # Canonical cache hierarchy, smallest first. Serialized level keys are these
@@ -121,6 +126,7 @@ CacheRoles = Union[DirectCacheRoles, PairCacheRoles]
 # shared.compute_region_point's existing ``cast(dict[str, float], levels)``
 # (which narrows to the JSON-facing container type) stays non-redundant.
 CacheCompute = Callable[[Mapping[str, float], float, CacheRoles, float], Mapping[str, float]]
+OptionalMetricCompute = Callable[[Mapping[str, float], float, float], Mapping[str, float]]
 
 
 def _event_names(roles: CacheRoles) -> frozenset[str]:
@@ -156,37 +162,31 @@ def _event_names(roles: CacheRoles) -> frozenset[str]:
 
 
 @dataclass(frozen=True)
-class OptionalMetric:
-    """An optional metric: description, per-backend event alternatives, compute.
+class OptionalMetricImplementation:
+    """One event-set implementation of an optional metric."""
 
-    Attributes:
-        description: Human-readable description (shown by ``--list-metrics``).
-        events: Backend -> ordered alternative role maps. The first
-            alternative whose events are all available wins.
-        compute: ``compute(counters, region_bytes, role_events, bytes_per_instruction)`` ->
-            per-level resident bytes. Counters are float-valued, keyed by
-            event name; ``region_bytes`` is the region's resolved BYTES
-            metric value to attribute across levels; ``bytes_per_instruction``
-            is the ISA/data-type scaling factor (8 for f64, 4 for f32, or the
-            ISA-aware value when ``--isa`` is given) used to convert the
-            per-instruction L1 access count to 64B-line granularity.
-    """
+    required_events: frozenset[str]
+    compute: OptionalMetricCompute
+
+
+@dataclass(frozen=True)
+class OptionalMetric:
+    """An optional metric with ordered implementations for each backend."""
 
     description: str
-    events: Mapping[BackendType, tuple[CacheRoles, ...]]
-    compute: CacheCompute
+    implementations: Mapping[BackendType, tuple[OptionalMetricImplementation, ...]]
 
 
 @dataclass(frozen=True)
 class ResolvedOptionalMetric:
-    """An optional metric bound to a concrete alternative role map."""
+    """An optional metric bound to one available implementation."""
 
     metric: OptionalMetric
-    role_events: CacheRoles
+    implementation: OptionalMetricImplementation
 
     @property
     def required_events(self) -> frozenset[str]:
-        return _event_names(self.role_events)
+        return self.implementation.required_events
 
 
 def _last_bucket(levels: tuple[str, ...]) -> str:
@@ -257,7 +257,7 @@ def _cache_level_bytes(
     ``f_l1 = 1 - min(m1/total, 1)``, ``f_l3plus = min(fills/total, 1 - f_l1)``,
     ``f_l2 = 1 - f_l1 - f_l3plus`` where ``fills`` is the L2 boundary count.
     """
-    total_lines = accesses * bytes_per_instruction / 64.0
+    total_lines = accesses * bytes_per_instruction / CACHE_LINE_BYTES
     buckets = (*levels, _last_bucket(levels))
     if total_lines <= 0:
         return dict.fromkeys(buckets, 0.0)
@@ -298,6 +298,17 @@ def _cache_residency_compute(
         region_bytes,
         bytes_per_instruction,
     )
+
+
+def _cache_residency_implementation(roles: CacheRoles) -> OptionalMetricImplementation:
+    """Bind cache-residency computation to one role map."""
+
+    def compute(
+        counters: Mapping[str, float], region_bytes: float, bytes_per_instruction: float
+    ) -> Mapping[str, float]:
+        return _cache_residency_compute(counters, region_bytes, roles, bytes_per_instruction)
+
+    return OptionalMetricImplementation(required_events=_event_names(roles), compute=compute)
 
 
 def _make_cache_residency() -> OptionalMetric:
@@ -380,17 +391,50 @@ def _make_cache_residency() -> OptionalMetric:
             "(exact levels, or grouped '<level>plus' buckets when the platform "
             "lacks the counters), with per-level resident bytes"
         ),
-        events={
-            BackendType.PAPI: (papi_amd, papi_intel),
-            BackendType.PERF: (perf_amd, perf_intel),
+        implementations={
+            BackendType.PAPI: (
+                _cache_residency_implementation(papi_amd),
+                _cache_residency_implementation(papi_intel),
+            ),
+            BackendType.PERF: (
+                _cache_residency_implementation(perf_amd),
+                _cache_residency_implementation(perf_intel),
+            ),
         },
-        compute=_cache_residency_compute,
+    )
+
+
+def _cache_line_utilization_implementation(*miss_events: str) -> OptionalMetricImplementation:
+    """Build one implementation that records L1 miss traffic."""
+
+    def compute(
+        counters: Mapping[str, float], region_bytes: float, bytes_per_instruction: float
+    ) -> Mapping[str, float]:
+        return {"l1-miss": sum(counters[event] for event in miss_events) * CACHE_LINE_BYTES}
+
+    return OptionalMetricImplementation(required_events=frozenset(miss_events), compute=compute)
+
+
+def _make_cache_line_utilization() -> OptionalMetric:
+    """Build the cache-line-utilization optional metric."""
+    return OptionalMetric(
+        description="Application bytes divided by L1 data-miss bytes",
+        implementations={
+            BackendType.PAPI: (_cache_line_utilization_implementation("PAPI_L1_DCM"),),
+            BackendType.PERF: (
+                _cache_line_utilization_implementation(
+                    "L1-dcache-load-misses",
+                    "L1-dcache-store-misses",
+                ),
+            ),
+        },
     )
 
 
 # Registry of available optional metrics (extend with new metrics here)
 OPTIONAL_METRICS: dict[OptionalMetricName, OptionalMetric] = {
     OptionalMetricName.CACHE_RESIDENCY: _make_cache_residency(),
+    OptionalMetricName.CACHE_LINE_UTILIZATION: _make_cache_line_utilization(),
 }
 
 
@@ -445,18 +489,18 @@ def resolve_optional_metrics(
     resolved: dict[OptionalMetricName, ResolvedOptionalMetric] = {}
     for name in names:
         metric = OPTIONAL_METRICS[name]
-        alternatives = metric.events.get(backend)
+        alternatives = metric.implementations.get(backend)
         if alternatives is None:
             warn(f"Optional metric '{name.value}' is not supported by the {backend.value} backend; skipping")
             continue
-        best: CacheRoles | None = None
+        best: OptionalMetricImplementation | None = None
         best_missing: frozenset[str] | None = None
-        for role_events in alternatives:
-            missing = _event_names(role_events) - available_events
+        for implementation in alternatives:
+            missing = implementation.required_events - available_events
             if best is None or len(missing) < len(best_missing or ()):
-                best, best_missing = role_events, missing
+                best, best_missing = implementation, missing
             if not missing:
-                resolved[name] = ResolvedOptionalMetric(metric=metric, role_events=role_events)
+                resolved[name] = ResolvedOptionalMetric(metric=metric, implementation=implementation)
                 break
         else:
             warn(

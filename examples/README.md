@@ -12,6 +12,11 @@ A [PAPI-instrumented fork](https://github.com/Alexandre425/LULESH-PAPI) of [LULE
 
 LULESH is licensed under the BSD 3-Clause License by LLNL; see the source headers (either the original or fork) for full license terms.
 
+### cache-line-utilization
+
+A serial PAPI HL example for the optional cache-line-utilization metric.
+Build it with `make -C examples/cache-line-utilization`.
+
 ### topologies
 
 TOML cache-topology examples for systems that do not expose cache metadata in sysfs.

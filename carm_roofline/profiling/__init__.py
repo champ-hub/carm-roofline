@@ -202,12 +202,15 @@ def profile_main(config: ProfileConfig) -> int:
 
         # Brief summary
         for pt in points:
+            clu = pt.optional_fractions.get("cache-line-utilization", {}).get("value")
+            clu_text = f", CLU={clu * 100:.1f}%" if clu is not None else ""
             info(
                 f"  {pt.label}: "
                 f"AI={pt.arithmetic_intensity:.3f} FLOP/Byte, "
                 f"{pt.flops_per_second / 1e9:.3f} GFLOP/s, "
                 f"{pt.bandwidth / 1e9:.3f} GB/s, "
                 f"{pt.runtime_s:.3f}s"
+                f"{clu_text}"
             )
 
     return 0

@@ -238,7 +238,7 @@ def compute_region_point(
     if resolved_optional:
         for name, ro in resolved_optional.items():
             if ro.required_events <= available_set:
-                levels = ro.metric.compute(float_counters, bytes_val, ro.role_events, metric_ctx.bytes_per_instruction)
+                levels = ro.implementation.compute(float_counters, bytes_val, metric_ctx.bytes_per_instruction)
                 # The JSON-facing container is per-metric heterogeneous, so it stays dict[str, float];
                 optional_bytes[name.value] = cast(dict[str, float], levels)
 

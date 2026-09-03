@@ -66,14 +66,19 @@ class AggregatedPoint:
 
     @property
     def optional_fractions(self) -> dict[str, dict[str, float]]:
-        """Per-metric per-level fraction of ``total_bytes`` served at that level.
+        """Return normalized optional metric values from aggregate totals.
 
-        Each fraction is ``level_bytes / total_bytes`` (0.0 when
-        ``total_bytes == 0``); values are not renormalized — the sum is at
-        most 1, exactly 1 when every contributing region had L1 accesses.
+        Cache residency uses level bytes divided by total application bytes.
+        Cache-line utilization uses application bytes divided by L1 miss bytes.
+        A zero L1 miss-byte total has no cache-line-utilization ratio.
         """
         result: dict[str, dict[str, float]] = {}
         for name, levels in self.optional_bytes.items():
+            if name == "cache-line-utilization":
+                l1_miss_bytes = levels.get("l1-miss", 0.0)
+                if l1_miss_bytes > 0:
+                    result[name] = {"value": self.total_bytes / l1_miss_bytes}
+                continue
             result[name] = {
                 level: (value / self.total_bytes if self.total_bytes > 0 else 0.0) for level, value in levels.items()
             }

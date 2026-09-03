@@ -659,7 +659,10 @@ def test_load_applications_mixed_format_versions_preserves_optional_fractions(tm
                             "arithmetic_intensity": 1,
                             "flops_per_second": 1,
                             "bandwidth": 1,
-                            "optional_fractions": {"cache-residency": {"l1": 0.6, "l2": 0.3, "l3plus": 0.1}},
+                            "optional_fractions": {
+                                "cache-residency": {"l1": 0.6, "l2": 0.3, "l3plus": 0.1},
+                                "cache-line-utilization": {"value": 2.0},
+                            },
                         }
                     ],
                 },
@@ -675,7 +678,10 @@ def test_load_applications_mixed_format_versions_preserves_optional_fractions(tm
     assert legacy.points[0].optional_fractions == {
         "cache-residency": {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02}
     }
-    assert modern.points[0].optional_fractions == {"cache-residency": {"l1": 0.6, "l2": 0.3, "l3plus": 0.1}}
+    assert modern.points[0].optional_fractions == {
+        "cache-residency": {"l1": 0.6, "l2": 0.3, "l3plus": 0.1},
+        "cache-line-utilization": {"value": 2.0},
+    }
 
 
 def test_paraver_provider_legend_keeps_nan_state_code_rows(
