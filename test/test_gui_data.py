@@ -885,6 +885,73 @@ def test_point_tooltip_includes_cache_residency() -> None:
     assert "<b>Cache Residency</b>" in tooltip
     assert "L1: 60.0% | L2: 30.0% | L3: 8.0% | DRAM: 2.0%" in tooltip
 
+def test_point_tooltip_includes_cache_line_utilization() -> None:
+    """Tooltip displays a cache-line-utilization ratio as a percentage."""
+    rec = ApplicationRecord(id="r1", label="run1", aggregation="global", metadata={}, machine="m", points=[])
+    p = ApplicationPoint(
+        label="p1",
+        total_flops=1e9,
+        total_bytes=1e6,
+        runtime_s=0.5,
+        num_ranks=1,
+        num_threads=1,
+        num_regions=1,
+        arithmetic_intensity=0.5,
+        flops_per_second=2e9,
+        bandwidth=1e9,
+        optional_fractions={"cache-line-utilization": {"value": 2.0}},
+    )
+    tooltip = _format_point_tooltip(rec, p)
+    assert "<b>Cache Line Utilization</b>" in tooltip
+    assert "  CLU: 200.0%" in tooltip
+
+
+def test_point_tooltip_omits_cache_line_utilization_without_value() -> None:
+    """Tooltip omits cache-line utilization when its metric has no value."""
+    rec = ApplicationRecord(id="r1", label="run1", aggregation="global", metadata={}, machine="m", points=[])
+    p = ApplicationPoint(
+        label="p1",
+        total_flops=1e9,
+        total_bytes=1e6,
+        runtime_s=0.5,
+        num_ranks=1,
+        num_threads=1,
+        num_regions=1,
+        arithmetic_intensity=0.5,
+        flops_per_second=2e9,
+        bandwidth=1e9,
+        optional_fractions={"cache-line-utilization": {}},
+    )
+    tooltip = _format_point_tooltip(rec, p)
+    assert "Cache Line Utilization" not in tooltip
+    assert "CLU:" not in tooltip
+
+
+def test_point_tooltip_includes_cache_residency_and_cache_line_utilization() -> None:
+    """Tooltip keeps cache residency when cache-line utilization is present."""
+    rec = ApplicationRecord(id="r1", label="run1", aggregation="global", metadata={}, machine="m", points=[])
+    p = ApplicationPoint(
+        label="p1",
+        total_flops=1e9,
+        total_bytes=1e6,
+        runtime_s=0.5,
+        num_ranks=1,
+        num_threads=1,
+        num_regions=1,
+        arithmetic_intensity=0.5,
+        flops_per_second=2e9,
+        bandwidth=1e9,
+        optional_fractions={
+            "cache-residency": {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02},
+            "cache-line-utilization": {"value": 2.0},
+        },
+    )
+    tooltip = _format_point_tooltip(rec, p)
+    assert "<b>Cache Residency</b>" in tooltip
+    assert "L1: 60.0% | L2: 30.0% | L3: 8.0% | DRAM: 2.0%" in tooltip
+    assert "<b>Cache Line Utilization</b>" in tooltip
+    assert "  CLU: 200.0%" in tooltip
+
 
 def test_point_tooltip_includes_3key_cache_residency() -> None:
     """Tooltip renders the merged L3+DRAM label for 3-bucket fractions."""

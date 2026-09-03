@@ -452,6 +452,12 @@ def _format_point_tooltip(rec: ApplicationRecord, p: ApplicationPoint, roof_num_
             "<b>Cache Residency</b>",
             "  " + " | ".join(residency_parts),
         ]
+    cache_line_utilization = p.optional_fractions.get("cache-line-utilization", {}).get("value")
+    if cache_line_utilization is not None:
+        parts += [
+            "<b>Cache Line Utilization</b>",
+            f"  CLU: {cache_line_utilization * 100:.1f}%",
+        ]
     return "<br>".join(parts)
 
 
