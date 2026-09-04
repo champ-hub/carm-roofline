@@ -102,6 +102,25 @@ def test_settings_panel_has_mixed_benchmark_switch_off_by_default() -> None:
 
 
 
+
+def test_settings_panel_has_editable_legend_label_length() -> None:
+    """The legend label length slider persists its configured maximum."""
+    store = RoofStore()
+    panel = build_settings_panel(store)
+    slider = _find_component(panel, SettingsPanelID.SLIDER_LEGEND_LABEL_LENGTH)
+    assert slider is not None
+    assert slider.value == 32
+    assert slider.min == 8
+    assert slider.max == 64
+
+    serialized = store.to_dict()
+    settings = serialized["settings"]
+    assert isinstance(settings, dict)
+    settings["legend_label_length"] = 48
+    restored = RoofStore.from_dict(serialized)
+    assert restored.settings.legend_label_length == 48
+
+
 def test_paraver_time_slider_uses_explicit_step() -> None:
     """The time-window slider must use an explicit step, not None.
 

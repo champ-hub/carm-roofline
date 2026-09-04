@@ -127,6 +127,7 @@ class GUISettings:
     axis_tick_font_size: int = 12
     tooltip_font_size: int = 12
     legend_font_size: int = 10
+    legend_label_length: int = 32
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

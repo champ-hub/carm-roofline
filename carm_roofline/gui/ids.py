@@ -79,6 +79,7 @@ class SettingsPanelID(ID):
     SLIDER_FONT_SIZE_AXIS_TICK = "slider-font-size-axis-tick"
     SLIDER_FONT_SIZE_TOOLTIP = "slider-font-size-tooltip"
     SLIDER_FONT_SIZE_LEGEND = "slider-font-size-legend"
+    SLIDER_LEGEND_LABEL_LENGTH = "slider-legend-label-length"
 
 
 class PlotAreaID(ID):

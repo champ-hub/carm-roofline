@@ -54,6 +54,24 @@ COMPUTE_INST_OPTIONS = ["fma", "add", "mul", "div"]
 FREQUENCY_OPTIONS = [(str(Frequency(hz)), str(hz)) for hz in [2500000000, 3000000000, 3200000000, 4000000000]]
 
 
+MAX_LEGEND_LABEL_LENGTH = 32
+FULL_LEGEND_NAME_META_KEY = "carm_full_legend_name"
+
+
+def _crop_legend_names(fig: go.Figure, max_label_length: int) -> None:
+    """Crop serialized legend names while preserving their full value in trace metadata."""
+    for trace in fig.data:
+        name = trace.name
+        if trace.showlegend is False or not isinstance(name, str):
+            continue
+        characters = list(name)
+        if len(characters) <= max_label_length:
+            continue
+        meta = trace.meta if isinstance(trace.meta, dict) else {}
+        trace.meta = {**meta, FULL_LEGEND_NAME_META_KEY: name}
+        trace.name = "".join(characters[: max_label_length - 1]) + "…"
+
+
 # Data models
 
 
@@ -644,6 +662,7 @@ def build_roofline_figure(
                 divisor,
                 s,
             )
+    _crop_legend_names(fig, s.legend_label_length)
     _finalize_axes_and_layout(fig, x_range, y_range, s)
     return fig
 
@@ -1065,6 +1084,7 @@ def build_paraver_figure(
         color = _COLORS[idx % len(_COLORS)]
         divisor = roof_divisor(roof, s)
         _add_roof_ceilings(fig, roof, model, color, divisor, y_min_gops, s)
+    _crop_legend_names(fig, s.legend_label_length)
     _finalize_axes_and_layout(fig, x_range, y_range, s)
     return fig
 

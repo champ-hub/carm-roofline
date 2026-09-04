@@ -214,6 +214,17 @@ _SLIDER_CONTROLS: list[tuple[str, str, str, dict[str, Any]]] = [
             "marks": _slider_marks(8, 12, 16, 20, 24),
         },
     ),
+    (
+        "Legend label length",
+        SettingsPanelID.SLIDER_LEGEND_LABEL_LENGTH,
+        "legend_label_length",
+        {
+            "min": 8,
+            "max": 64,
+            "step": 1,
+            "marks": _slider_marks(8, 16, 32, 48, 64),
+        },
+    ),
 ]
 
 # Paraver AI-filter slider. Positions are log10(ai threshold in OPS/Byte),

@@ -7,6 +7,8 @@ import re
 
 import pandas as pd
 import pytest
+import plotly.graph_objects as go
+
 
 from carm_roofline.gui.config import GUISettings
 from carm_roofline.gui.data import (
@@ -14,6 +16,9 @@ from carm_roofline.gui.data import (
     _BW_LINE_STYLES,
     _COLORS,
     _SELECTED_FILL_BASE_OPACITY,
+    FULL_LEGEND_NAME_META_KEY,
+    MAX_LEGEND_LABEL_LENGTH,
+    _crop_legend_names,
     RoofConfig,
     RoofStore,
     _format_point_tooltip,
@@ -131,6 +136,24 @@ def test_roofstore_round_trip_preserves_paraver_state() -> None:
     assert empty.paraver_state.ai_threshold == pytest.approx(1e-5)
     assert empty.paraver_state.duration_threshold == pytest.approx(1e-4)
     assert empty.paraver_state.color_mode == "paraver"
+
+
+
+def test_crop_legend_names_serializes_full_name_metadata() -> None:
+    """Long legend names crop before Plotly calculates the legend width."""
+    full_name = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890 long name"
+    fig = go.Figure(go.Scatter(name=full_name, showlegend=True))
+
+    _crop_legend_names(fig, MAX_LEGEND_LABEL_LENGTH)
+
+    trace = fig.to_plotly_json()["data"][0]
+    assert trace["name"] == "ABCDEFGHIJKLMNOPQRSTUVWXYZ12345…"
+    assert len(trace["name"]) == MAX_LEGEND_LABEL_LENGTH
+    assert trace["meta"] == {FULL_LEGEND_NAME_META_KEY: full_name}
+    fig = go.Figure(go.Scatter(name=full_name, showlegend=True))
+    _crop_legend_names(fig, 8)
+    trace = fig.to_plotly_json()["data"][0]
+    assert trace["name"] == "ABCDEFG…"
 
 
 def test_build_roofline_figure_renders_application_points() -> None:

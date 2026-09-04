@@ -687,6 +687,7 @@ def _register_callbacks(
     _register_setting_callback(SettingsPanelID.SLIDER_FONT_SIZE_AXIS_TICK, "axis_tick_font_size", int, 12)
     _register_setting_callback(SettingsPanelID.SLIDER_FONT_SIZE_TOOLTIP, "tooltip_font_size", int, 12)
     _register_setting_callback(SettingsPanelID.SLIDER_FONT_SIZE_LEGEND, "legend_font_size", int, 10)
+    _register_setting_callback(SettingsPanelID.SLIDER_LEGEND_LABEL_LENGTH, "legend_label_length", int, 32)
 
     # 17. Sync button styles with active panel
     @app.callback(
