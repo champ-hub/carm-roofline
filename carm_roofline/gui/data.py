@@ -1036,12 +1036,13 @@ def _finalize_axes_and_layout(
         hovermode="closest",
         dragmode="zoom",
         hoverlabel={"font": {"size": tooltip_font_size}},
+        margin={"l": 80, "r": 40, "t": 40, "b": 40},
         legend={
-            "orientation": "v",
+            "orientation": "h",
             "yanchor": "top",
-            "y": 0.95,
-            "xanchor": "left",
-            "x": 1.02,
+            "y": -0.1,
+            "xanchor": "center",
+            "x": 0.5,
             "font": {"size": legend_font_size},
         },
     )
