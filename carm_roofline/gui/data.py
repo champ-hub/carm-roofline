@@ -589,6 +589,25 @@ def build_roofline_figure(
         color = _COLORS[idx % len(_COLORS)]
         divisor = roof_divisor(roof, s)
 
+        if selected_roof_id is None or selected_residency is None:
+            level_fractions: dict[str, float] | None = None
+        elif roof.id == selected_roof_id:
+            level_fractions = _residency_to_level_fractions(
+                selected_residency, roof_levels=model.bandwidth_by_level.keys()
+            )
+        else:
+            level_fractions = dict.fromkeys(_CACHE_LEVEL_ORDER, _BACKGROUND_FRACTION)
+
+        _add_roof_ceilings(fig, roof, model, color, divisor, y_min_gops, s, level_fractions)
+        if s.show_mixed_benchmarks:
+            _add_mixed_benchmark_traces(
+                fig,
+                roof,
+                matching_mixed_records(records, roof_to_filter(roof)),
+                color,
+                divisor,
+                s,
+            )
         # Application points (drawn even when no ceiling data)
         if applications_by_id:
             for app_id in roof.app_ids:
@@ -642,26 +661,6 @@ def build_roofline_figure(
                         hovertemplate="%{customdata[0]}<extra></extra>",
                     )
                 )
-
-        if selected_roof_id is None or selected_residency is None:
-            level_fractions: dict[str, float] | None = None
-        elif roof.id == selected_roof_id:
-            level_fractions = _residency_to_level_fractions(
-                selected_residency, roof_levels=model.bandwidth_by_level.keys()
-            )
-        else:
-            level_fractions = dict.fromkeys(_CACHE_LEVEL_ORDER, _BACKGROUND_FRACTION)
-
-        _add_roof_ceilings(fig, roof, model, color, divisor, y_min_gops, s, level_fractions)
-        if s.show_mixed_benchmarks:
-            _add_mixed_benchmark_traces(
-                fig,
-                roof,
-                matching_mixed_records(records, roof_to_filter(roof)),
-                color,
-                divisor,
-                s,
-            )
     _crop_legend_names(fig, s.legend_label_length)
     _finalize_axes_and_layout(fig, x_range, y_range, s)
     return fig

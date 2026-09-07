@@ -281,6 +281,20 @@ def test_build_roofline_figure_normalize_by_threads() -> None:
     )
     # Without normalization: app perf=4e9/1e9=4.0, peak ceiling=120/1e9=120
     fig_un = build_roofline_figure([roof], records, {"r1": rec})
+    visible_group_traces = [
+        (index, trace)
+        for index, trace in enumerate(fig_un.data)
+        if trace.legendgroup == roof.id and trace.showlegend is not False
+    ]
+    roofline_indices = [index for index, trace in visible_group_traces if trace.name == roof.label]
+    application_indices = [
+        index
+        for index, trace in visible_group_traces
+        if trace.mode == "markers+text" and trace.name == rec.label
+    ]
+    assert len(roofline_indices) == 1
+    assert application_indices
+    assert roofline_indices[0] < min(application_indices)
     un_markers = [t for t in fig_un.data if t.mode == "markers+text" and t.showlegend]
     assert len(un_markers) == 1
     # The y-value is flops_per_second/1e9 = 4e9/1e9 = 4.0
