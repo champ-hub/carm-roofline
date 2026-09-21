@@ -737,6 +737,47 @@ def test_resolve_metrics_bytes_from_load_store() -> None:
     assert value == (1000 + 500) * DEFAULT_CTX.bytes_per_instruction
 
 
+def test_resolve_metrics_prefers_papi_load_store_count_over_native_count() -> None:
+    available = frozenset(
+        {
+            "PAPI_LST_INS",
+            "MEM_INST_RETIRED:ALL_LOADS",
+            "MEM_INST_RETIRED:ALL_STORES",
+        }
+    )
+    config = MetricResolutionConfig(data_type=DataType.f32)
+
+    impl = resolve_metrics(available, config)[MetricType.BYTES]
+    value = impl.compute(
+        {
+            "PAPI_LST_INS": 4096.0,
+            "MEM_INST_RETIRED:ALL_LOADS": 2048.0,
+            "MEM_INST_RETIRED:ALL_STORES": 2048.0,
+        },
+        MetricContext(config),
+    )
+
+    assert impl.description.startswith("Approximated from PAPI_LST_INS")
+    assert value == 16384.0
+
+
+
+def test_resolve_metrics_native_load_store_count_uses_configured_width() -> None:
+    available = frozenset({"MEM_INST_RETIRED:ALL_LOADS", "MEM_INST_RETIRED:ALL_STORES"})
+    config = MetricResolutionConfig(data_type=DataType.f32)
+
+    impl = resolve_metrics(available, config)[MetricType.BYTES]
+    value = impl.compute(
+        {
+            "MEM_INST_RETIRED:ALL_LOADS": 2048.0,
+            "MEM_INST_RETIRED:ALL_STORES": 2048.0,
+        },
+        MetricContext(config),
+    )
+
+    assert "MEM_INST_RETIRED" in impl.description
+    assert value == 16384.0
+
 def test_resolve_metrics_bytes_from_l1_accesses() -> None:
     available = frozenset({"PAPI_L1_DCA"})
     resolved = resolve_metrics(available)
@@ -903,9 +944,13 @@ def test_parse_available_events_cache_corrupt_file_runs_command(
 
 def test_parse_available_events_filters_uncollectable_events(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Only events kept by the collectability filter reach the catalog and its cache."""
+
+    def load_papi_library() -> object:
+        return object()
+
     key = _patch_cache_env(monkeypatch, tmp_path)
     _patch_xml_command(monkeypatch)
-    monkeypatch.setattr(papi_metrics, "_load_papi_library", lambda: object())
+    monkeypatch.setattr(papi_metrics, "_load_papi_library", load_papi_library)
     monkeypatch.setattr(
         papi_metrics,
         "collectable_events",
@@ -1078,6 +1123,61 @@ def test_resolve_metrics_with_custom_isa_outranks_default() -> None:
     bytes_impl = resolved[MetricType.BYTES]
     assert bytes_impl.priority == 200
     assert "X86AVX2" in str(bytes_impl.description)
+
+
+def test_resolve_metrics_uses_native_memory_events_with_isa_width_estimate() -> None:
+    from carm_roofline.isa.x86 import X86AVX2
+
+    available = frozenset(
+        {
+            "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE",
+            "MEM_INST_RETIRED:ALL_LOADS",
+            "MEM_INST_RETIRED:ALL_STORES",
+        }
+    )
+    cfg = MetricResolutionConfig(data_type=DataType.f64, isas=(X86AVX2,))
+
+    impl = PAPIMetricRegistry(cfg).resolve(available)[MetricType.BYTES]
+    value = impl.compute(
+        {
+            "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE": 10.0,
+            "MEM_INST_RETIRED:ALL_LOADS": 4.0,
+            "MEM_INST_RETIRED:ALL_STORES": 6.0,
+        },
+        MetricContext(cfg),
+    )
+
+    assert "MEM_INST_RETIRED" in impl.description
+    assert "PAPI_LST_INS" not in impl.required_events
+    assert value == 320.0
+
+
+def test_resolve_metrics_uses_single_precision_scalar_width() -> None:
+    available = frozenset({"FP_ARITH_INST_RETIRED:SCALAR_SINGLE", "PAPI_LST_INS"})
+    config = MetricResolutionConfig(data_type=DataType.f32)
+
+    impl = resolve_metrics(available, config)
+    value = impl[MetricType.BYTES].compute(
+        {"FP_ARITH_INST_RETIRED:SCALAR_SINGLE": 5.0, "PAPI_LST_INS": 5.0},
+        MetricContext(config),
+    )
+
+    assert value == 20.0
+
+
+def test_resolve_metrics_uses_vector_width_for_single_precision() -> None:
+    from carm_roofline.isa.x86 import X86SSE
+
+    available = frozenset({"FP_ARITH_INST_RETIRED:128B_PACKED_SINGLE", "PAPI_LST_INS"})
+    config = MetricResolutionConfig(data_type=DataType.f32, isas=(X86SSE,))
+
+    impl = PAPIMetricRegistry(config).resolve(available)[MetricType.BYTES]
+    value = impl.compute(
+        {"FP_ARITH_INST_RETIRED:128B_PACKED_SINGLE": 5.0, "PAPI_LST_INS": 5.0},
+        MetricContext(config),
+    )
+
+    assert value == 80.0
 
 
 # ---------------------------------------------------------------------------
@@ -1281,7 +1381,9 @@ def test_profile_main_list_metrics_exits_without_command(monkeypatch: pytest.Mon
 
 PAPI_CACHE_IMPLEMENTATION = OPTIONAL_METRICS[OptionalMetricName.CACHE_RESIDENCY].implementations[BackendType.PAPI][0]
 PERF_CACHE_IMPLEMENTATION = OPTIONAL_METRICS[OptionalMetricName.CACHE_RESIDENCY].implementations[BackendType.PERF][0]
-PERF_INTEL_CACHE_IMPLEMENTATION = OPTIONAL_METRICS[OptionalMetricName.CACHE_RESIDENCY].implementations[BackendType.PERF][1]
+PERF_INTEL_CACHE_IMPLEMENTATION = OPTIONAL_METRICS[OptionalMetricName.CACHE_RESIDENCY].implementations[
+    BackendType.PERF
+][1]
 L1_ONLY_CACHE_IMPLEMENTATION = OptionalMetricImplementation(
     required_events=frozenset({"PAPI_L1_DCA", "PAPI_L1_DCM"}),
     compute=lambda counters, region_bytes, bytes_per_instruction: _cache_level_bytes(
@@ -1429,6 +1531,7 @@ def test_cache_residency_perf_zero_misses_all_l1() -> None:
     }
     result = _cache_compute(counters, PERF_CACHE_IMPLEMENTATION)
     assert result == {"l1": 800.0, "l2": 0.0, "l3plus": 0.0}
+
 
 def test_validate_metric_names_empty_and_dedupe() -> None:
     assert validate_metric_names(None) == ()
@@ -1583,8 +1686,6 @@ def test_last_bucket_names() -> None:
 
 @pytest.mark.parametrize(
     "counters, expected_fractions",
-
-
     [
         # pure L1: no misses anywhere
         (
@@ -1934,9 +2035,7 @@ def test_profile_main_papi_optional_metric_end_to_end(tmp_path: Path, monkeypatc
         "L2_PREFETCH_MISS_L3:L2_HW_PREFETCHER": 8,
     }
 
-    def fake_profile(
-        self: papi_backend.PAPIHLBackend, run_spec: RunSpec, command: list[str], cwd: Path
-    ) -> RunResult:
+    def fake_profile(self: papi_backend.PAPIHLBackend, run_spec: RunSpec, command: list[str], cwd: Path) -> RunResult:
         region = RegionMetrics(
             name="total", parent_region_id="-1", cycles=0, time_nsec=1_000_000_000, counters=counters
         )
@@ -2134,9 +2233,7 @@ def test_profile_main_single_run_without_merge_flag(tmp_path: Path, monkeypatch:
     # One session-scoped backend; the whole 4-event pool is one chunk in sorted order (D < F < L1 < LST).
     assert len(fake_cls.instances) == 1
     backend = fake_cls.instances[0]
-    assert [s.events for s in backend.received_specs] == [
-        "PAPI_DP_OPS,PAPI_FP_OPS,PAPI_L1_DCA,PAPI_LST_INS"
-    ]
+    assert [s.events for s in backend.received_specs] == ["PAPI_DP_OPS,PAPI_FP_OPS,PAPI_L1_DCA,PAPI_LST_INS"]
     assert backend.profile_calls == 1
     assert fake_cls.check_prerequisites_calls == 1
     assert fake_cls.can_collect_calls == 0  # partition logic never consulted
@@ -2220,19 +2317,14 @@ def test_perf_can_collect_probe_fits(monkeypatch: pytest.MonkeyPatch) -> None:
 
     backend = _perf_backend_with_probe(monkeypatch, fake_run)  # type: ignore[arg-type]
     assert backend.can_collect(frozenset({"cycles"})) is True
-    assert calls == [
-        ["/usr/bin/perf", "stat", "-x,", "-e", "duration_time,cycles", "--", "sleep", "0.05"]
-    ]
+    assert calls == [["/usr/bin/perf", "stat", "-x,", "-e", "duration_time,cycles", "--", "sleep", "0.05"]]
 
 
 def test_perf_can_collect_probe_rejects_multiplexed(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(
             returncode=0,
-            stdout=(
-                "850123,,cycles,73949,16,00,,\n"
-                "888426,,instructions,439544,100,00,1,insn per cycle\n"
-            ),
+            stdout=("850123,,cycles,73949,16,00,,\n888426,,instructions,439544,100,00,1,insn per cycle\n"),
             stderr="",
         )
 
@@ -2288,6 +2380,7 @@ def test_perf_can_collect_empty_set_skips_probe(monkeypatch: pytest.MonkeyPatch)
 
 def test_perf_partition_uses_probe_capability(monkeypatch: pytest.MonkeyPatch) -> None:
     """partition_events with a real PerfBackend splits on probe-reported overcommit."""
+
     def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
         events = next(a for a in args if a.startswith("duration_time,")).split(",")
         n = len(events) - 1  # drop duration_time
@@ -2306,8 +2399,7 @@ def test_perf_parse_output_warns_on_multiplexed_run(tmp_path: Path, monkeypatch:
     backend = PerfBackend(MetricResolutionConfig())
     run_spec = RunSpec(output_dir=tmp_path, events="fp_ret_sse_avx_ops.all,ls_dispatch.ld_dispatch")
     (tmp_path / "perf_stat.csv").write_text(
-        "1000,,fp_ret_sse_avx_ops.all,550492,100,00,,\n"
-        "<not counted>,,ls_dispatch.ld_dispatch,0,0,00,,\n"
+        "1000,,fp_ret_sse_avx_ops.all,550492,100,00,,\n<not counted>,,ls_dispatch.ld_dispatch,0,0,00,,\n"
     )
     ranks = backend._parse_output(run_spec)
     assert any("time-multiplexed" in w and "ls_dispatch.ld_dispatch" in w for w in warns)
@@ -2327,9 +2419,7 @@ def test_perf_check_prerequisites_warns_when_resolved_set_overcommits(
         priority=50,
         description="FLOPS",
     )
-    monkeypatch.setattr(
-        perf_backend, "resolve_perf_metrics", lambda available, config: {MetricType.FLOPS: impl}
-    )
+    monkeypatch.setattr(perf_backend, "resolve_perf_metrics", lambda available, config: {MetricType.FLOPS: impl})
     monkeypatch.setattr(PerfBackend, "can_collect", lambda self, events: False)
     warns: list[str] = []
     monkeypatch.setattr(perf_backend, "warn", lambda *args, **kwargs: warns.append(str(args[0])))
@@ -2387,9 +2477,7 @@ def test_check_perf_event_paranoid_unreadable_warns_and_proceeds(monkeypatch: py
 
 
 @pytest.mark.parametrize("paranoid", [3, 4])
-def test_perf_check_prerequisites_raises_when_paranoid_too_high(
-    monkeypatch: pytest.MonkeyPatch, paranoid: int
-) -> None:
+def test_perf_check_prerequisites_raises_when_paranoid_too_high(monkeypatch: pytest.MonkeyPatch, paranoid: int) -> None:
     monkeypatch.setattr(shared, "perf_event_paranoid", lambda: paranoid)
     monkeypatch.setattr(perf_backend.shutil, "which", lambda name: "/usr/bin/perf")
     monkeypatch.setattr(
@@ -2402,9 +2490,7 @@ def test_perf_check_prerequisites_raises_when_paranoid_too_high(
 
 
 @pytest.mark.parametrize("paranoid", [-1, 0, 1, 2])
-def test_perf_check_prerequisites_accepts_paranoid_2_or_lower(
-    monkeypatch: pytest.MonkeyPatch, paranoid: int
-) -> None:
+def test_perf_check_prerequisites_accepts_paranoid_2_or_lower(monkeypatch: pytest.MonkeyPatch, paranoid: int) -> None:
     monkeypatch.setattr(shared, "perf_event_paranoid", lambda: paranoid)
     monkeypatch.setattr(perf_backend.shutil, "which", lambda name: "/usr/bin/perf")
     monkeypatch.setattr(perf_backend, "parse_perf_available_events", lambda: frozenset({"A"}))
@@ -2415,9 +2501,7 @@ def test_perf_check_prerequisites_accepts_paranoid_2_or_lower(
         priority=50,
         description="FLOPS",
     )
-    monkeypatch.setattr(
-        perf_backend, "resolve_perf_metrics", lambda available, config: {MetricType.FLOPS: impl}
-    )
+    monkeypatch.setattr(perf_backend, "resolve_perf_metrics", lambda available, config: {MetricType.FLOPS: impl})
     monkeypatch.setattr(PerfBackend, "can_collect", lambda self, events: True)
     warns: list[str] = []
     monkeypatch.setattr(shared, "warn", lambda *args, **kwargs: warns.append(str(args[0])))
@@ -2439,9 +2523,7 @@ def test_perf_check_prerequisites_unreadable_paranoid_warns_and_proceeds(
         priority=50,
         description="FLOPS",
     )
-    monkeypatch.setattr(
-        perf_backend, "resolve_perf_metrics", lambda available, config: {MetricType.FLOPS: impl}
-    )
+    monkeypatch.setattr(perf_backend, "resolve_perf_metrics", lambda available, config: {MetricType.FLOPS: impl})
     monkeypatch.setattr(PerfBackend, "can_collect", lambda self, events: True)
     warns: list[str] = []
     monkeypatch.setattr(shared, "warn", lambda *args, **kwargs: warns.append(str(args[0])))

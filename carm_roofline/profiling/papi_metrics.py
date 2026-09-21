@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -91,31 +92,115 @@ def fp_arith_counters_for_isas(
     return result
 
 
-def make_intel_byte_metric_defs(
-    arith_counters: dict[str, float], priority: int, prio_mod: Callable[[MetricResolutionConfig], int]
-) -> MetricDefinition:
-    def compute_fn(e: dict[str, float], ctx: MetricContext) -> float:
-        byte_weight = 0.0
-        total_arith_insts = sum(e.get(event, 0.0) for event in arith_counters)
+@dataclass(frozen=True)
+class _MemoryInstructionSource:
+    """A collectable event set that counts retired memory instructions."""
 
-        if total_arith_insts == 0:
+    required_events: frozenset[str]
+    count: Callable[[dict[str, float]], float]
+    description: str
+    priority_offset: int
+
+
+_MEMORY_INSTRUCTION_SOURCES = (
+    _MemoryInstructionSource(
+        required_events=frozenset({"PAPI_LST_INS"}),
+        count=lambda e: e["PAPI_LST_INS"],
+        description="PAPI_LST_INS",
+        priority_offset=0,
+    ),
+    _MemoryInstructionSource(
+        required_events=frozenset({"PAPI_LD_INS", "PAPI_SR_INS"}),
+        count=lambda e: e["PAPI_LD_INS"] + e["PAPI_SR_INS"],
+        description="PAPI_LD_INS + PAPI_SR_INS",
+        priority_offset=-5,
+    ),
+    _MemoryInstructionSource(
+        required_events=frozenset({"MEM_INST_RETIRED:ALL_LOADS", "MEM_INST_RETIRED:ALL_STORES"}),
+        count=lambda e: e["MEM_INST_RETIRED:ALL_LOADS"] + e["MEM_INST_RETIRED:ALL_STORES"],
+        description="MEM_INST_RETIRED:ALL_LOADS + MEM_INST_RETIRED:ALL_STORES",
+        priority_offset=-5,
+    ),
+)
+
+_FP_ARITH_WIDTH_BYTES = {"128B": 16, "256B": 32, "512B": 64}
+_FP_ARITH_WIDTH_WARNING = (
+    "This estimate assumes the average memory-instruction width matches the average FP arithmetic-instruction width."
+)
+
+
+def _fp_arith_byte_weights(counters: set[str], data_type: DataType) -> dict[str, float]:
+    """Return the register width in bytes for each FP_ARITH counter."""
+    return {
+        counter: float(data_type.bytes() if prefix == "SCALAR" else width)
+        for counter in counters
+        for prefix, width in (("SCALAR", data_type.bytes()), *_FP_ARITH_WIDTH_BYTES.items())
+        if prefix in counter
+    }
+
+
+def _fp_arith_byte_compute(
+    weights: dict[str, float],
+    source: _MemoryInstructionSource,
+) -> Callable[[dict[str, float], MetricContext], float]:
+    """Return an arithmetic-width byte estimate for one memory-instruction source."""
+
+    def compute(events: dict[str, float], _ctx: MetricContext) -> float:
+        total_arith = sum(events[event] for event in weights)
+        if total_arith == 0:
             return 0.0
+        average_width = sum(events[event] * width for event, width in weights.items()) / total_arith
+        return average_width * source.count(events)
 
-        # what's the proportion of each vector width in the total arithmetic instructions?
-        for event, weight in arith_counters.items():
-            byte_weight += (e[event] / total_arith_insts) * weight
+    return compute
 
-        # scale by bytes per instruction to get total bytes, assuming load/store width matches arithmetic width
-        return byte_weight * e["PAPI_LST_INS"]
 
-    return MetricDefinition(
-        type=MetricType.BYTES,
-        required_events=frozenset(set(arith_counters.keys()) | {"PAPI_LST_INS"}),
-        compute=compute_fn,
-        priority=priority,
-        priority_modifier=prio_mod,
-        description="Bytes from FP_ARITH vector-width counters (assumes arithmetic/store width match)",
-    )
+def _fixed_width_byte_compute(
+    source: _MemoryInstructionSource,
+) -> Callable[[dict[str, float], MetricContext], float]:
+    """Return a configured-width byte estimate for one memory-instruction source."""
+
+    def compute(events: dict[str, float], ctx: MetricContext) -> float:
+        return source.count(events) * ctx.bytes_per_instruction
+
+    return compute
+
+
+def _make_fp_arith_bytes_metrics(
+    counters: set[str],
+    data_type: DataType,
+    priority: int,
+    priority_modifier: Callable[[MetricResolutionConfig], int],
+    description: str,
+) -> list[MetricDefinition]:
+    """Build arithmetic-width byte estimates for every memory-instruction source."""
+    weights = _fp_arith_byte_weights(counters, data_type)
+    return [
+        MetricDefinition(
+            type=MetricType.BYTES,
+            required_events=frozenset(counters | source.required_events),
+            compute=_fp_arith_byte_compute(weights, source),
+            priority=priority + source.priority_offset,
+            priority_modifier=priority_modifier,
+            description=f"{description} and {source.description}",
+            warning=_FP_ARITH_WIDTH_WARNING,
+        )
+        for source in _MEMORY_INSTRUCTION_SOURCES
+    ]
+
+
+def _make_fixed_width_bytes_metrics(priority: int) -> list[MetricDefinition]:
+    """Build configured-width byte estimates for every memory-instruction source."""
+    return [
+        MetricDefinition(
+            type=MetricType.BYTES,
+            required_events=source.required_events,
+            compute=_fixed_width_byte_compute(source),
+            priority=priority + source.priority_offset,
+            description=f"Approximated from {source.description} and bytes per instruction",
+        )
+        for source in _MEMORY_INSTRUCTION_SOURCES
+    ]
 
 
 def _build_metric_definitions() -> dict[MetricType, list[MetricDefinition]]:
@@ -176,40 +261,51 @@ def _build_metric_definitions() -> dict[MetricType, list[MetricDefinition]]:
             ),
         ],
         MetricType.BYTES: [
-            # make arithmetic-weight-based defs for intel architectures
-            # for architectures with AVX-512:
-            make_intel_byte_metric_defs(
-                {_FP_SCALAR_DP: 8, _FP128_DP: 16, _FP256_DP: 32, _FP512_DP: 64}, 100, _data_type_match(DataType.f64)
+            # Arithmetic-width estimates for AVX-512, AVX2, and SSE systems.
+            *_make_fp_arith_bytes_metrics(
+                {_FP_SCALAR_DP, _FP128_DP, _FP256_DP, _FP512_DP},
+                DataType.f64,
+                100,
+                _data_type_match(DataType.f64),
+                "Bytes from FP_ARITH vector-width counters",
             ),
-            make_intel_byte_metric_defs(
-                {_FP_SCALAR_SP: 8, _FP128_SP: 16, _FP256_SP: 32, _FP512_SP: 64}, 100, _data_type_match(DataType.f32)
+            *_make_fp_arith_bytes_metrics(
+                {_FP_SCALAR_SP, _FP128_SP, _FP256_SP, _FP512_SP},
+                DataType.f32,
+                100,
+                _data_type_match(DataType.f32),
+                "Bytes from FP_ARITH vector-width counters",
             ),
-            # for architectures with AVX-2 only:
-            make_intel_byte_metric_defs(
-                {_FP_SCALAR_DP: 8, _FP128_DP: 16, _FP256_DP: 32}, 99, _data_type_match(DataType.f64)
+            *_make_fp_arith_bytes_metrics(
+                {_FP_SCALAR_DP, _FP128_DP, _FP256_DP},
+                DataType.f64,
+                99,
+                _data_type_match(DataType.f64),
+                "Bytes from FP_ARITH vector-width counters",
             ),
-            make_intel_byte_metric_defs(
-                {_FP_SCALAR_SP: 8, _FP128_SP: 16, _FP256_SP: 32}, 99, _data_type_match(DataType.f32)
+            *_make_fp_arith_bytes_metrics(
+                {_FP_SCALAR_SP, _FP128_SP, _FP256_SP},
+                DataType.f32,
+                99,
+                _data_type_match(DataType.f32),
+                "Bytes from FP_ARITH vector-width counters",
             ),
-            # for architectures with SSE only (do those exist?):
-            make_intel_byte_metric_defs({_FP_SCALAR_DP: 8, _FP128_DP: 16}, 98, _data_type_match(DataType.f64)),
-            make_intel_byte_metric_defs({_FP_SCALAR_SP: 8, _FP128_SP: 16}, 98, _data_type_match(DataType.f32)),
-            # basic definitions based on load/store counts and user-provided bytes per instruction
-            MetricDefinition(
-                type=MetricType.BYTES,
-                required_events=frozenset({"PAPI_LST_INS"}),
-                compute=lambda e, ctx: e["PAPI_LST_INS"] * ctx.bytes_per_instruction,
-                priority=90,
-                description="Approximated from PAPI_LST_INS and bytes per instruction",
+            *_make_fp_arith_bytes_metrics(
+                {_FP_SCALAR_DP, _FP128_DP},
+                DataType.f64,
+                98,
+                _data_type_match(DataType.f64),
+                "Bytes from FP_ARITH vector-width counters",
             ),
-            MetricDefinition(
-                type=MetricType.BYTES,
-                required_events=frozenset({"PAPI_LD_INS", "PAPI_SR_INS"}),
-                compute=lambda e, ctx: (e["PAPI_LD_INS"] + e["PAPI_SR_INS"]) * ctx.bytes_per_instruction,
-                priority=85,
-                description="Approximated from PAPI_LD_INS + PAPI_SR_INS and bytes per instruction",
+            *_make_fp_arith_bytes_metrics(
+                {_FP_SCALAR_SP, _FP128_SP},
+                DataType.f32,
+                98,
+                _data_type_match(DataType.f32),
+                "Bytes from FP_ARITH vector-width counters",
             ),
-            # Relevant for Zen3 (no PAPI loads/store events, only DCA, native forwarding event for higher accuracy)
+            *_make_fixed_width_bytes_metrics(90),
+            # Relevant for Zen3 (no PAPI load/store events, only DCA and a native forwarding event).
             MetricDefinition(
                 type=MetricType.BYTES,
                 required_events=frozenset({"PAPI_L1_DCA", "STORE_TO_LOAD_FORWARD"}),
@@ -277,50 +373,18 @@ def _make_fp_arith_flops_metric(
     )
 
 
-def _fp_arith_byte_compute(
-    arith_counters: dict[str, float],
-) -> Callable[[dict[str, float], MetricContext], float]:
-    """Returns a compute closure: vector-width-weighted bytes x PAPI_LST_INS."""
-
-    def compute_fn(e: dict[str, float], ctx: MetricContext) -> float:
-        byte_weight = 0.0
-        total_arith = sum(e.get(ev, 0.0) for ev in arith_counters)
-        if total_arith == 0:
-            return 0.0
-        for ev, weight in arith_counters.items():
-            byte_weight += (e[ev] / total_arith) * weight
-        if "PAPI_LST_INS" not in e:
-            return 0.0
-        return byte_weight * e["PAPI_LST_INS"]
-
-    return compute_fn
-
-
-def _make_fp_arith_bytes_metric(
+def _make_fp_arith_bytes_metrics_for_isas(
     counters: set[str],
     data_type: DataType,
     isas: tuple[type[BaseISA], ...],
-) -> MetricDefinition:
-    """BYTES from narrowed FP_ARITH counters + PAPI_LST_INS."""
-    el_bytes = data_type.bytes()
-    weight_map: dict[str, float] = {}
-    _WIDTH_FACTOR = {"SCALAR": 1, "128B": 2, "256B": 4, "512B": 8}
-    for c in counters:
-        for prefix, factor in _WIDTH_FACTOR.items():
-            if prefix in c:
-                weight_map[c] = float(el_bytes * factor)
-                break
-
-    return MetricDefinition(
-        type=MetricType.BYTES,
-        required_events=frozenset(counters | {"PAPI_LST_INS"}),
-        compute=_fp_arith_byte_compute(weight_map),
-        priority=200,
-        description=(
-            f"Bytes from FP_ARITH vector-width counters for "
-            f"{', '.join(isa.__name__ for isa in isas)} ({data_type.name})"
-            f" (assumes arithmetic/store width match)"
-        ),
+) -> list[MetricDefinition]:
+    """Build ISA-tailored arithmetic-width byte estimates."""
+    return _make_fp_arith_bytes_metrics(
+        counters,
+        data_type,
+        200,
+        lambda _: 0,
+        f"Bytes from FP_ARITH vector-width counters for {', '.join(isa.__name__ for isa in isas)} ({data_type.name})",
     )
 
 
@@ -339,7 +403,7 @@ def _build_isa_custom_metrics(
         return None
     return {
         MetricType.FLOPS: [_make_fp_arith_flops_metric(counters, config.data_type, config.isas)],
-        MetricType.BYTES: [_make_fp_arith_bytes_metric(counters, config.data_type, config.isas)],
+        MetricType.BYTES: _make_fp_arith_bytes_metrics_for_isas(counters, config.data_type, config.isas),
     }
 
 
