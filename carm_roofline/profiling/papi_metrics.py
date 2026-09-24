@@ -127,6 +127,31 @@ _FP_ARITH_WIDTH_BYTES = {"128B": 16, "256B": 32, "512B": 64}
 _FP_ARITH_WIDTH_WARNING = (
     "This estimate assumes the average memory-instruction width matches the average FP arithmetic-instruction width."
 )
+_FP_ARITH_FLOPS_PER_INSTRUCTION = {
+    "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE": 1.0,
+    "FP_ARITH_INST_RETIRED:SCALAR_SINGLE": 1.0,
+    "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE": 2.0,
+    "FP_ARITH_INST_RETIRED:128B_PACKED_SINGLE": 4.0,
+    "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE": 4.0,
+    "FP_ARITH_INST_RETIRED:256B_PACKED_SINGLE": 8.0,
+    "FP_ARITH_INST_RETIRED:512B_PACKED_DOUBLE": 8.0,
+    "FP_ARITH_INST_RETIRED:512B_PACKED_SINGLE": 16.0,
+}
+
+
+def _make_available_fp_arith_flops(events: frozenset[str]) -> MetricDefinition | None:
+    """Build a fallback FLOPS metric from the precision-specific FP_ARITH events present."""
+    counters = frozenset(events & _FP_ARITH_FLOPS_PER_INSTRUCTION.keys())
+    if not counters:
+        return None
+
+    return MetricDefinition(
+        type=MetricType.FLOPS,
+        required_events=counters,
+        compute=lambda values, _ctx: sum(values[event] * _FP_ARITH_FLOPS_PER_INSTRUCTION[event] for event in counters),
+        priority=50,
+        description="Flops from available FP_ARITH vector-width counters",
+    )
 
 
 def _fp_arith_byte_weights(counters: set[str], data_type: DataType) -> dict[str, float]:
@@ -450,11 +475,16 @@ class PAPIMetricRegistry:
         available_events: frozenset[str],
     ) -> dict[MetricType, MetricDefinition]:
         """Resolve best available metrics for the given event set."""
-        return _resolve_metrics(
+        resolved = _resolve_metrics(
             available_events,
             self._config,
             registry=self.definitions,
         )
+        if MetricType.FLOPS not in resolved:
+            fallback = _make_available_fp_arith_flops(available_events)
+            if fallback is not None:
+                resolved[MetricType.FLOPS] = fallback
+        return resolved
 
 
 # Default registry instance for backward-compat resolve_metrics wrapper

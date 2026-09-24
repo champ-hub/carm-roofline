@@ -147,7 +147,10 @@ def profile_main(config: ProfileConfig) -> int:
             else:
                 chunks = [sorted(pool)]
         else:
-            chunks = [None]
+            raise UserError(
+                "No profiling events could be resolved for the requested metrics; "
+                "cannot run the instrumented application."
+            )
 
         # Create a metric context for computing flops/bytes based on user preferences
         metric_ctx = MetricContext(resolution_cfg)

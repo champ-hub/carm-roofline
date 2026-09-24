@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import math
 import re
+from typing import Any
 
 import pandas as pd
-import pytest
 import plotly.graph_objects as go
-
+import pytest
 
 from carm_roofline.gui.config import GUISettings
 from carm_roofline.gui.data import (
@@ -18,9 +18,9 @@ from carm_roofline.gui.data import (
     _SELECTED_FILL_BASE_OPACITY,
     FULL_LEGEND_NAME_META_KEY,
     MAX_LEGEND_LABEL_LENGTH,
-    _crop_legend_names,
     RoofConfig,
     RoofStore,
+    _crop_legend_names,
     _format_point_tooltip,
     _residency_alpha,
     _residency_to_level_fractions,
@@ -1242,8 +1242,22 @@ def test_selection_emphasis_scales_selected_roof_lines() -> None:
         app_ids=["a2"],
     )
     apps = {
-        "a1": ApplicationRecord(id="a1", label="app1", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_residency()]),
-        "a2": ApplicationRecord(id="a2", label="app2", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_residency()]),
+        "a1": ApplicationRecord(
+            id="a1",
+            label="app1",
+            aggregation="global",
+            metadata={},
+            machine="test_machine",
+            points=[_point_with_residency()],
+        ),
+        "a2": ApplicationRecord(
+            id="a2",
+            label="app2",
+            aggregation="global",
+            metadata={},
+            machine="test_machine",
+            points=[_point_with_residency()],
+        ),
     }
     fig = build_roofline_figure(
         [roof1, roof2],
@@ -1295,8 +1309,22 @@ def test_selection_emphasis_3key_l3plus_highlights_l3_and_dram() -> None:
         app_ids=["a2"],
     )
     apps = {
-        "a1": ApplicationRecord(id="a1", label="app1", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_3key_residency()]),
-        "a2": ApplicationRecord(id="a2", label="app2", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_3key_residency()]),
+        "a1": ApplicationRecord(
+            id="a1",
+            label="app1",
+            aggregation="global",
+            metadata={},
+            machine="test_machine",
+            points=[_point_with_3key_residency()],
+        ),
+        "a2": ApplicationRecord(
+            id="a2",
+            label="app2",
+            aggregation="global",
+            metadata={},
+            machine="test_machine",
+            points=[_point_with_3key_residency()],
+        ),
     }
     fig = build_roofline_figure(
         [roof1, roof2],
@@ -1348,8 +1376,22 @@ def test_selection_emphasis_l2plus_expands_beyond_l2() -> None:
         app_ids=["a2"],
     )
     apps = {
-        "a1": ApplicationRecord(id="a1", label="app1", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_l2plus_residency()]),
-        "a2": ApplicationRecord(id="a2", label="app2", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_l2plus_residency()]),
+        "a1": ApplicationRecord(
+            id="a1",
+            label="app1",
+            aggregation="global",
+            metadata={},
+            machine="test_machine",
+            points=[_point_with_l2plus_residency()],
+        ),
+        "a2": ApplicationRecord(
+            id="a2",
+            label="app2",
+            aggregation="global",
+            metadata={},
+            machine="test_machine",
+            points=[_point_with_l2plus_residency()],
+        ),
     }
     fig = build_roofline_figure(
         [roof1, roof2],
@@ -1466,8 +1508,22 @@ def test_selection_fills_share_constant_base_opacity() -> None:
         app_ids=["a2"],
     )
     apps = {
-        "a1": ApplicationRecord(id="a1", label="app1", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_residency()]),
-        "a2": ApplicationRecord(id="a2", label="app2", aggregation="global", metadata={}, machine="test_machine", points=[_point_with_residency()]),
+        "a1": ApplicationRecord(
+            id="a1",
+            label="app1",
+            aggregation="global",
+            metadata={},
+            machine="test_machine",
+            points=[_point_with_residency()],
+        ),
+        "a2": ApplicationRecord(
+            id="a2",
+            label="app2",
+            aggregation="global",
+            metadata={},
+            machine="test_machine",
+            points=[_point_with_residency()],
+        ),
     }
     fig = build_roofline_figure(
         [roof1, roof2],

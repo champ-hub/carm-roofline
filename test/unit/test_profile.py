@@ -11,6 +11,7 @@ from typing import ClassVar
 
 import pytest
 
+import carm_roofline.profiling as profiling
 import carm_roofline.profiling.papi_backend as papi_backend
 import carm_roofline.profiling.papi_metrics as papi_metrics
 import carm_roofline.profiling.perf_backend as perf_backend
@@ -778,6 +779,26 @@ def test_resolve_metrics_native_load_store_count_uses_configured_width() -> None
     assert "MEM_INST_RETIRED" in impl.description
     assert value == 16384.0
 
+
+def test_resolve_metrics_flops_from_native_arithmetic_counters_without_isa() -> None:
+    available = frozenset(
+        {
+            "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE",
+            "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE",
+            "FP_ARITH_INST_RETIRED:256B_PACKED_SINGLE",
+        }
+    )
+    resolved = resolve_metrics(available)
+    impl = resolved[MetricType.FLOPS]
+    counters = {
+        "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE": 2.0,
+        "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE": 3.0,
+        "FP_ARITH_INST_RETIRED:256B_PACKED_SINGLE": 5.0,
+    }
+
+    assert impl.compute(counters, DEFAULT_CTX) == 48.0
+
+
 def test_resolve_metrics_bytes_from_l1_accesses() -> None:
     available = frozenset({"PAPI_L1_DCA"})
     resolved = resolve_metrics(available)
@@ -1326,6 +1347,28 @@ def _parse_profile_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     ProfileConfig.insert_arguments(parser)
     return parser.parse_args(argv)
+
+
+def test_profile_main_does_not_launch_when_no_events_resolve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class EmptyBackend:
+        available_events = frozenset()
+        resolved_metrics: dict[MetricType, MetricDefinition] = {}
+
+        def check_prerequisites(self) -> bool:
+            return False
+
+        def profile(self, *_args: object, **_kwargs: object) -> RunResult:
+            pytest.fail("the instrumented app must not launch with an empty event set")
+
+    monkeypatch.setattr(profiling, "create_backend", lambda *_args: EmptyBackend())
+    config = ProfileConfig(
+        _parse_profile_args(["--output-dir", str(tmp_path), "--", "./app"])
+    )
+
+    with pytest.raises(UserError, match="cannot run the instrumented application"):
+        profile_main(config)
 
 
 @pytest.mark.parametrize("flag", ["--papi-events", "--perf-events"])
