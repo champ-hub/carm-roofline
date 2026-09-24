@@ -679,6 +679,7 @@ def _register_callbacks(
     # 9-17. Settings controls (factory-generated)
     _register_setting_callback(SettingsPanelID.SWITCH_NORMALIZE, "normalize_by_threads", bool, False)
     _register_setting_callback(SettingsPanelID.SLIDER_MARKER_SIZE, "marker_scale_factor", float, 50.0)
+    _register_setting_callback(SettingsPanelID.SLIDER_MARKER_BASE_SIZE, "marker_base_size", float, 50.0)
     _register_setting_callback(SettingsPanelID.SWITCH_POWER2_TICKS, "power2_ticks", bool, False)
     _register_setting_callback(SettingsPanelID.SWITCH_SHOW_ROOF_FILLS, "show_roof_fills", bool, True)
     _register_setting_callback(SettingsPanelID.SWITCH_SHOW_MIXED_BENCHMARKS, "show_mixed_benchmarks", bool, False)

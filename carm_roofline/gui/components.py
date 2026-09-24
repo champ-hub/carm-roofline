@@ -149,7 +149,18 @@ _SWITCH_CONTROLS: list[tuple[str, str, str]] = [
 
 _SLIDER_CONTROLS: list[tuple[str, str, str, dict[str, Any]]] = [
     (
-        "Point size multiplier",
+        "Base point size",
+        SettingsPanelID.SLIDER_MARKER_BASE_SIZE,
+        "marker_base_size",
+        {
+            "min": 1,
+            "max": 200,
+            "step": 1,
+            "marks": _slider_marks(1, 50, 100, 150, 200),
+        },
+    ),
+    (
+        "Duration size multiplier",
         SettingsPanelID.SLIDER_MARKER_SIZE,
         "marker_scale_factor",
         {

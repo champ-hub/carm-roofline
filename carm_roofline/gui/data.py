@@ -421,8 +421,6 @@ _APP_MARKER_SYMBOLS: tuple[str, ...] = (
     "hash",
 )
 
-MIN_MARKER_SIZE: float = 50.0
-
 
 def _residency_tooltip_items(residency: dict[str, float]) -> tuple[tuple[str, float], ...]:
     """Serialized cache-residency (label, value) pairs in canonical level order.
@@ -553,6 +551,7 @@ def build_roofline_figure(
     s = settings or GUISettings()
     normalize_by_threads = s.normalize_by_threads
     marker_scale_factor = s.marker_scale_factor
+    marker_base_size = s.marker_base_size
     fig = go.Figure()
     models, x_range, y_range, y_min_gops = _prepare_roof_figure_data(roofs, records, s)
 
@@ -616,12 +615,11 @@ def build_roofline_figure(
                     continue
                 marker_sizes = [
                     max(
-                        MIN_MARKER_SIZE,
-                        MIN_MARKER_SIZE
-                        + ((p.runtime_s - runtime_min) / runtime_range) * MIN_MARKER_SIZE * marker_scale_factor,
+                        marker_base_size,
+                        marker_base_size + ((p.runtime_s - runtime_min) / runtime_range) * 50.0 * marker_scale_factor,
                     )
                     if runtime_range > 0
-                    else MIN_MARKER_SIZE
+                    else marker_base_size
                     for p in rec.points
                 ]
                 mismatches = [roof.num_threads is not None and roof.num_threads != p.num_threads for p in rec.points]
@@ -1107,13 +1105,17 @@ def _extend_ranges_to_points(
 
 
 def _paraver_marker_sizes(
-    duration_s: pd.Series[float], runtime_min: float, runtime_range: float, marker_scale_factor: float
+    duration_s: pd.Series[float],
+    runtime_min: float,
+    runtime_range: float,
+    marker_base_size: float,
+    marker_scale_factor: float,
 ) -> list[float]:
-    """Runtime-proportional marker sizes, same formula as the CARM path (MIN_MARKER_SIZE floor)."""
+    """Runtime-proportional marker sizes with a configurable base-size floor."""
     if runtime_range <= 0:
-        return [MIN_MARKER_SIZE] * len(duration_s)
-    sizes = MIN_MARKER_SIZE + (duration_s - runtime_min) / runtime_range * MIN_MARKER_SIZE * marker_scale_factor
-    return [float(v) for v in sizes.clip(lower=MIN_MARKER_SIZE)]
+        return [marker_base_size] * len(duration_s)
+    sizes = marker_base_size + (duration_s - runtime_min) / runtime_range * 50.0 * marker_scale_factor
+    return [float(v) for v in sizes.clip(lower=marker_base_size)]
 
 
 def _add_paraver_point_traces(
@@ -1163,7 +1165,11 @@ def _add_paraver_code_mode_traces(
     for label, group in labelled.groupby("legend_label", sort=False):
         assert isinstance(label, str)  # legend_label is str; NaN rows were filtered above
         sizes = _paraver_marker_sizes(
-            trace_metric(group, "duration_s"), runtime_min, runtime_range, settings.marker_scale_factor
+            trace_metric(group, "duration_s"),
+            runtime_min,
+            runtime_range,
+            settings.marker_base_size,
+            settings.marker_scale_factor,
         )
         customdata = group["_tooltip"].tolist()
         fig.add_trace(
@@ -1221,7 +1227,11 @@ def _add_paraver_single_marker_trace(
     """One marker trace for all trace rows; *marker* adds mode-specific marker
     fields (per-point colors, or a colorscale) over size/sizemode/opacity."""
     sizes = _paraver_marker_sizes(
-        trace_metric(trace, "duration_s"), runtime_min, runtime_range, settings.marker_scale_factor
+        trace_metric(trace, "duration_s"),
+        runtime_min,
+        runtime_range,
+        settings.marker_base_size,
+        settings.marker_scale_factor,
     )
     customdata = trace["_tooltip"].tolist()
     fig.add_trace(

@@ -119,6 +119,7 @@ class GUISettings:
 
     normalize_by_threads: bool = False
     marker_scale_factor: float = 50.0
+    marker_base_size: float = 50.0
     power2_ticks: bool = False
     show_roof_fills: bool = True
     show_mixed_benchmarks: bool = False

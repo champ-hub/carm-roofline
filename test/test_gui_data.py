@@ -63,6 +63,9 @@ def test_roofstore_round_trip_preserves_all_fields() -> None:
     assert r.actual_frequency_hz == 2500000000
     assert r.app_ids == []
     assert restored.settings.normalize_by_threads is False
+    store.settings.marker_base_size = 25.0
+    restored_with_base_size = RoofStore.from_dict(store.to_dict())
+    assert restored_with_base_size.settings.marker_base_size == 25.0
 
 
 def test_roofstore_round_trip_with_none_fields() -> None:
@@ -192,20 +195,20 @@ def test_build_roofline_figure_renders_application_points() -> None:
         ],
     )
     roof = RoofConfig(roof_id="r1", app_ids=["r1"])
-    fig = build_roofline_figure([roof], [], {"r1": rec})
+    settings = GUISettings(marker_base_size=25.0)
+    fig = build_roofline_figure([roof], [], {"r1": rec}, settings=settings)
     markers = [t for t in fig.data if t.mode == "markers+text"]
     assert len(markers) == 1
     assert list(markers[0].x) == [0.5, 1.0]
-    # marker sizes are not uniform (different runtimes produce different sizes)
+    # marker sizes use the configured base and retain the duration spread.
     assert markers[0].marker.size is not None
     sizes = list(markers[0].marker.size)
     assert len(sizes) == 2
-    assert sizes == pytest.approx([50.0, 2550.0])
+    assert sizes == pytest.approx([25.0, 2525.0])
     # sizemode is 'area'
     assert markers[0].marker.sizemode == "area"
     # marker opacity is 0.6
     assert markers[0].marker.opacity == 0.6
-    # customdata[0] is the rich tooltip via _format_point_tooltip
     assert len(markers[0].customdata) == 2
     assert "<b>run1 \u2014 2024-01-01 (global)</b>" in markers[0].customdata[0][0]
     assert "<i>p1</i>" in markers[0].customdata[0][0]
@@ -600,6 +603,48 @@ def test_build_paraver_figure_code_mode_groups_by_legend() -> None:
     assert list(markers[1].y) == [200.0 / 1e9, 300.0 / 1e9]
     # Tooltip row: raw paraver value (1.0 renders as 1) with the semantic state label in parens.
     assert "<b>Paraver Value</b><br>  1 (Running)" in markers[0].customdata[0]
+
+
+def test_paraver_marker_sizes_use_base_and_duration_scale() -> None:
+    """Paraver markers use the configured base and retain the duration spread."""
+    trace = _paraver_trace()
+    trace["duration_s"] = [1.0, 2.0, 2.0]
+    trace["legend_label"] = ["Running", "Wait/WaitAll", "Wait/WaitAll"]
+    trace["legend_color"] = ["rgb(0,0,255)", "rgb(235,0,0)", "rgb(235,0,0)"]
+    legend = pd.DataFrame(
+        {
+            "code": [1.0, 8.0],
+            "code_end": [1.0, 8.0],
+            "label": ["Running", "Wait/WaitAll"],
+            "r": [0, 235],
+            "g": [0, 0],
+            "b": [255, 0],
+        }
+    )
+    paraver = ParaverData(
+        trace=trace,
+        label="t — w.csv",
+        window_mode=ParaverWindowMode.CODE,
+        time_unit="nanoseconds",
+        prv_path="/p/t.prv",
+        legend=legend,
+    )
+    settings = GUISettings(marker_base_size=25.0)
+    fig = build_paraver_figure([RoofConfig()], [], paraver, trace, settings=settings)
+    markers = [t for t in fig.data if t.mode == "markers"]
+    assert len(markers) == 2
+    assert list(markers[0].marker.size) == pytest.approx([25.0])
+    assert list(markers[1].marker.size) == pytest.approx([2525.0, 2525.0])
+    equal_trace = _paraver_trace()
+    equal_trace["legend_label"] = ["Running", "Wait/WaitAll", "Wait/WaitAll"]
+    equal_trace["legend_color"] = ["rgb(0,0,255)", "rgb(235,0,0)", "rgb(235,0,0)"]
+    equal_duration_fig = build_paraver_figure(
+        [RoofConfig()], [], paraver, equal_trace, settings=settings
+    )
+    equal_duration_markers = [t for t in equal_duration_fig.data if t.mode == "markers"]
+    assert len(equal_duration_markers) == 2
+    assert list(equal_duration_markers[0].marker.size) == pytest.approx([25.0])
+    assert list(equal_duration_markers[1].marker.size) == pytest.approx([25.0, 25.0])
 
 
 def test_paraver_figure_trace_only_single_legend_entry() -> None:

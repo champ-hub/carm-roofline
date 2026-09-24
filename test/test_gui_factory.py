@@ -102,6 +102,23 @@ def test_settings_panel_has_mixed_benchmark_switch_off_by_default() -> None:
 
 
 
+def test_settings_panel_has_base_point_size_slider() -> None:
+    """The base point-size slider uses the persistent default and range."""
+    store = RoofStore()
+    panel = build_settings_panel(store)
+    slider = _find_component(panel, SettingsPanelID.SLIDER_MARKER_BASE_SIZE)
+    assert slider is not None
+    assert slider.value == 50.0
+    assert slider.min == 1
+    assert slider.max == 200
+    assert slider.step == 1
+
+    serialized = store.to_dict()
+    settings = serialized["settings"]
+    assert isinstance(settings, dict)
+    settings["marker_base_size"] = 25.0
+    restored = RoofStore.from_dict(serialized)
+    assert restored.settings.marker_base_size == 25.0
 
 def test_settings_panel_has_editable_legend_label_length() -> None:
     """The legend label length slider persists its configured maximum."""
