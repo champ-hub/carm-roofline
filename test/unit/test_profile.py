@@ -74,7 +74,7 @@ from carm_roofline.profiling.shared import (
 
 pytestmark = pytest.mark.unit
 
-# Default MetricContext for tests (8 bytes/inst, 1 op/inst)
+# Default MetricContext: omitted type uses f32 for estimates, while mixed precision is retained for PAPI FLOPS.
 DEFAULT_CTX = MetricContext(MetricResolutionConfig())
 
 # ---------------------------------------------------------------------------
@@ -231,11 +231,11 @@ def test_compute_region_point() -> None:
     counters = {"PAPI_FP_OPS": 1000, "PAPI_L1_DCA": 500}
     resolved = resolve_metrics(frozenset({"PAPI_FP_OPS", "PAPI_L1_DCA"}))
     pt = compute_region_point(counters, 1_000_000_000, resolved, DEFAULT_CTX)
-    # With DEFAULT_CTX (no data_type): double_ratio=0.0, single_ratio=1.0
+    # With DEFAULT_CTX (no data_type): the fallback estimates use single precision.
     # DP_FLOPS via PAPI_FP_OPS = 1000 * 0.0 = 0.0
     # SP_FLOPS via PAPI_FP_OPS = 1000 * 1.0 = 1000.0
     assert pt.flops == 1000.0
-    assert pt.bytes == 500 * DEFAULT_CTX.bytes_per_instruction  # bytes via PAPI_L1_DCA
+    assert pt.bytes == 500 * DEFAULT_CTX.bytes_per_instruction
     assert pt.time_s == 1.0
 
 
@@ -797,6 +797,216 @@ def test_resolve_metrics_flops_from_native_arithmetic_counters_without_isa() -> 
     }
 
     assert impl.compute(counters, DEFAULT_CTX) == 48.0
+
+
+def test_resolve_metrics_f64_excludes_single_precision_fallback_counters() -> None:
+    available = frozenset(
+        {
+            "FP_ARITH_INST_RETIRED:SCALAR_SINGLE",
+            "FP_ARITH_INST_RETIRED:128B_PACKED_SINGLE",
+            "FP_ARITH_INST_RETIRED:256B_PACKED_SINGLE",
+            "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE",
+            "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE",
+        }
+    )
+    config = MetricResolutionConfig(data_type=DataType.f64)
+
+    impl = resolve_metrics(available, config)[MetricType.FLOPS]
+    assert impl.required_events == frozenset(
+        {
+            "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE",
+            "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE",
+        }
+    )
+    assert impl.compute(
+        {
+            "FP_ARITH_INST_RETIRED:SCALAR_SINGLE": 100.0,
+            "FP_ARITH_INST_RETIRED:128B_PACKED_SINGLE": 100.0,
+            "FP_ARITH_INST_RETIRED:256B_PACKED_SINGLE": 100.0,
+            "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE": 2.0,
+            "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE": 3.0,
+        },
+        MetricContext(config),
+    ) == 8.0
+
+
+def test_resolve_metrics_f32_excludes_double_precision_fallback_counters() -> None:
+    available = frozenset(
+        {
+            "FP_ARITH_INST_RETIRED:SCALAR_SINGLE",
+            "FP_ARITH_INST_RETIRED:128B_PACKED_SINGLE",
+            "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE",
+            "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE",
+            "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE",
+        }
+    )
+    config = MetricResolutionConfig(data_type=DataType.f32)
+
+    impl = resolve_metrics(available, config)[MetricType.FLOPS]
+    assert impl.required_events == frozenset(
+        {
+            "FP_ARITH_INST_RETIRED:SCALAR_SINGLE",
+            "FP_ARITH_INST_RETIRED:128B_PACKED_SINGLE",
+        }
+    )
+    assert impl.compute(
+        {
+            "FP_ARITH_INST_RETIRED:SCALAR_SINGLE": 2.0,
+            "FP_ARITH_INST_RETIRED:128B_PACKED_SINGLE": 3.0,
+            "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE": 100.0,
+            "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE": 100.0,
+            "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE": 100.0,
+        },
+        MetricContext(config),
+    ) == 14.0
+
+
+def test_resolve_metrics_omitted_data_type_preserves_mixed_precision_fallback() -> None:
+    available = frozenset(
+        {
+            "FP_ARITH_INST_RETIRED:SCALAR_SINGLE",
+            "FP_ARITH_INST_RETIRED:128B_PACKED_SINGLE",
+            "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE",
+        }
+    )
+
+    impl = resolve_metrics(available)[MetricType.FLOPS]
+    assert impl.required_events == available
+    assert impl.compute(
+        {
+            "FP_ARITH_INST_RETIRED:SCALAR_SINGLE": 2.0,
+            "FP_ARITH_INST_RETIRED:128B_PACKED_SINGLE": 3.0,
+            "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE": 5.0,
+        },
+        DEFAULT_CTX,
+    ) == 34.0
+
+
+def test_resolve_metrics_isa_narrows_width_for_both_precisions() -> None:
+    from carm_roofline.isa.x86 import X86AVX2
+
+    for data_type, expected, ignored in (
+        (
+            DataType.f32,
+            "FP_ARITH_INST_RETIRED:256B_PACKED_SINGLE",
+            "FP_ARITH_INST_RETIRED:128B_PACKED_SINGLE",
+        ),
+        (
+            DataType.f64,
+            "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE",
+            "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE",
+        ),
+    ):
+        available = frozenset({expected, ignored})
+        config = MetricResolutionConfig(data_type=data_type, isas=(X86AVX2,))
+        impl = resolve_metrics(available, config)[MetricType.FLOPS]
+        assert impl.required_events == frozenset({expected})
+
+
+def test_resolve_metrics_data_type_and_isa_intersect_dimensions() -> None:
+    from carm_roofline.isa.x86 import X86AVX2
+
+    available = frozenset(
+        {
+            "FP_ARITH_INST_RETIRED:SCALAR_SINGLE",
+            "FP_ARITH_INST_RETIRED:256B_PACKED_SINGLE",
+            "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE",
+            "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE",
+        }
+    )
+    config = MetricResolutionConfig(data_type=DataType.f64, isas=(X86AVX2,))
+
+    impl = resolve_metrics(available, config)[MetricType.FLOPS]
+    assert impl.required_events == frozenset({"FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE"})
+    assert impl.compute(
+        {
+            "FP_ARITH_INST_RETIRED:SCALAR_SINGLE": 100.0,
+            "FP_ARITH_INST_RETIRED:256B_PACKED_SINGLE": 100.0,
+            "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE": 100.0,
+            "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE": 4.0,
+        },
+        MetricContext(config),
+    ) == 16.0
+
+
+def test_resolve_metrics_selected_isa_missing_width_does_not_broaden_fallback() -> None:
+    from carm_roofline.isa.x86 import X86AVX2
+
+    available = frozenset(
+        {
+            "FP_ARITH_INST_RETIRED:SCALAR_DOUBLE",
+            "FP_ARITH_INST_RETIRED:128B_PACKED_DOUBLE",
+            "FP_ARITH_INST_RETIRED:SCALAR_SINGLE",
+            "FP_ARITH_INST_RETIRED:256B_PACKED_SINGLE",
+        }
+    )
+    config = MetricResolutionConfig(data_type=DataType.f64, isas=(X86AVX2,))
+
+    assert MetricType.FLOPS not in resolve_metrics(available, config)
+
+
+def test_resolve_metrics_native_memory_pair_with_f64_isa_flops_and_bytes() -> None:
+    from carm_roofline.isa.x86 import X86AVX2
+
+    available = frozenset(
+        {
+            "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE",
+            "MEM_INST_RETIRED:ALL_LOADS",
+            "MEM_INST_RETIRED:ALL_STORES",
+        }
+    )
+    config = MetricResolutionConfig(data_type=DataType.f64, isas=(X86AVX2,))
+    resolved = resolve_metrics(available, config)
+    flops = resolved[MetricType.FLOPS]
+    bytes_impl = resolved[MetricType.BYTES]
+    counters = {
+        "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE": 3.0,
+        "MEM_INST_RETIRED:ALL_LOADS": 4.0,
+        "MEM_INST_RETIRED:ALL_STORES": 6.0,
+    }
+
+    assert flops.required_events == frozenset({"FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE"})
+    assert bytes_impl.required_events == frozenset(
+        {
+            "FP_ARITH_INST_RETIRED:256B_PACKED_DOUBLE",
+            "MEM_INST_RETIRED:ALL_LOADS",
+            "MEM_INST_RETIRED:ALL_STORES",
+        }
+    )
+    assert flops.compute(counters, MetricContext(config)) == 12.0
+    assert bytes_impl.compute(counters, MetricContext(config)) == 320.0
+
+
+def test_resolve_metrics_f64_without_isa_intersects_arithmetic_with_native_memory() -> None:
+    arithmetic_events = {
+        f"FP_ARITH_INST_RETIRED:{shape}_{precision}"
+        for precision in ("DOUBLE", "SINGLE")
+        for shape in ("SCALAR", "128B_PACKED", "256B_PACKED", "512B_PACKED")
+    }
+    memory_events = {
+        "MEM_INST_RETIRED:ALL_LOADS",
+        "MEM_INST_RETIRED:ALL_STORES",
+    }
+    available = frozenset(arithmetic_events | memory_events)
+    config = MetricResolutionConfig(data_type=DataType.f64)
+    resolved = resolve_metrics(available, config)
+    flops = resolved[MetricType.FLOPS]
+    bytes_impl = resolved[MetricType.BYTES]
+    expected_double = frozenset(
+        f"FP_ARITH_INST_RETIRED:{shape}_DOUBLE"
+        for shape in ("SCALAR", "128B_PACKED", "256B_PACKED", "512B_PACKED")
+    )
+
+    assert flops.required_events == expected_double
+    assert bytes_impl.required_events == expected_double | memory_events
+    counters = {
+        **{event: 1.0 for event in arithmetic_events},
+        "MEM_INST_RETIRED:ALL_LOADS": 4.0,
+        "MEM_INST_RETIRED:ALL_STORES": 6.0,
+    }
+    assert flops.compute(counters, MetricContext(config)) == 15.0
+    assert bytes_impl.compute(counters, MetricContext(config)) == 300.0
+
 
 
 def test_resolve_metrics_bytes_from_l1_accesses() -> None:

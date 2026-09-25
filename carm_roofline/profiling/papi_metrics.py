@@ -139,27 +139,39 @@ _FP_ARITH_FLOPS_PER_INSTRUCTION = {
 }
 
 
-def _make_available_fp_arith_flops(events: frozenset[str]) -> MetricDefinition | None:
-    """Build a fallback FLOPS metric from the precision-specific FP_ARITH events present."""
-    counters = frozenset(events & _FP_ARITH_FLOPS_PER_INSTRUCTION.keys())
+def _make_available_fp_arith_flops(
+    events: frozenset[str],
+    config: MetricResolutionConfig | None = None,
+) -> MetricDefinition | None:
+    """Build a fallback FLOPS metric from available, requested FP_ARITH events."""
+    cfg = config or MetricResolutionConfig()
+    counters = set(events & _FP_ARITH_FLOPS_PER_INSTRUCTION.keys())
+    if cfg.data_type is not None:
+        suffix = "DOUBLE" if cfg.data_type is DataType.f64 else "SINGLE"
+        counters = {event for event in counters if event.endswith(suffix)}
+    if cfg.isas:
+        isa_counters = fp_arith_counters_for_isas(cfg.isas, DataType.f32) | fp_arith_counters_for_isas(
+            cfg.isas, DataType.f64
+        )
+        counters.intersection_update(isa_counters)
     if not counters:
         return None
 
     return MetricDefinition(
         type=MetricType.FLOPS,
-        required_events=counters,
+        required_events=frozenset(counters),
         compute=lambda values, _ctx: sum(values[event] * _FP_ARITH_FLOPS_PER_INSTRUCTION[event] for event in counters),
         priority=50,
         description="Flops from available FP_ARITH vector-width counters",
     )
 
 
-def _fp_arith_byte_weights(counters: set[str], data_type: DataType) -> dict[str, float]:
+def _fp_arith_byte_weights(counters: set[str]) -> dict[str, float]:
     """Return the register width in bytes for each FP_ARITH counter."""
     return {
-        counter: float(data_type.bytes() if prefix == "SCALAR" else width)
+        counter: float((8 if "DOUBLE" in counter else 4) if prefix == "SCALAR" else width)
         for counter in counters
-        for prefix, width in (("SCALAR", data_type.bytes()), *_FP_ARITH_WIDTH_BYTES.items())
+        for prefix, width in (("SCALAR", 0), *_FP_ARITH_WIDTH_BYTES.items())
         if prefix in counter
     }
 
@@ -193,13 +205,12 @@ def _fixed_width_byte_compute(
 
 def _make_fp_arith_bytes_metrics(
     counters: set[str],
-    data_type: DataType,
     priority: int,
     priority_modifier: Callable[[MetricResolutionConfig], int],
     description: str,
 ) -> list[MetricDefinition]:
     """Build arithmetic-width byte estimates for every memory-instruction source."""
-    weights = _fp_arith_byte_weights(counters, data_type)
+    weights = _fp_arith_byte_weights(counters)
     return [
         MetricDefinition(
             type=MetricType.BYTES,
@@ -289,42 +300,36 @@ def _build_metric_definitions() -> dict[MetricType, list[MetricDefinition]]:
             # Arithmetic-width estimates for AVX-512, AVX2, and SSE systems.
             *_make_fp_arith_bytes_metrics(
                 {_FP_SCALAR_DP, _FP128_DP, _FP256_DP, _FP512_DP},
-                DataType.f64,
                 100,
                 _data_type_match(DataType.f64),
                 "Bytes from FP_ARITH vector-width counters",
             ),
             *_make_fp_arith_bytes_metrics(
                 {_FP_SCALAR_SP, _FP128_SP, _FP256_SP, _FP512_SP},
-                DataType.f32,
                 100,
                 _data_type_match(DataType.f32),
                 "Bytes from FP_ARITH vector-width counters",
             ),
             *_make_fp_arith_bytes_metrics(
                 {_FP_SCALAR_DP, _FP128_DP, _FP256_DP},
-                DataType.f64,
                 99,
                 _data_type_match(DataType.f64),
                 "Bytes from FP_ARITH vector-width counters",
             ),
             *_make_fp_arith_bytes_metrics(
                 {_FP_SCALAR_SP, _FP128_SP, _FP256_SP},
-                DataType.f32,
                 99,
                 _data_type_match(DataType.f32),
                 "Bytes from FP_ARITH vector-width counters",
             ),
             *_make_fp_arith_bytes_metrics(
                 {_FP_SCALAR_DP, _FP128_DP},
-                DataType.f64,
                 98,
                 _data_type_match(DataType.f64),
                 "Bytes from FP_ARITH vector-width counters",
             ),
             *_make_fp_arith_bytes_metrics(
                 {_FP_SCALAR_SP, _FP128_SP},
-                DataType.f32,
                 98,
                 _data_type_match(DataType.f32),
                 "Bytes from FP_ARITH vector-width counters",
@@ -368,67 +373,56 @@ METRICS = _METRICS  # Public alias for tests and external access
 
 def _make_fp_arith_flops_metric(
     counters: set[str],
-    data_type: DataType,
+    data_type: DataType | None,
     isas: tuple[type[BaseISA], ...],
 ) -> MetricDefinition:
-    """FLOPS directly from FP_ARITH counters: element_count x counter_value.
-
-    Element counts: SCALAR=1, 128B=2, 256B=4, 512B=8.
-    No PAPI_DP/SP_OPS dependency, avoids pulling in unrequested native counters.
-    """
-    _OP_COEFF: dict[str, int] = {"SCALAR": 1, "128B": 2, "256B": 4, "512B": 8}
-
-    def compute_fn(e: dict[str, float], ctx: MetricContext) -> float:
-        total = 0.0
-        for c, coeff in _OP_COEFF.items():
-            for ec in e:
-                if c in ec:
-                    total += e[ec] * coeff
-        return total
-
+    """Build FLOPS directly from the selected FP_ARITH counters."""
+    precision = f" ({data_type.name})" if data_type is not None else ""
     return MetricDefinition(
         type=MetricType.FLOPS,
         required_events=frozenset(counters),
-        compute=compute_fn,
+        compute=lambda events, _ctx: sum(events[event] * _FP_ARITH_FLOPS_PER_INSTRUCTION[event] for event in counters),
         priority=200,
         description=(
-            f"Flops from FP_ARITH vector-width counters for "
-            f"{', '.join(isa.__name__ for isa in isas)} ({data_type.name})"
+            f"Flops from FP_ARITH vector-width counters for {', '.join(isa.__name__ for isa in isas)}{precision}"
         ),
     )
 
 
 def _make_fp_arith_bytes_metrics_for_isas(
     counters: set[str],
-    data_type: DataType,
     isas: tuple[type[BaseISA], ...],
 ) -> list[MetricDefinition]:
     """Build ISA-tailored arithmetic-width byte estimates."""
     return _make_fp_arith_bytes_metrics(
         counters,
-        data_type,
         200,
         lambda _: 0,
-        f"Bytes from FP_ARITH vector-width counters for {', '.join(isa.__name__ for isa in isas)} ({data_type.name})",
+        f"Bytes from FP_ARITH vector-width counters for {', '.join(isa.__name__ for isa in isas)}",
     )
+
+
+def _isa_fp_arith_counters(config: MetricResolutionConfig) -> set[str]:
+    """Return counters matching the requested ISA widths and precision intent."""
+    precisions = (config.data_type,) if config.data_type is not None else (DataType.f32, DataType.f64)
+    return set().union(*(fp_arith_counters_for_isas(config.isas, dtype) for dtype in precisions))
 
 
 def _build_isa_custom_metrics(
     config: MetricResolutionConfig,
+    available_events: frozenset[str] | None = None,
 ) -> dict[MetricType, list[MetricDefinition]] | None:
-    """Return a registry fragment with custom FLOPS+BYTES for user-specified ISAs.
-
-    Returns None when ISAs are empty, data_type is unset, or no FP_ARITH counters
-    apply (ARM, RISC-V, etc.) -- caller can safely skip.
-    """
-    if not config.isas or config.data_type is None:
+    """Return ISA-tailored metric definitions for requested available counters."""
+    if not config.isas:
         return None
-    counters = fp_arith_counters_for_isas(config.isas, config.data_type)
+    counters = _isa_fp_arith_counters(config)
+    if available_events is not None:
+        counters.intersection_update(available_events)
     if not counters:
         return None
     return {
         MetricType.FLOPS: [_make_fp_arith_flops_metric(counters, config.data_type, config.isas)],
-        MetricType.BYTES: _make_fp_arith_bytes_metrics_for_isas(counters, config.data_type, config.isas),
+        MetricType.BYTES: _make_fp_arith_bytes_metrics_for_isas(counters, config.isas),
     }
 
 
@@ -459,29 +453,42 @@ class PAPIMetricRegistry:
 
     def __init__(self, config: MetricResolutionConfig | None = None) -> None:
         self._config = config or MetricResolutionConfig()
-        self.definitions: dict[MetricType, list[MetricDefinition]] = self._build()
+        self._base_definitions = {metric: list(definitions) for metric, definitions in _METRICS.items()}
+        self.definitions = self._build()
 
     def _build(self) -> dict[MetricType, list[MetricDefinition]]:
-        """Start from prebuilt standard definitions, add ISA-tailored if configured."""
-        result = {mtype: list(defs) for mtype, defs in _METRICS.items()}
+        """Build the public registry with the complete requested ISA definitions."""
+        result = {metric: list(definitions) for metric, definitions in self._base_definitions.items()}
         custom = _build_isa_custom_metrics(self._config)
         if custom is not None:
-            for mtype, defs in custom.items():
-                result.setdefault(mtype, []).extend(defs)
+            for metric, implementations in custom.items():
+                result[metric].extend(implementations)
         return result
 
     def resolve(
         self,
         available_events: frozenset[str],
     ) -> dict[MetricType, MetricDefinition]:
-        """Resolve best available metrics for the given event set."""
+        """Resolve metrics using only available counters matching the requested ISA."""
+        definitions = {metric: list(items) for metric, items in self._base_definitions.items()}
+        if self._config.isas:
+            definitions[MetricType.BYTES] = [
+                item
+                for item in definitions[MetricType.BYTES]
+                if not item.required_events & _FP_ARITH_FLOPS_PER_INSTRUCTION.keys()
+            ]
+        custom = _build_isa_custom_metrics(self._config, available_events)
+        if custom is not None:
+            for metric, implementations in custom.items():
+                definitions[metric].extend(implementations)
+        self.definitions = definitions
         resolved = _resolve_metrics(
             available_events,
             self._config,
             registry=self.definitions,
         )
         if MetricType.FLOPS not in resolved:
-            fallback = _make_available_fp_arith_flops(available_events)
+            fallback = _make_available_fp_arith_flops(available_events, self._config)
             if fallback is not None:
                 resolved[MetricType.FLOPS] = fallback
         return resolved

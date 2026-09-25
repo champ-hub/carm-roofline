@@ -65,9 +65,9 @@ Controls how multi-rank (MPI) or multi-thread results are combined:
 
 ### Hardware assumptions (`--isa`, `--data-type`)
 
-When hardware counters can't directly count FLOPs (e.g. on older Intel or AMD CPUs), the tool estimates operations from instruction counts. `--isa` and `--data-type` tell it how many FLOPs each instruction retired, so the estimate is more accurate for your code's actual vector ISA and precision.
+When hardware counters can't directly count FLOPs (e.g. on older Intel or AMD CPUs), the tool estimates operations from instruction counts. `--isa` and `--data-type` refine the estimates using the application's ISA and precision. Without `--data-type`, precision is unspecified and byte estimates use an 8-byte instruction scale.
 
-When PAPI does not provide a FLOPS preset or floating-point instruction event, the CARM Tool can derive FLOPS from available precision- and vector-width-specific FP_ARITH counters. Specifying `--isa` limits collection to counters for those ISAs; without `--isa`, the tool uses all compatible FP_ARITH counters available from PAPI.
+When PAPI does not provide a FLOPS preset or floating-point instruction event, the CARM Tool can derive FLOPS from available precision- and vector-width-specific FP_ARITH counters. Specifying `--isa` limits collection to counters for those ISAs. Specifying `--data-type f32` or `f64` further restricts the counters to that precision; omitting `--data-type` keeps both precisions available.
 
 In Intel processors, specifying different `--isa` values (e.g. `--isa x86_avx2 x86_scalar`) allows the CARM Tool to use a minimal set of FP_ARITH counters, targeting only those ISAs. This helps avoid exceeding the hardware counter budget, which leads to incorrect results. If you get a warning about the resolved events not fitting the available hardware counters, try specifying fewer ISAs, omitting those your application doesn't use.
 

@@ -77,12 +77,10 @@ class MetricResolutionConfig:
     """User preferences that influence metric resolution.
 
     Attributes:
-        data_type: Dominant data type of the application. When set, the
-            resolution logic boosts/downgrades priorities of metric
-            implementations that match/conflict with this type.
-        isas: ISAs the application exercises. Used to refine
-            bytes-per-instruction and ops-per-instruction estimates,
-            and to build tailored FP_ARITH-based metrics.
+        data_type: Dominant data type of the application. When omitted, precision-
+            specific FP_ARITH fallback metrics include both precisions.
+        isas: ISAs the application exercises. Used to refine bytes-per-instruction
+            and ops-per-instruction estimates, and build tailored FP_ARITH metrics.
     """
 
     data_type: DataType | None = None
@@ -98,7 +96,7 @@ class MetricContext:
         data_type = cfg.data_type
 
         if isa_classes and data_type is not None:
-            # Use the ISA with the most bytes per instruction for scaling
+            # Use the ISA with the most bytes per instruction for scaling.
             instances = [cls() for cls in isa_classes]
             isa_instance = max(instances, key=lambda isa: isa.bytes_per_inst(data_type))
             self.bytes_per_instruction = isa_instance.bytes_per_inst(data_type)

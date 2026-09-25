@@ -59,7 +59,7 @@ class ProfileConfig(InsertsArguments):
         list_metrics: Whether to list available optional metrics and exit.
         merge_runs: Whether to split the required events into multiple runs and merge the results (default: single run).
         isas: ISA(s) the application exercises, as a tuple of BaseISA classes (empty when unspecified).
-        data_type: Dominant data type for metric calculation.
+        data_type: Data type explicitly requested for metric calculation, or None.
     """
 
     def __init__(self, args: argparse.Namespace) -> None:
@@ -85,7 +85,7 @@ class ProfileConfig(InsertsArguments):
             self.isas = tuple(BaseISA.from_name(name) for name in args.isa if BaseISA.exists(name))
         else:
             self.isas = ()
-        self.data_type: DataType = args.data_type
+        self.data_type: DataType | None = args.data_type
 
     @staticmethod
     def insert_arguments(parser: argparse.ArgumentParser) -> None:
@@ -175,7 +175,7 @@ class ProfileConfig(InsertsArguments):
         )
         parser.add_argument(
             "--data-type",
-            default=DataType.f32,
+            default=None,
             action=enum_action(DataType),
-            help="Data type to assume for metric calculation (default: f32)",
+            help="Data type for metric estimates; omitted means unspecified (default byte scale: 8 B/instruction)",
         )
