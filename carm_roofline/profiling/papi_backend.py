@@ -138,7 +138,8 @@ class PAPIHLBackend(ProfilerBackend):
             if not validate_event_set(frozenset(all_events)):
                 warn(
                     "The resolved PAPI event set may not fit in the available hardware counters. PAPI may collect only "
-                    "a subset. Try specifying fewer ISAs with --isa, or enable PAPI_MULTIPLEX=1."
+                    "a subset. Try specifying fewer ISAs with --isa, merge the results of multiple runs with "
+                    "the --merge-runs, or enable PAPI_MULTIPLEX=1."
                 )
 
         return any(impl.priority < 100 for impl in self._resolved_metrics.values())
