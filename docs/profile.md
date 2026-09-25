@@ -71,6 +71,14 @@ When PAPI does not provide a FLOPS preset or floating-point instruction event, t
 
 In Intel processors, specifying different `--isa` values (e.g. `--isa x86_avx2 x86_scalar`) allows the CARM Tool to use a minimal set of FP_ARITH counters, targeting only those ISAs. This helps avoid exceeding the hardware counter budget, which leads to incorrect results. If you get a warning about the resolved events not fitting the available hardware counters, try specifying fewer ISAs, omitting those your application doesn't use.
 
+### Counter budget (`--merge-runs`)
+
+By default, the tool runs the command once. If the required events exceed the hardware counter budget, the tool drops excess events and reports them in a warning. With `--merge-runs`, the CARM Tool partitions the events into sets that fit the counter budget, runs the command once for each set, and combines raw counters for each region before it calculates metrics. The output contains one result for all runs. Because the tool runs the command multiple times, use this option with commands that produce the same regions each time. If the number of threads or ranks changes between runs, the tool will error.
+
+```bash
+carm profile --merge-runs -- ./my_app
+```
+
 ### Optional metrics (`--metrics`, `--list-metrics`)
 
 The CLI is metric-centric: FLOPS and BYTES are always collected (needed for roofline plotting). Other metrics are optional and selected by name:
@@ -82,11 +90,9 @@ carm profile --list-metrics
 # Profile with the cache-residency metric
 carm profile --metrics cache-residency -- ./my_app
 
-# Merge runs when the required events exceed the hardware counter budget
-carm profile --merge-runs --metrics cache-residency -- ./my_app
 ```
 
-Each optional metric maps to a set of hardware events chosen from what your system supports. A profile always runs the command once by default; over-budget events are dropped and a warning lists them. `--merge-runs` will run the command multiple times to collect all requested metrics, merging the results from multiple runs.
+Each optional metric uses hardware events selected from those available on your system.
 
 The `cache-residency` metric reports, per region, the fraction of memory traffic served at each cache level, with per-level resident bytes. On AMD, the L1 miss rate is scaled to using the declared data-type/ISA bytes-per-instruction, so pass `--data-type` matching the workload (e.g. `--data-type f64` for f64 code) and `--isa` when vectorized. The AMD event set can exceed the hardware counter budget, so use `--merge-runs` to collect it across multiple runs.
 
