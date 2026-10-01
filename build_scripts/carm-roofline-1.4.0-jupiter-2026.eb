@@ -1,0 +1,153 @@
+easyblock = "PythonBundle"
+
+name = "carm-roofline"
+version = "1.4.0"
+versionsuffix = "-jupiter-2026"
+
+homepage = "https://github.com/champ-hub/carm-roofline"
+
+description = """
+The CARM Tool - benchmark, visualize and profile Intel, AMD, ARM, RISC-V CPUs
+with the Cache-Aware Roofline Model
+"""
+
+from easybuild.tools.systemtools import get_cpu_architecture as local_get_cpu_architecture
+
+if local_get_cpu_architecture() != "AArch64":
+    raise RuntimeError("This recipe targets Jupiter's AArch64 nodes")
+
+toolchain = SYSTEM
+dependencies = [
+    ("Python/3.13.5", EXTERNAL_MODULE),
+]
+
+use_pip = True
+sanity_pip_check = True
+check_readelf_rpath = False
+exts_default_options = {
+    "use_pip_for_deps": True,
+    "download_dep_fail": False,
+}
+modluafooter = 'depends_on("Python/3.13.5")'
+
+exts_list = [
+    (
+        "matplotlib",
+        "3.10.5",
+        {
+            "source_tmpl": "matplotlib-%(version)s-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+            "checksums": ["ee7a09ae2f4676276f5a65bd9f2bd91b4f9fbaedf49f40267ce3f9b448de501f"],
+        },
+    ),
+    (
+        "platformdirs",
+        "4.3.7",
+        {
+            "source_tmpl": "platformdirs-%(version)s-py3-none-any.whl",
+            "checksums": ["a03875334331946f13c549dbd8f4bac7a13a50a895a0eb1e8c6a8ace80d40a94"],
+        },
+    ),
+    (
+        "pandas",
+        "2.3.3",
+        {
+            "source_tmpl": "pandas-%(version)s-cp313-cp313-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+            "checksums": ["e32e7cc9af0f1cc15548288a51a3b681cc2a219faa838e995f7dc53dbab1062d"],
+        },
+    ),
+    (
+        "rich",
+        "14.3.2",
+        {
+            "checksums": ["e712f11c1a562a11843306f5ed999475f09ac31ffb64281f73ab29ffdda8b3b8"],
+            "preinstallopts": "pip install --no-build-isolation --ignore-installed --prefix=%(installdir)s 'poetry-core>=1.9.0' 'hatchling>=1.11.0' 'flit_core>=3.12,<4' 'hatch-vcs>=0.4' && ",
+            "download_dep_fail": False,
+        },
+    ),
+    (
+        "rich-argparse",
+        "1.8.0",
+        {
+            "source_tmpl": "rich_argparse-%(version)s.tar.gz",
+            "use_pip_for_deps": False,
+        },
+    ),
+    (
+        "tomli",
+        "2.4.1",
+        {
+            "checksums": ["7c7e1a961a0b2f2472c1ac5b69affa0ae1132c39adcb67aba98568702b9cc23f"],
+            "download_dep_fail": False,
+            "preinstallopts": "pip install --no-build-isolation --ignore-installed --prefix=%(installdir)s 'flit_core>=3.8' && ",
+        },
+    ),
+    (
+        "argcomplete",
+        "3.7.0",
+        {
+            "checksums": ["afde224f753f874807b1dc1414e883ab8fe0cda9c04807b6047dcb8e1ac23913"],
+            "preinstallopts": "export PYTHONPATH=%(installdir)s/lib/python3.13/site-packages:$PYTHONPATH && ",
+        },
+    ),
+    (
+        "dash",
+        "4.4.1",
+        {
+            "checksums": ["9356ca7856bc496c12c5b6de5978aaf783e090d07450ee395ade1c0c2cbdf816"],
+            "preinstallopts": "pip install --no-build-isolation --ignore-installed --prefix=%(installdir)s 'flask>=3.1' 'pydantic>=2' 'comm>=0.2' 'janus>=1.0' 'nest-asyncio>=1.6' 'retrying>=1.3' 'importlib-metadata' 'requests' && ",
+            "download_dep_fail": False,
+            "use_pip_for_deps": False,
+        },
+    ),
+    (
+        "dash-bootstrap-components",
+        "2.0.4",
+        {
+            "source_tmpl": "dash_bootstrap_components-%(version)s.tar.gz",
+            "use_pip_for_deps": False,
+        },
+    ),
+    (
+        "tenacity",
+        "9.1.2",
+        {
+            "checksums": ["1169d376c297e7de388d18b4481760d478b0e99a777cad3a9c86e556f4b697cb"],
+            "preinstallopts": "export SETUPTOOLS_SCM_PRETEND_VERSION=%(version)s && ",
+        },
+    ),
+    (
+        "narwhals",
+        "2.0.1",
+        {
+            "checksums": ["235e61ca807bc21110ca36a4d53888ecc22c42dcdf50a7c886e10dde3fd7f38c"],
+        },
+    ),
+    (
+        "plotly",
+        "6.7.0",
+        {
+            "checksums": ["45eea0ff27e2a23ccd62776f77eb43aa1ca03df4192b76036e380bb479b892c6"],
+            "preinstallopts": "pip install --no-build-isolation --ignore-installed --prefix=%(installdir)s 'jupyter_packaging~=0.10.0' && ",
+            "use_pip_for_deps": False,
+        },
+    ),
+    (
+        name,
+        version,
+        {
+            "source_urls": ["https://github.com/champ-hub/carm-roofline/archive/refs/tags"],
+            "source_tmpl": "v%(version)s.tar.gz",
+            "checksums": ["f3908a87da5f2d1b2c18eae8897f2f0fda0a30ca7ce0d4e4a51982f730b1be95"],
+            "use_pip_for_deps": False,
+        },
+    ),
+]
+
+sanity_check_paths = {
+    "files": ["bin/carm"],
+    "dirs": [],
+}
+
+sanity_check_commands = ["carm --help"]
+
+moduleclass = "perf"
