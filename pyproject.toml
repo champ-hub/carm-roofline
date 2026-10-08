@@ -78,7 +78,8 @@ include = ["carm_roofline", "carm_roofline.*"]
 line-length = 120
 target-version = "py39"
 exclude = [
-    "test",  # Test code with temporary workarounds
+    "test",
+    "build_scripts/py_carm_roofline"
 ]
 
 [tool.ruff.lint]
@@ -158,6 +159,7 @@ warn_unused_configs = true
 exclude_gitignore = true
 exclude = [
     "test/",
+    "build_scripts/py_carm_roofline"
 ]
 
 [[tool.mypy.overrides]]
