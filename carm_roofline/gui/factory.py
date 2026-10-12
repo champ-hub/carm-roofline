@@ -831,10 +831,11 @@ def _register_callbacks(
                 except OSError as exc:
                     return f"Failed to write export to {output_dir}: {exc}"
                 for path in written:
-                    # Paraver loads the window CSV and finds the .legend.csv file next to it automatically, don't print
+                    # Paraver loads the window CSV and finds the .legend.csv file next to it automatically.
                     if path.name.endswith(".legend.csv"):
                         continue
-                    print(path, flush=True)  # noqa: T201 ; print to stdout for paraver to capture
+                    print(f"PARAVER_PROTOCOL open_csv {path}", flush=True)  # noqa: T201 ; print for Paraver to capture
+                    print(path, flush=True)  # noqa: T201 ; print for Paraver to capture
                 return ""
 
     # Collapse toggles (factory-generated)
