@@ -43,6 +43,7 @@ class DropdownOption(TypedDict):
 
 class ActivePanel(str, Enum):
     CARM_VIEW = "carm_view"
+    BENCHMARK = "benchmark"
     SETTINGS = "settings"
     EXPORT = "export"
 

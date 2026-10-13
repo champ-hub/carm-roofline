@@ -34,8 +34,50 @@ class NavbarID(ID):
     """IDs for the top navigation bar."""
 
     BTN_CARM_VIEW = "btn-carm-view"
+    BTN_BENCHMARK = "btn-benchmark"
     BTN_SETTINGS = "btn-settings"
     BTN_EXPORT = "btn-export"
+
+
+class BenchmarkPanelID(ID):
+    """IDs for benchmark configuration controls."""
+
+    TEST = "benchmark-test"
+    ISA = "benchmark-isa"
+    DATA_TYPES = "benchmark-data-types"
+    THREADS = "benchmark-threads"
+    TEST_TIME = "benchmark-test-time"
+    NAME = "benchmark-name"
+    MEMORY_TARGET = "benchmark-memory-target"
+    NUM_OPS = "benchmark-num-ops"
+    INSTRUCTIONS = "benchmark-instructions"
+    LD_ST_RATIO = "benchmark-ld-st-ratio"
+    ARITH_MEM_RATIO = "benchmark-arith-mem-ratio"
+    AI_MIN = "benchmark-ai-min"
+    AI_MAX = "benchmark-ai-max"
+    AI_POINTS = "benchmark-ai-points"
+    MEMORY_SIZES = "benchmark-memory-sizes"
+    INTERLEAVED = "benchmark-interleaved"
+    TOPOLOGY = "benchmark-topology"
+    VECTOR_LENGTH = "benchmark-vector-length"
+    VECTOR_LMUL = "benchmark-vector-lmul"
+    FREQUENCY = "benchmark-frequency"
+    SET_FREQUENCY = "benchmark-set-frequency"
+    COMPILER = "benchmark-compiler"
+    SIMULATOR = "benchmark-simulator"
+    OUTPUT_DIR = "benchmark-output-dir"
+    OUTPUT_FORMATS = "benchmark-output-formats"
+    DRY_RUN = "benchmark-dry-run"
+    KEEP_ARTIFACTS = "benchmark-keep-artifacts"
+    START = "benchmark-start"
+    STATUS = "benchmark-status"
+    PROGRESS = "benchmark-progress"
+    LOG = "benchmark-log"
+    INTERVAL = "benchmark-interval"
+    PAGE = "benchmark-page"
+    JOB = "benchmark-job"
+    COMMAND_PREVIEW = "benchmark-command-preview"
+    ELAPSED = "benchmark-elapsed"
 
 
 class SidebarID(ID):
@@ -86,6 +128,7 @@ class SettingsPanelID(ID):
 class PlotAreaID(ID):
     """IDs for the roofline plot graph."""
 
+    CONTAINER = "roofline-plot-area"
     ROOFLINE_PLOT = "roofline-plot"
     BG_CLICK_CLEAR = "roofline-bg-click"
 

@@ -46,6 +46,10 @@ def _handle_benchmark(args: argparse.Namespace) -> int:
     from carm_roofline.benchmark.output import output_benchmark_results
     from carm_roofline.context import CARMContext
 
+    progress = _progress_emitter(args.progress_format)
+    if progress is not None:
+        progress({"event": "stage", "stage": "initializing"})
+
     configure_verbosity(args.verbose)
     args_str = ", ".join(f"{k}={v}" for k, v in vars(args).items() if v is not None)
     debug(f"parsed benchmark arguments: {args_str}")
@@ -57,6 +61,8 @@ def _handle_benchmark(args: argparse.Namespace) -> int:
         try:
             emit_template_toml(Path(args.emit_config))
             info(f"Generated template TOML configuration: {args.emit_config}")
+            if progress is not None:
+                progress({"event": "complete"})
             return 0
         except OSError as e:
             raise OSError(f"Failed to write template config: {e}") from e
@@ -79,15 +85,35 @@ def _handle_benchmark(args: argparse.Namespace) -> int:
         architecture=architecture, benchmarking=benchmarking, run_config=run_config, exec_interface=exec_iface
     )
     with maybe_set_cpu_frequency(context):
-        benchmark_suites = run_full_benchmark(context)
+        if progress is None:
+            benchmark_suites = run_full_benchmark(context)
+        else:
+            benchmark_suites = run_full_benchmark(context, progress_callback=progress)
 
     if run_config.dry_run:
         detail("Dry run finished: benchmark code generated successfully.")
-        return 0
-
-    write_machine_json(signature, run_config.output_dir / run_config.name)
-    output_benchmark_results(context, benchmark_suites)
+    else:
+        if progress is not None:
+            progress({"event": "stage", "stage": "writing"})
+        write_machine_json(signature, run_config.output_dir / run_config.name)
+        output_benchmark_results(context, benchmark_suites)
+    if progress is not None:
+        progress({"event": "complete"})
     return 0
+
+
+def _progress_emitter(progress_format: str) -> Callable[[dict[str, object]], None] | None:
+    """Return the JSONL progress writer when structured progress is selected."""
+    if progress_format != "jsonl":
+        return None
+
+    import json
+
+    def emit(event: dict[str, object]) -> None:
+        sys.stderr.write(f"CARM_PROGRESS {json.dumps(event, separators=(',', ':'))}\n")
+        sys.stderr.flush()
+
+    return emit
 
 
 def _handle_gui(args: argparse.Namespace) -> int:
@@ -175,6 +201,13 @@ def _create_parser() -> argparse.ArgumentParser:
         sp.set_defaults(handler=subparser.handler)
         for module in subparser.arg_inserting_modules:
             module.insert_arguments(sp)
+        if subparser.name == "benchmark":
+            sp.add_argument(
+                "--progress-format",
+                choices=("rich", "jsonl"),
+                default="rich",
+                help="Progress display format (default: rich)",
+            )
 
     return parser
 
@@ -200,10 +233,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return handler(args)
     except UserError as e:
+        progress = _progress_emitter(getattr(args, "progress_format", "rich"))
+        if progress is not None and args.mode == "benchmark":
+            progress({"event": "error", "message": str(e)})
         error(str(e))
         debug(str(traceback.format_exc()))
         return 1
     except Exception as e:
+        progress = _progress_emitter(getattr(args, "progress_format", "rich"))
+        if progress is not None and args.mode == "benchmark":
+            progress({"event": "error", "message": f"{e.__class__.__name__}: {e}"})
         error(f"Unexpected error: {e.__class__.__name__}: {e}")
         debug(str(traceback.format_exc()))
         return 1

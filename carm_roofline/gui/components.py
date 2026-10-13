@@ -19,6 +19,7 @@ from carm_roofline.gui.data import (
     RoofStore,
 )
 from carm_roofline.gui.ids import (
+    BenchmarkPanelID,
     CarmViewPanelID,
     ExportPanelID,
     NavbarID,
@@ -304,6 +305,7 @@ def _build_threshold_filter_slider(
 def build_navbar(active_panel: ActivePanel, mode: GUIMode = GUIMode.CARM) -> html.Div:
     """Black top navbar with logo and panel-toggle buttons."""
     carm_view_active = active_panel == ActivePanel.CARM_VIEW
+    benchmark_active = active_panel == ActivePanel.BENCHMARK
     settings_active = active_panel == ActivePanel.SETTINGS
     export_active = active_panel == ActivePanel.EXPORT
 
@@ -342,6 +344,12 @@ def build_navbar(active_panel: ActivePanel, mode: GUIMode = GUIMode.CARM) -> htm
                         ]
                         if mode.has_export_tab
                         else []
+                    ),
+                    html.Button(
+                        "Benchmark",
+                        id=NavbarID.BTN_BENCHMARK,
+                        className=f"navbar-btn{' navbar-btn--active' if benchmark_active else ''}",
+                        n_clicks=0,
                     ),
                     html.Button(
                         "Settings",
@@ -778,7 +786,271 @@ def build_export_panel(store: RoofStore) -> html.Div:
     )
 
 
-def build_plot_area(mode: GUIMode = GUIMode.CARM, trace_bounds: tuple[float, float] | None = None) -> html.Div:
+def _benchmark_field(label: str, control: Any, help_text: str) -> html.Div:
+    target_name = label.casefold().replace(" ", "-").replace("(", "").replace(")", "")
+    target_id = f"benchmark-help-{target_name}"
+    return html.Div(
+        className="benchmark-field",
+        children=[
+            html.Label(label, id=target_id, className="benchmark-label"),
+            control,
+            dbc.Tooltip(
+                help_text,
+                target=target_id,
+                placement="top",
+                class_name="benchmark-help-tooltip",
+            ),
+        ],
+    )
+
+
+def build_benchmark_panel(results_dir: str, visible: bool = True) -> html.Div:
+    """Build the CLI benchmark configurator and its live run status."""
+    from carm_roofline.core import ArithmeticOperation, DataType
+    from carm_roofline.gui.ids import BenchmarkPanelID
+    from carm_roofline.isa import BaseISA
+
+    test_options = [
+        {"label": "Roofline", "value": "roofline"},
+        {"label": "Arithmetic", "value": "arithmetic"},
+        {"label": "Memory", "value": "memory"},
+        {"label": "Mixed", "value": "mixed"},
+        {"label": "Memory sweep", "value": "memory_sweep"},
+    ]
+    basic_fields = [
+        _benchmark_field(
+            "Test",
+            dcc.Dropdown(id=BenchmarkPanelID.TEST, options=test_options, value="roofline", clearable=False),
+            "Roofline combines arithmetic and memory measurements. Other test types measure one workload.",
+        ),
+        _benchmark_field(
+            "ISA",
+            dcc.Dropdown(
+                id=BenchmarkPanelID.ISA,
+                options=[{"label": "Automatic detection", "value": "auto"}]
+                + [{"label": isa, "value": isa} for isa in BaseISA.names()],
+                value=["auto"],
+                multi=True,
+            ),
+            (
+                "Automatic detection selects compatible instruction sets on this machine. "
+                "Manual choices can fail if the CPU cannot run them."
+            ),
+        ),
+        _benchmark_field(
+            "Data types",
+            dcc.Dropdown(
+                id=BenchmarkPanelID.DATA_TYPES,
+                options=[{"label": dtype.name, "value": dtype.name} for dtype in DataType],
+                value=["f32"],
+                multi=True,
+            ),
+            "Each selected type adds measurements. Supported instructions depend on the ISA and data type.",
+        ),
+        _benchmark_field(
+            "Threads",
+            dcc.Input(id=BenchmarkPanelID.THREADS, type="text", value="1", placeholder="1 2 4"),
+            "Enter one or more thread counts, separated by spaces or commas. Each count adds measurements.",
+        ),
+        _benchmark_field(
+            "Run time (s)",
+            dcc.Input(id=BenchmarkPanelID.TEST_TIME, type="number", value=25.0, min=0.1, step=0.1),
+            (
+                "Target runtime for each individual microbenchmark. The total run time grows with the number "
+                "of measurements. Values below 10 seconds can reduce accuracy."
+            ),
+        ),
+        _benchmark_field(
+            "Run name",
+            dcc.Input(id=BenchmarkPanelID.NAME, type="text", placeholder="Auto-generated"),
+            (
+                "Optional name for this result set. The tool creates a name from the detected processor when "
+                "this field is empty."
+            ),
+        ),
+    ]
+    advanced_fields = [
+        _benchmark_field(
+            "Memory levels",
+            dcc.Dropdown(
+                id=BenchmarkPanelID.MEMORY_TARGET,
+                options=[{"label": level, "value": level} for level in ("L1", "L2", "L3", "DRAM", "all")],
+                value=["all"],
+                multi=True,
+            ),
+            "Memory levels used for memory measurements. The default measures all levels.",
+        ),
+        _benchmark_field(
+            "Arithmetic operations",
+            dcc.Input(id=BenchmarkPanelID.NUM_OPS, type="number", value=32768, min=1, step=1),
+            "Number of arithmetic operations in each arithmetic benchmark.",
+        ),
+        _benchmark_field(
+            "Instructions",
+            dcc.Dropdown(
+                id=BenchmarkPanelID.INSTRUCTIONS,
+                options=[{"label": op.name, "value": op.name} for op in ArithmeticOperation],
+                value=["add", "fma"],
+                multi=True,
+            ),
+            "Arithmetic instructions to measure. Instruction support depends on the selected ISA and data type.",
+        ),
+        _benchmark_field(
+            "Load:store ratios",
+            dcc.Input(id=BenchmarkPanelID.LD_ST_RATIO, type="text", value="2:1"),
+            "One or more load:store ratios separated by spaces or commas. Use 1:0 for load-only or 0:1 for store-only.",
+        ),
+        _benchmark_field(
+            "Arithmetic:memory ratio",
+            dcc.Input(id=BenchmarkPanelID.ARITH_MEM_RATIO, type="text", value="2:3"),
+            "Ratio of arithmetic instructions to memory instructions in each mixed-test block.",
+        ),
+        _benchmark_field(
+            "Intensity range",
+            html.Div(
+                className="benchmark-field-pair",
+                children=[
+                    dcc.Input(id=BenchmarkPanelID.AI_MIN, type="number", value=2**-4, min=0, step="any"),
+                    dcc.Input(id=BenchmarkPanelID.AI_MAX, type="number", value=2**5, min=0, step="any"),
+                ],
+            ),
+            "Minimum and maximum arithmetic intensity in FLOP per byte for mixed tests.",
+        ),
+        _benchmark_field(
+            "Intensity points",
+            dcc.Input(id=BenchmarkPanelID.AI_POINTS, type="number", value=10, min=1, step=1),
+            "Number of logarithmically spaced arithmetic-intensity values for mixed tests.",
+        ),
+        _benchmark_field(
+            "Memory sizes",
+            dcc.Input(id=BenchmarkPanelID.MEMORY_SIZES, type="text", placeholder="auto auto auto auto"),
+            (
+                "Array size for L1, L2, L3, and DRAM in that order. Use binary units such as 16KiB or use auto. "
+                "Empty means automatic sizing for all levels."
+            ),
+        ),
+        _benchmark_field(
+            "Topology file",
+            dcc.Input(id=BenchmarkPanelID.TOPOLOGY, type="text", placeholder="Auto-detect"),
+            "Optional TOML file that defines the cache hierarchy. By default the tool detects it from system files.",
+        ),
+        _benchmark_field(
+            "Vector length (bytes)",
+            dcc.Input(id=BenchmarkPanelID.VECTOR_LENGTH, type="number", min=1, step=1),
+            "Override detected vector register length. Use a power-of-two value supported by the selected ISA.",
+        ),
+        _benchmark_field(
+            "RISC-V vector grouping",
+            dcc.Dropdown(
+                id=BenchmarkPanelID.VECTOR_LMUL,
+                options=[{"label": str(value), "value": value} for value in (1, 2, 4, 8)],
+                placeholder="Auto",
+                clearable=True,
+            ),
+            "RISC-V vector length multiplier. This setting applies only to RISC-V vector ISAs.",
+        ),
+        _benchmark_field(
+            "Frequency",
+            dcc.Input(id=BenchmarkPanelID.FREQUENCY, type="text", placeholder="Auto-detect"),
+            "Optional processor frequency such as 2GHz. The tool detects frequency when possible.",
+        ),
+        _benchmark_field(
+            "Compiler",
+            dcc.Input(id=BenchmarkPanelID.COMPILER, type="text", value="gcc"),
+            "C compiler executable used to build the benchmark. Cross-compilers are supported.",
+        ),
+        _benchmark_field(
+            "Simulator",
+            dcc.Input(id=BenchmarkPanelID.SIMULATOR, type="text", placeholder="Native execution"),
+            "Optional simulator command. Include {binary} where the generated benchmark executable must appear.",
+        ),
+        _benchmark_field(
+            "Output directory",
+            dcc.Input(id=BenchmarkPanelID.OUTPUT_DIR, type="text", value=results_dir),
+            "Directory on the machine that runs the GUI server. Result files are written here.",
+        ),
+        _benchmark_field(
+            "Output formats",
+            dcc.Dropdown(
+                id=BenchmarkPanelID.OUTPUT_FORMATS,
+                options=[{"label": value.upper(), "value": value} for value in ("table", "plot", "jsonl", "csv")],
+                value=["table", "plot", "jsonl", "csv"],
+                multi=True,
+            ),
+            "Select result formats to write. JSONL files feed the GUI roofline view.",
+        ),
+        _benchmark_field(
+            "Interleaved affinity",
+            dcc.Checklist(
+                id=BenchmarkPanelID.INTERLEAVED,
+                options=[{"label": "Use interleaved NUMA thread mapping", "value": "on"}],
+                value=[],
+            ),
+            "Use interleaved thread mapping on systems with interleaved NUMA core domains.",
+        ),
+        _benchmark_field(
+            "Set processor frequency",
+            dcc.Checklist(
+                id=BenchmarkPanelID.SET_FREQUENCY,
+                options=[{"label": "Change system frequency", "value": "on"}],
+                value=[],
+            ),
+            "Change processor frequency before the run. This can require administrator permissions.",
+        ),
+        _benchmark_field(
+            "Dry run",
+            dcc.Checklist(
+                id=BenchmarkPanelID.DRY_RUN,
+                options=[{"label": "Generate code only", "value": "on"}],
+                value=[],
+            ),
+            "Generate benchmark code without compiling or running measurements. No result data is produced.",
+        ),
+        _benchmark_field(
+            "Keep artifacts",
+            dcc.Checklist(
+                id=BenchmarkPanelID.KEEP_ARTIFACTS,
+                options=[{"label": "Keep generated source and binary", "value": "on"}],
+                value=[],
+            ),
+            "Keep generated benchmark source and binary files after execution.",
+        ),
+    ]
+    return html.Div(
+        id=BenchmarkPanelID.PAGE,
+        className="benchmark-page",
+        style={"display": "block"} if visible else {"display": "none"},
+        children=[
+            html.H2("Benchmark"),
+            html.P("Configure and run a local CARM benchmark. The GUI server runs the benchmark on its host."),
+            html.Div(className="benchmark-grid", children=basic_fields),
+            html.Details(
+                className="benchmark-advanced",
+                children=[
+                    html.Summary("Advanced settings"),
+                    html.Div(className="benchmark-grid", children=advanced_fields),
+                ],
+            ),
+            html.Button("Start benchmark", id=BenchmarkPanelID.START, n_clicks=0, className="benchmark-start"),
+            html.Pre(
+                id=BenchmarkPanelID.COMMAND_PREVIEW,
+                className="benchmark-command-preview",
+                children="The CLI command appears here after you start a run.",
+            ),
+            html.Div(id=BenchmarkPanelID.STATUS, className="benchmark-status", children="Ready"),
+            html.Div(id=BenchmarkPanelID.ELAPSED, className="benchmark-elapsed", children="Elapsed: 0 s"),
+            html.Progress(id=BenchmarkPanelID.PROGRESS, value="0", max="1", className="benchmark-progress"),
+            html.Pre(id=BenchmarkPanelID.LOG, className="benchmark-log"),
+            dcc.Interval(id=BenchmarkPanelID.INTERVAL, interval=1000, n_intervals=0, disabled=True),
+        ],
+    )
+
+
+def build_plot_area(
+    mode: GUIMode = GUIMode.CARM,
+    trace_bounds: tuple[float, float] | None = None,
+    visible: bool = True,
+) -> html.Div:
     """The main plotting area with a Graph component."""
     from carm_roofline.gui.data import build_roofline_figure
 
@@ -820,7 +1092,9 @@ def build_plot_area(mode: GUIMode = GUIMode.CARM, trace_bounds: tuple[float, flo
             ),
         )
     return html.Div(
+        id=PlotAreaID.CONTAINER,
         className="plot-area",
+        style={"display": "block"} if visible else {"display": "none"},
         children=children,
     )
 
@@ -831,8 +1105,11 @@ def build_layout(
     per_roof_app_options: list[list[DropdownOption]] | None = None,
     mode: GUIMode = GUIMode.CARM,
     trace_bounds: tuple[float, float] | None = None,
+    results_dir: str = "",
 ) -> html.Div:
-    """Top-level application layout."""
+    is_benchmark = store.active_panel == ActivePanel.BENCHMARK
+    benchmark_page = build_benchmark_panel(results_dir, is_benchmark)
+    plot_area = build_plot_area(mode, trace_bounds, not is_benchmark)
 
     return html.Div(
         className="app-container",
@@ -845,7 +1122,8 @@ def build_layout(
                     html.Div(
                         className="main-area",
                         children=[
-                            build_plot_area(mode, trace_bounds),
+                            plot_area,
+                            benchmark_page,
                         ],
                     ),
                 ],
@@ -854,6 +1132,7 @@ def build_layout(
             dcc.Store(id=StoreID.ROOF_STORE, data=store.to_dict()),
             dcc.Store(id=StoreID.ACTIVE_PANEL, data=store.active_panel),
             dcc.Store(id=StoreID.SELECTED_POINT, data=None),
+            dcc.Store(id=BenchmarkPanelID.JOB, data=None),
         ],
     )
 

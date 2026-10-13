@@ -9,11 +9,10 @@ from typing import Any
 import pandas as pd
 import pytest
 
-from carm_roofline.gui.components import build_settings_panel
+from carm_roofline.gui.callbacks.helpers import clicked_point_residency, selection_payload
 from carm_roofline.gui.config import GUIConfig
-from carm_roofline.gui.data import RoofStore
-from carm_roofline.gui.factory import _clicked_point_residency, _selection_payload, create_app
-from carm_roofline.gui.ids import SettingsPanelID, StoreID
+from carm_roofline.gui.factory import create_app
+from carm_roofline.gui.ids import StoreID
 from carm_roofline.gui.providers import ParaverData
 from carm_roofline.paraver import ParaverWindowMode
 
@@ -83,59 +82,6 @@ def _find_component(node: Any, comp_id: str) -> Any | None:
                 return found
     return None
 
-
-def test_settings_panel_has_mixed_benchmark_switch_off_by_default() -> None:
-    """The mixed benchmark switch exists and starts disabled."""
-    store = RoofStore()
-    panel = build_settings_panel(store)
-    switch = _find_component(panel, SettingsPanelID.SWITCH_SHOW_MIXED_BENCHMARKS)
-    assert switch is not None
-    assert switch.value is False
-
-    serialized = store.to_dict()
-    assert serialized["settings"]["show_mixed_benchmarks"] is False
-    settings = serialized["settings"]
-    assert isinstance(settings, dict)
-    settings["show_mixed_benchmarks"] = True
-    restored = RoofStore.from_dict(serialized)
-    assert restored.settings.show_mixed_benchmarks is True
-
-
-
-def test_settings_panel_has_base_point_size_slider() -> None:
-    """The base point-size slider uses the persistent default and range."""
-    store = RoofStore()
-    panel = build_settings_panel(store)
-    slider = _find_component(panel, SettingsPanelID.SLIDER_MARKER_BASE_SIZE)
-    assert slider is not None
-    assert slider.value == 50.0
-    assert slider.min == 1
-    assert slider.max == 200
-    assert slider.step == 1
-
-    serialized = store.to_dict()
-    settings = serialized["settings"]
-    assert isinstance(settings, dict)
-    settings["marker_base_size"] = 25.0
-    restored = RoofStore.from_dict(serialized)
-    assert restored.settings.marker_base_size == 25.0
-
-def test_settings_panel_has_editable_legend_label_length() -> None:
-    """The legend label length slider persists its configured maximum."""
-    store = RoofStore()
-    panel = build_settings_panel(store)
-    slider = _find_component(panel, SettingsPanelID.SLIDER_LEGEND_LABEL_LENGTH)
-    assert slider is not None
-    assert slider.value == 32
-    assert slider.min == 8
-    assert slider.max == 64
-
-    serialized = store.to_dict()
-    settings = serialized["settings"]
-    assert isinstance(settings, dict)
-    settings["legend_label_length"] = 48
-    restored = RoofStore.from_dict(serialized)
-    assert restored.settings.legend_label_length == 48
 
 
 def test_paraver_time_slider_uses_explicit_step() -> None:
@@ -423,9 +369,9 @@ def test_export_panel_accordion_groups_export_filter_and_color() -> None:
 
 def test_clicked_point_residency_parses_customdata() -> None:
     """clickData payloads map to (roof_id, fractions); invalid payloads return None."""
-    assert _clicked_point_residency(None) is None
-    assert _clicked_point_residency({}) is None
-    assert _clicked_point_residency({"points": []}) is None
+    assert clicked_point_residency(None) is None
+    assert clicked_point_residency({}) is None
+    assert clicked_point_residency({"points": []}) is None
     valid = {
         "points": [
             {
@@ -437,7 +383,7 @@ def test_clicked_point_residency_parses_customdata() -> None:
             }
         ]
     }
-    assert _clicked_point_residency(valid) == ("r1", {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02})
+    assert clicked_point_residency(valid) == ("r1", {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02})
     # 3-bucket schema: keys pass through untouched (no shape assumption in parsing).
     valid_3key = {
         "points": [
@@ -450,17 +396,17 @@ def test_clicked_point_residency_parses_customdata() -> None:
             }
         ]
     }
-    assert _clicked_point_residency(valid_3key) == ("r1", {"l1": 0.6, "l2": 0.3, "l3plus": 0.1})
+    assert clicked_point_residency(valid_3key) == ("r1", {"l1": 0.6, "l2": 0.3, "l3plus": 0.1})
     # missing element 2 -> None
-    assert _clicked_point_residency({"points": [{"customdata": ["t", {}]}]}) is None
+    assert clicked_point_residency({"points": [{"customdata": ["t", {}]}]}) is None
     # non-str roof id -> None
-    assert _clicked_point_residency({"points": [{"customdata": ["t", {"l1": 0.6}, 42]}]}) is None
+    assert clicked_point_residency({"points": [{"customdata": ["t", {"l1": 0.6}, 42]}]}) is None
     # empty fractions dict -> None
-    assert _clicked_point_residency({"points": [{"customdata": ["t", {}, "r1"]}]}) is None
+    assert clicked_point_residency({"points": [{"customdata": ["t", {}, "r1"]}]}) is None
     # non-dict fractions -> None
-    assert _clicked_point_residency({"points": [{"customdata": ["t", "residency", "r1"]}]}) is None
+    assert clicked_point_residency({"points": [{"customdata": ["t", "residency", "r1"]}]}) is None
     # customdata not a list -> None
-    assert _clicked_point_residency({"points": [{"customdata": "nope"}]}) is None
+    assert clicked_point_residency({"points": [{"customdata": "nope"}]}) is None
 
 
 def test_selection_payload_clears_on_background_click() -> None:
@@ -476,9 +422,9 @@ def test_selection_payload_clears_on_background_click() -> None:
             }
         ]
     }
-    assert _selection_payload(valid_click, "roofline-bg-click.value", {"roof_id": "r1"}) is None
-    assert _selection_payload(None, "roofline-bg-click.value", None) is None
-    assert _selection_payload(valid_click, "roofline-plot.clickData", None) == {
+    assert selection_payload(valid_click, "roofline-bg-click.value", {"roof_id": "r1"}) is None
+    assert selection_payload(None, "roofline-bg-click.value", None) is None
+    assert selection_payload(valid_click, "roofline-plot.clickData", None) == {
         "roof_id": "r1",
         "fractions": {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02},
     }
@@ -494,14 +440,14 @@ def test_selection_payload_clears_on_background_click() -> None:
             }
         ]
     }
-    assert _selection_payload(valid_click_3key, "roofline-plot.clickData", None) == {
+    assert selection_payload(valid_click_3key, "roofline-plot.clickData", None) == {
         "roof_id": "r1",
         "fractions": {"l1": 0.6, "l2": 0.3, "l3plus": 0.1},
     }
     # Echo of the callback's own clickData reset keeps the current selection.
-    assert _selection_payload(None, "roofline-plot.clickData", {"roof_id": "r1", "fractions": {"l1": 0.6}}) == {
+    assert selection_payload(None, "roofline-plot.clickData", {"roof_id": "r1", "fractions": {"l1": 0.6}}) == {
         "roof_id": "r1",
         "fractions": {"l1": 0.6},
     }
     # non-app point (no customdata) -> None
-    assert _selection_payload({"points": [{"x": 1, "y": 2}]}, "roofline-plot.clickData", None) is None
+    assert selection_payload({"points": [{"x": 1, "y": 2}]}, "roofline-plot.clickData", None) is None

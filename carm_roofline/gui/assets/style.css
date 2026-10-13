@@ -354,3 +354,111 @@
     min-height: 0;
     overflow-wrap: anywhere;
 }
+.benchmark-page {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    background: #fff;
+}
+
+.benchmark-page h2 {
+    margin-bottom: 4px;
+    font-size: 22px;
+}
+
+.benchmark-page > p {
+    color: #666;
+    margin-bottom: 20px;
+}
+
+.benchmark-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+    margin: 16px 0;
+}
+
+.benchmark-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+}
+
+.benchmark-label {
+    color: #555;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: help;
+}
+
+.benchmark-field input {
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+}
+
+.benchmark-field-pair {
+    display: flex;
+    gap: 8px;
+}
+
+.benchmark-advanced {
+    margin: 20px 0;
+    padding: 12px;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+}
+
+.benchmark-advanced summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.benchmark-start {
+    padding: 10px 20px;
+    border: 0;
+    border-radius: 4px;
+    background: #007bff;
+    color: white;
+    font-weight: 600;
+}
+
+.benchmark-start:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.benchmark-command-preview,
+.benchmark-log {
+    max-height: 180px;
+    overflow: auto;
+    margin-top: 12px;
+    padding: 10px;
+    background: #f4f5f6;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.benchmark-status {
+    margin-top: 12px;
+    font-weight: 600;
+}
+
+.benchmark-progress {
+    display: block;
+    width: 100%;
+    height: 16px;
+    margin-top: 8px;
+}
+
+.benchmark-help-tooltip {
+    z-index: 1200;
+}
+
+.benchmark-help-tooltip .tooltip-inner {
+    max-width: 320px;
+}

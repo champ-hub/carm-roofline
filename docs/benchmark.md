@@ -70,7 +70,9 @@ Each micro-benchmark loops until `--test-time` seconds elapse. The default (25s)
 
 Benchmark with multiple threads by passing one or more thread counts, e.g. `--threads 1 4 8`. The tool will run the full suite at each count. `--interleaved` changes thread pinning for NUMA systems where core indices are interleaved across nodes (e.g. node 0 has cores 0, 2, 4…).
 
-### Output and verbosity (`--verbose`, `--name`, `--dry-run`, `--output-dir`, `--output-fmt`, `--keep-artifacts`)
+### Output and verbosity (`--verbose`, `--progress-format`, `--name`, `--dry-run`, `--output-dir`, `--output-fmt`, `--keep-artifacts`)
+
+`--progress-format` selects the progress display. The default `rich` format retains the terminal progress bar. Use `--progress-format jsonl` for GUI or other process integrations: progress is emitted on stderr as one JSON object per line, prefixed with `CARM_PROGRESS `.
 
 Results land in a directory under `--output-dir` (default: platform user data dir). `--output-fmt` controls which formats are written (table, plot, csv, jsonl). `--name` sets a machine name instead of the auto-generated one (derived from CPU model). `--dry-run` skips compilation and execution, useful for inspecting generated assembly. `--keep-artifacts` preserves the temporary source/binaries for debugging. Use `--verbose/-v [0-4]` for more detail (`-v 4` for full debug).
 

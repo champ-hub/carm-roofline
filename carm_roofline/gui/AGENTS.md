@@ -4,13 +4,14 @@
 
 ```
 gui/
-├── __init__.py        # run_app() entry point (lazy-imports create_app)
-├── ids.py             # ID(str, Enum) hierarchy — all Dash component IDs
-├── data.py            # Data models: RoofConfig, RoofStore, build_roofline_figure
-├── components.py      # Pure-function component builders (no callbacks)
-├── factory.py         # Dash app factory + callback registration
-├── config.py          # GUIConfig dataclass (InsertsArguments)
-└── assets/            # Static assets (CSS, images)
+├── __init__.py    # run_app() entry point (lazy-imports create_app)
+├── ids.py         # ID(str, Enum) hierarchy — all Dash component IDs
+├── data.py        # Data models and figure builders
+├── components.py  # Pure-function component builders (no callbacks)
+├── factory.py     # Dash app factory and initial shared GUI state
+├── callbacks/     # State, resolution, helpers, and domain callback groups
+├── config.py      # GUIConfig dataclass (InsertsArguments)
+└── assets/        # Static assets (CSS, images)
 ```
 
 ## Dash ID Conventions
@@ -90,9 +91,9 @@ from gui.ids import BTN_CARM_VIEW, BTN_SETTINGS, ROOF_STORE, ...
 
 ## Component Builder Pattern
 
-Component builders live in ``components.py`` as pure functions.  They take
+Component builders live in ``components.py`` as pure functions. They take
 a ``RoofStore`` (and optional filter ``options``) and return Dash component
-trees.  No callbacks — those all go in ``factory.py``.
+trees. Callback registration belongs to domain modules in ``callbacks/``.
 
 ```python
 def build_navbar(active_panel: ActivePanel) -> html.Div:
@@ -108,15 +109,15 @@ def build_navbar(active_panel: ActivePanel) -> html.Div:
     )
 ```
 
-Application options flow as ``app_options: list[AppOption]`` from
-``load_all_applications`` in ``factory.py`` through ``build_roof_card``;
-``roof.app_ids`` (selected run content hashes) and ``roof.apps_enabled`` are
-the persisted state in the ``dcc.Store`` roof data.
+Application options flow through ``CallbackState`` in ``callbacks/state.py`` and
+then through ``build_roof_card``; ``roof.app_ids`` (selected run content hashes)
+and ``roof.apps_enabled`` are persisted in the ``dcc.Store`` roof data.
 
-## Callback Registration Pattern
+## Callback Registration Patternt
 
-All callbacks are registered in ``_register_callbacks()`` in ``factory.py``.
-Each callback uses ID enum members in its decorators:
+The factory delegates registration to callback groups in ``callbacks/``:
+``navigation.py``, ``benchmark.py``, ``roofs.py``, ``roofline.py``,
+``settings.py``, and ``paraver.py``. Each uses ID enum members in decorators:
 
 ```python
 @app.callback(
@@ -127,6 +128,12 @@ Each callback uses ID enum members in its decorators:
 def _toggle_panel(...) -> ActivePanel:
     ...
 ```
+
+``CallbackState`` owns the live benchmark records and application map shared by
+roof resolution, sidebar rendering, plotting, and exports. Successful benchmark
+refreshes mutate those shared collections so every callback group observes the
+same current data. Pure roof matching and option resolution belongs in
+``callbacks/resolution.py`` rather than a registration module.
 
 ### Trigger detection
 

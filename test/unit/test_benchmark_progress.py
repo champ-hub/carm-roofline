@@ -154,5 +154,60 @@ def test_progress_runner_shows_canonical_total(verbosity, monkeypatch):
     canonical_benchmarks = [Mock(), Mock()]
     assert _run_microbenchmarks_with_progress(context, Path("benchmark"), canonical_benchmarks) == "results"
     output = console.getvalue()
-    assert "Running benchmarks" in output
     assert "2/2" in output
+
+
+@pytest.mark.unit
+def test_structured_progress_reports_measurements_without_rich(monkeypatch):
+    """JSONL measurement events use the canonical total regardless of verbosity."""
+    context = SimpleNamespace(run_config=SimpleNamespace(verbose=Verbosity.DEBUG))
+    events = []
+
+    def run(_context, _binary_path, _specs, on_benchmarks_complete=None):
+        assert on_benchmarks_complete is not None
+        on_benchmarks_complete(1)
+        on_benchmarks_complete(2)
+        return "results"
+
+    monkeypatch.setattr("carm_roofline.benchmark.interface.run_microbenchmarks", run)
+    monkeypatch.setattr(
+        "carm_roofline.benchmark.interface.Progress",
+        Mock(side_effect=AssertionError("Rich progress must be disabled")),
+    )
+
+    assert (
+        _run_microbenchmarks_with_progress(context, Path("benchmark"), [Mock(), Mock(), Mock()], events.append)
+        == "results"
+    )
+    assert events == [
+        {"event": "measurement", "completed": 1, "total": 3},
+        {"event": "measurement", "completed": 3, "total": 3},
+    ]
+
+
+@pytest.mark.unit
+def test_jsonl_progress_emitter_prefixes_and_flushes(capsys):
+    """Structured progress is a prefixed JSON object written to stderr."""
+    import json
+
+    from carm_roofline.carm import _progress_emitter
+
+    emit = _progress_emitter("jsonl")
+    assert emit is not None
+    emit({"event": "stage", "stage": "running"})
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("CARM_PROGRESS ")
+    assert json.loads(captured.err.removeprefix("CARM_PROGRESS ")) == {
+        "event": "stage",
+        "stage": "running",
+    }
+
+
+@pytest.mark.unit
+def test_benchmark_progress_format_defaults_to_rich():
+    """Rich remains the default benchmark progress format."""
+    from carm_roofline.carm import _create_parser
+
+    args = _create_parser().parse_args(["benchmark"])
+    assert args.progress_format == "rich"

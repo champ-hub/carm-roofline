@@ -9,6 +9,7 @@ This module coordinates the entire benchmark pipeline:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -101,9 +102,20 @@ def _run_microbenchmarks_with_progress(
     context: CARMContext,
     binary_path: Path,
     canonical_benchmarks: list[BaseBenchmark],
+    progress_callback: Callable[[dict[str, object]], None] | None = None,
 ) -> str:
-    """Run canonical benchmarks and show progress at detail verbosity."""
+    """Run canonical benchmarks and report either structured or Rich progress."""
     specs = (benchmark.spec for benchmark in canonical_benchmarks)
+    if progress_callback is not None:
+        completed = 0
+
+        def update_json_progress(count: int) -> None:
+            nonlocal completed
+            completed += count
+            progress_callback({"event": "measurement", "completed": completed, "total": len(canonical_benchmarks)})
+
+        return run_microbenchmarks(context, binary_path, specs, on_benchmarks_complete=update_json_progress)
+
     if context.run_config.verbose < Verbosity.CONFIG:
         return run_microbenchmarks(context, binary_path, specs)
 
@@ -127,28 +139,15 @@ def _run_microbenchmarks_with_progress(
 
 def run_full_benchmark(
     context: CARMContext,
+    progress_callback: Callable[[dict[str, object]], None] | None = None,
 ) -> dict[str, ISABenchmarkSuite]:
     """Execute complete benchmark pipeline: generate → compile → run → aggregate.
 
-    This is the high-level orchestrator function that coordinates all steps
-    of the benchmark process for all configured ISAs, returning structured
-    BenchmarkResult objects grouped by ISA.
-
-    Optimization: Generates microbenchmarks for all ISAs, then compiles and runs
-    a single binary with all benchmarks. This is much faster than per-ISA compilation.
-
-    Args:
-        context: Full CARM context with architecture, benchmark, and execution config.
-
-    Returns:
-        Dictionary mapping ISA names to ISABenchmarkSuite objects with results populated.
-
-        If `context.run_config.dry_run` is True, benchmarks are generated and
-        the header file is written, but compilation and execution are skipped.
-
-    Raises:
-        RuntimeError: If any step (generation, compilation, or execution) fails.
+    `progress_callback` optionally receives structured stage and measurement events.
     """
+    if progress_callback is not None:
+        progress_callback({"event": "stage", "stage": "generating"})
+
     # Step 1: Generate microbenchmarks for all ISAs (loop over ISAs)
     isa_suites: dict[str, ISABenchmarkSuite] = {}
 
@@ -189,19 +188,19 @@ def run_full_benchmark(
         if keep_workspace:
             detail(f"Artifacts will be kept in: {workspace}")
 
-        # Keep generated artifacts in a writable temporary workspace.
-        # Static C sources remain in-package and are included explicitly at compile time.
         generated_header = workspace / "microbenchmarks.h"
         generated_binary = workspace / "benchmark"
 
-        # Step 3: Create header file from canonical benchmark specifications
         create_microbenchmark_header(canonical_benchmarks, generated_header)
 
         if context.run_config.dry_run:
+            if progress_callback is not None:
+                progress_callback({"event": "stage", "stage": "writing"})
             detail(f"Dry run: wrote generated header to {generated_header}; skipping compilation and execution.")
             return isa_suites
 
-        # Step 4: Compile single binary with all benchmarks
+        if progress_callback is not None:
+            progress_callback({"event": "stage", "stage": "compiling"})
         detail("Compiling benchmark...")
         binary_path = compile_test_bench(
             context,
@@ -210,12 +209,14 @@ def run_full_benchmark(
         )
         debug(f"Compiled binary: {binary_path}")
 
-        # Step 5: Run compiled binary (canonical measurements only)
+        if progress_callback is not None:
+            progress_callback({"event": "stage", "stage": "running"})
         expected_runtime = context.benchmarking.test_time * len(canonical_benchmarks)
         detail(f"Running benchmark. Expected runtime: >{expected_runtime:.0f} seconds...")
-        raw_output = _run_microbenchmarks_with_progress(context, binary_path, canonical_benchmarks)
+        raw_output = _run_microbenchmarks_with_progress(context, binary_path, canonical_benchmarks, progress_callback)
 
-        # Step 6: Parse results and populate BenchmarkResult objects
+        if progress_callback is not None:
+            progress_callback({"event": "stage", "stage": "parsing"})
         parse_benchmark_output({b.name: b for b in canonical_benchmarks}, raw_output)
         _propagate_results(groups)
 
