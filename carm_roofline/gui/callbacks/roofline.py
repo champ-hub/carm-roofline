@@ -13,7 +13,7 @@ from carm_roofline.gui.callbacks.resolution import resolve_roofs
 from carm_roofline.gui.callbacks.state import CallbackState
 from carm_roofline.gui.components import build_carm_view_panel, build_export_panel, build_settings_panel
 from carm_roofline.gui.data import build_paraver_figure, build_roofline_figure
-from carm_roofline.gui.ids import BenchmarkPanelID, PlotAreaID, RoofCardID, SidebarID, StoreID
+from carm_roofline.gui.ids import BenchmarkPanelID, PlotAreaID, ProfilePanelID, RoofCardID, SidebarID, StoreID
 from carm_roofline.gui.providers import BenchmarkAppsProvider, filter_trace
 from carm_roofline.roofline_assembly import discover_filter_options, load_all_benchmarks
 
@@ -218,6 +218,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
         Input({"type": RoofCardID.DROPDOWN_APPS, "index": ALL}, "value"),
     ]
     plot_inputs.append(Input(BenchmarkPanelID.JOB, "data"))
+    plot_inputs.append(Input(ProfilePanelID.JOB, "data"))
     plot_states: list[Any] = []
     if mode.show_app_dropdown:  # CARM mode only; paraver has no application points
         plot_inputs.extend(
@@ -243,6 +244,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
         freq_vals: list[str | None],
         app_ids_vals: list[list[str] | None],
         job_data: dict[str, Any] | None,
+        _profile_data: dict[str, Any] | None,
         selection_data: dict[str, Any] | None = None,
         hover_data: dict[str, Any] | None = None,
         relayout_data: dict[str, Any] | None = None,
@@ -363,6 +365,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
         Input({"type": RoofCardID.DROPDOWN_LS_RATIO, "index": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_FREQUENCY, "index": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_APPS, "index": ALL}, "value"),
+        Input(ProfilePanelID.JOB, "data"),
     )
     def _update_sidebar(
         store_data: dict[str, Any] | None,
@@ -375,6 +378,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
         ls_ratio_vals: list[str | None],
         freq_vals: list[str | None],
         app_ids_vals: list[list[str] | None],
+        _profile_job_data: dict[str, Any] | None,
     ) -> list[html.Div]:
         state.trace("_update_sidebar enter")
         store, resolved_roofs, per_roof_opts = resolve_roofs(

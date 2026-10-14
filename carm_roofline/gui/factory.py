@@ -11,6 +11,7 @@ from carm_roofline.gui.callbacks.benchmark import register_benchmark_callbacks
 from carm_roofline.gui.callbacks.helpers import filter_app_options_for_roofs
 from carm_roofline.gui.callbacks.navigation import register_navigation_callbacks
 from carm_roofline.gui.callbacks.paraver import register_paraver_callbacks
+from carm_roofline.gui.callbacks.profile import register_profile_callbacks
 from carm_roofline.gui.callbacks.roofline import register_roofline_callbacks
 from carm_roofline.gui.callbacks.roofs import register_roof_callbacks
 from carm_roofline.gui.callbacks.settings import register_settings_callbacks
@@ -98,6 +99,7 @@ def _register_callbacks(app: dash.Dash, state: CallbackState) -> None:
     """Register GUI callbacks by domain."""
     register_navigation_callbacks(app, state)
     register_benchmark_callbacks(app, state)
+    register_profile_callbacks(app, state)
     register_roof_callbacks(app, state)
     register_roofline_callbacks(app, state)
     register_settings_callbacks(app)

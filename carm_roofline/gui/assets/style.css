@@ -77,8 +77,7 @@
 
 .navbar-btn--active {
     color: white;
-    text-decoration: underline;
-    text-underline-offset: 4px;
+    background: rgba(255, 255, 255, 0.16);
 }
 
 .panel-header {
@@ -398,6 +397,15 @@
     padding: 6px 8px;
     border: 1px solid #ced4da;
     border-radius: 4px;
+}
+
+.benchmark-field textarea.profile-command {
+    width: 100%;
+    min-height: 80px;
+    padding: 6px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    resize: vertical;
 }
 
 .benchmark-field-pair {

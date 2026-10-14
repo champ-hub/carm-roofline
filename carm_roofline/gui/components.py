@@ -25,6 +25,7 @@ from carm_roofline.gui.ids import (
     NavbarID,
     ParaverID,
     PlotAreaID,
+    ProfilePanelID,
     RoofCardID,
     SettingsPanelID,
     SidebarID,
@@ -307,6 +308,7 @@ def build_navbar(active_panel: ActivePanel, mode: GUIMode = GUIMode.CARM) -> htm
     """Black top navbar with logo and panel-toggle buttons."""
     carm_view_active = active_panel == ActivePanel.CARM_VIEW
     benchmark_active = active_panel == ActivePanel.BENCHMARK
+    profile_active = active_panel == ActivePanel.PROFILE
     settings_active = active_panel == ActivePanel.SETTINGS
     export_active = active_panel == ActivePanel.EXPORT
 
@@ -362,6 +364,18 @@ def build_navbar(active_panel: ActivePanel, mode: GUIMode = GUIMode.CARM) -> htm
                         "Configure and run a new benchmark (on the same machine the GUI is running).",
                         id=NavbarID.TOOLTIP_BENCHMARK,
                         target=NavbarID.BTN_BENCHMARK,
+                        trigger="hover focus",
+                    ),
+                    html.Button(
+                        "Profile",
+                        id=NavbarID.BTN_PROFILE,
+                        className=f"navbar-btn{' navbar-btn--active' if profile_active else ''}",
+                        n_clicks=0,
+                    ),
+                    dbc.Tooltip(
+                        "Configure and run PAPI or perf profiling for a local application.",
+                        id=NavbarID.TOOLTIP_PROFILE,
+                        target=NavbarID.BTN_PROFILE,
                         trigger="hover focus",
                     ),
                     html.Button(
@@ -828,6 +842,40 @@ def _benchmark_field(label: str, control: Any, help_text: str) -> html.Div:
     )
 
 
+_PROFILE_FIELD_HELP_IDS: dict[ProfilePanelID, ProfilePanelID] = {
+    ProfilePanelID.BACKEND: ProfilePanelID.TOOLTIP_BACKEND,
+    ProfilePanelID.COMMAND: ProfilePanelID.TOOLTIP_COMMAND,
+    ProfilePanelID.AGGREGATION: ProfilePanelID.TOOLTIP_AGGREGATION,
+    ProfilePanelID.MACHINE_NAME: ProfilePanelID.TOOLTIP_MACHINE_NAME,
+    ProfilePanelID.APP_NAME: ProfilePanelID.TOOLTIP_APP_NAME,
+    ProfilePanelID.OUTPUT_DIR: ProfilePanelID.TOOLTIP_OUTPUT_DIR,
+    ProfilePanelID.METRICS: ProfilePanelID.TOOLTIP_METRICS,
+    ProfilePanelID.ISA: ProfilePanelID.TOOLTIP_ISA,
+    ProfilePanelID.DATA_TYPE: ProfilePanelID.TOOLTIP_DATA_TYPE,
+    ProfilePanelID.MERGE_RUNS: ProfilePanelID.TOOLTIP_MERGE_RUNS,
+    ProfilePanelID.NO_PAPI_CACHE: ProfilePanelID.TOOLTIP_NO_PAPI_CACHE,
+    ProfilePanelID.PERF_INTERVAL: ProfilePanelID.TOOLTIP_PERF_INTERVAL,
+    ProfilePanelID.KEEP_ARTIFACTS: ProfilePanelID.TOOLTIP_KEEP_ARTIFACTS,
+}
+
+
+def _profile_field(label: str, control: Any, help_text: str) -> html.Div:
+    help_id = _PROFILE_FIELD_HELP_IDS[ProfilePanelID(control.id)]
+    return html.Div(
+        className="benchmark-field",
+        children=[
+            html.Label(label, id=help_id, className="benchmark-label"),
+            control,
+            dbc.Tooltip(
+                help_text,
+                target=help_id,
+                placement="top",
+                class_name="benchmark-help-tooltip",
+            ),
+        ],
+    )
+
+
 def build_benchmark_panel(results_dir: str, visible: bool = True) -> html.Div:
     """Build the CLI benchmark configurator and its live run status."""
     from carm_roofline.core import ArithmeticOperation, DataType
@@ -1070,6 +1118,188 @@ def build_benchmark_panel(results_dir: str, visible: bool = True) -> html.Div:
     )
 
 
+def build_profile_panel(results_dir: str, visible: bool = False) -> html.Div:
+    """Build the CLI profile configurator and its live run status."""
+    from carm_roofline.gui.ids import ProfilePanelID
+    from carm_roofline.isa import BaseISA
+
+    return html.Div(
+        id=ProfilePanelID.PAGE,
+        className="benchmark-page",
+        style={"display": "block"} if visible else {"display": "none"},
+        children=[
+            html.H2("Profile"),
+            html.P("Configure and run PAPI or Linux perf profiling on the GUI server host."),
+            _profile_field(
+                "Profiler backend",
+                dcc.Dropdown(
+                    id=ProfilePanelID.BACKEND,
+                    options=[{"label": "PAPI", "value": "papi"}, {"label": "perf", "value": "perf"}],
+                    value="papi",
+                    clearable=False,
+                ),
+                "Choose PAPI for annotated region data or Linux perf for system-wide application profiling.",
+            ),
+            _profile_field(
+                "Application command",
+                dcc.Textarea(
+                    id=ProfilePanelID.COMMAND,
+                    placeholder="./my_app --input 'input file'",
+                    className="profile-command",
+                ),
+                (
+                    "Enter the executable and arguments. Shell quoting is parsed into argv; commands are "
+                    "never run through a shell."
+                ),
+            ),
+            html.Div(
+                className="benchmark-grid",
+                children=[
+                    _profile_field(
+                        "Aggregation",
+                        dcc.Dropdown(
+                            id=ProfilePanelID.AGGREGATION,
+                            options=[
+                                {"label": value.replace("_", " ").title(), "value": value}
+                                for value in ("global", "rank", "thread", "region_merged", "region_per_thread")
+                            ],
+                            value="global",
+                            clearable=False,
+                        ),
+                        "Choose how ranks, threads, and regions are combined into roofline points.",
+                    ),
+                    _profile_field(
+                        "ISA",
+                        dcc.Dropdown(
+                            id=ProfilePanelID.ISA,
+                            options=[{"label": isa, "value": isa} for isa in BaseISA.names()],
+                            multi=True,
+                            value=[],
+                            placeholder="Unspecified",
+                        ),
+                        "Optional ISAs used by the workload, used to select the appropriate counters.",
+                    ),
+                    _profile_field(
+                        "Data type",
+                        dcc.Dropdown(
+                            id=ProfilePanelID.DATA_TYPE,
+                            options=[
+                                {"label": value, "value": value}
+                                for value in ("i8", "i16", "i32", "i64", "f32", "f64", "bf16")
+                            ],
+                            clearable=True,
+                            placeholder="Unspecified",
+                        ),
+                        "Optional data precision for better estimating operation and byte counts.",
+                    ),
+                ],
+            ),
+            html.Details(
+                className="benchmark-advanced",
+                children=[
+                    html.Summary("Advanced settings"),
+                    html.Div(
+                        className="benchmark-grid",
+                        children=[
+                            _profile_field(
+                                "Machine name",
+                                dcc.Input(id=ProfilePanelID.MACHINE_NAME, type="text", placeholder="Auto-detected"),
+                                "Optional machine name used to match benchmark roof data.",
+                            ),
+                            _profile_field(
+                                "Application name",
+                                dcc.Input(id=ProfilePanelID.APP_NAME, type="text", placeholder="Derived from command"),
+                                "Optional label for the profiled application.",
+                            ),
+                            _profile_field(
+                                "Output directory",
+                                dcc.Input(
+                                    id=ProfilePanelID.OUTPUT_DIR,
+                                    type="text",
+                                    value="",
+                                    placeholder=results_dir,
+                                ),
+                                "Directory on the GUI server where profile results are written.",
+                            ),
+                            _profile_field(
+                                "Optional metrics (experimental)",
+                                dcc.Dropdown(
+                                    id=ProfilePanelID.METRICS,
+                                    options=[
+                                        {"label": "Cache residency", "value": "cache-residency"},
+                                        {"label": "Cache-line utilization", "value": "cache-line-utilization"},
+                                    ],
+                                    multi=True,
+                                    value=[],
+                                ),
+                                (
+                                    "Optional hardware-counter metrics. These metrics are experimental "
+                                    "and may not be accurate."
+                                ),
+                            ),
+                            _profile_field(
+                                "Counter budget",
+                                dcc.Checklist(
+                                    id=ProfilePanelID.MERGE_RUNS,
+                                    options=[{"label": "Run multiple times to collect all events", "value": "on"}],
+                                    value=[],
+                                ),
+                                "Partition events that exceed the hardware counter budget and merge the runs.",
+                            ),
+                            html.Div(
+                                id=ProfilePanelID.BACKEND_OPTIONS,
+                                children=[
+                                    html.Div(
+                                        _profile_field(
+                                            "PAPI event cache",
+                                            dcc.Checklist(
+                                                id=ProfilePanelID.NO_PAPI_CACHE,
+                                                options=[{"label": "Disable PAPI event catalog cache", "value": "on"}],
+                                                value=[],
+                                            ),
+                                            "Disable the cached PAPI event catalog for this run.",
+                                        ),
+                                        id=ProfilePanelID.PAPI_OPTIONS,
+                                    ),
+                                    html.Div(
+                                        _profile_field(
+                                            "perf interval (ms)",
+                                            dcc.Input(id=ProfilePanelID.PERF_INTERVAL, type="number", min=1, step=1),
+                                            "Sample counters at this interval; empty means full-run mode.",
+                                        ),
+                                        id=ProfilePanelID.PERF_OPTIONS,
+                                        style={"display": "none"},
+                                    ),
+                                ],
+                            ),
+                            _profile_field(
+                                "Keep artifacts",
+                                dcc.Checklist(
+                                    id=ProfilePanelID.KEEP_ARTIFACTS,
+                                    options=[{"label": "Keep raw profiling files", "value": "on"}],
+                                    value=[],
+                                ),
+                                "Preserve raw profiler output files for debugging.",
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            html.Button("Start profile", id=ProfilePanelID.START, n_clicks=0, className="benchmark-start"),
+            html.Pre(
+                id=ProfilePanelID.COMMAND_PREVIEW,
+                className="benchmark-command-preview",
+                children="The CLI command appears here after you start a run.",
+            ),
+            html.Div(id=ProfilePanelID.STATUS, className="benchmark-status", children="Ready"),
+            html.Div(id=ProfilePanelID.ELAPSED, className="benchmark-elapsed", children="Elapsed: 0 s"),
+            html.Progress(id=ProfilePanelID.PROGRESS, value="0", max="1", className="benchmark-progress"),
+            html.Pre(id=ProfilePanelID.LOG, className="benchmark-log"),
+            dcc.Interval(id=ProfilePanelID.INTERVAL, interval=1000, n_intervals=0, disabled=True),
+        ],
+    )
+
+
 def build_plot_area(
     mode: GUIMode = GUIMode.CARM,
     trace_bounds: tuple[float, float] | None = None,
@@ -1159,8 +1389,10 @@ def build_layout(
     results_dir: str = "",
 ) -> html.Div:
     is_benchmark = store.active_panel == ActivePanel.BENCHMARK
+    is_profile = store.active_panel == ActivePanel.PROFILE
     benchmark_page = build_benchmark_panel(results_dir, is_benchmark)
-    plot_area = build_plot_area(mode, trace_bounds, not is_benchmark)
+    profile_page = build_profile_panel(results_dir, is_profile)
+    plot_area = build_plot_area(mode, trace_bounds, not (is_benchmark or is_profile))
 
     return html.Div(
         className="app-container",
@@ -1176,6 +1408,7 @@ def build_layout(
                         children=[
                             plot_area,
                             benchmark_page,
+                            profile_page,
                         ],
                     ),
                 ],
@@ -1185,6 +1418,7 @@ def build_layout(
             dcc.Store(id=StoreID.ACTIVE_PANEL, data=store.active_panel),
             dcc.Store(id=StoreID.SELECTED_POINT, data=None),
             dcc.Store(id=BenchmarkPanelID.JOB, data=None),
+            dcc.Store(id=ProfilePanelID.JOB, data=None),
         ],
     )
 

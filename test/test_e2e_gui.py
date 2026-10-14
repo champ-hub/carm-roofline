@@ -13,7 +13,7 @@ from typing import Any
 import dash
 import pytest
 
-from carm_roofline.gui import benchmark_runner
+from carm_roofline.gui import benchmark_runner, profile_runner
 from carm_roofline.gui.config import GUIConfig
 from carm_roofline.gui.factory import create_app
 from carm_roofline.gui.data import RoofConfig, RoofStore
@@ -21,8 +21,10 @@ from carm_roofline.gui.providers import BenchmarkAppsProvider
 from carm_roofline.gui.ids import (
     BenchmarkPanelID,
     PlotAreaID,
+    ProfilePanelID,
     RoofCardID,
     SettingsPanelID,
+    SidebarID,
     StoreID,
     WelcomePanelID,
 )
@@ -808,3 +810,99 @@ def test_benchmark_action_tracks_real_job_and_refreshes_results(
             time.sleep(0.01)
         with benchmark_runner._job_lock:
             benchmark_runner._job_state["current"] = None
+
+
+def test_profile_completion_refreshes_application_selector_before_sidebar_render(
+    results_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    settings_path = tmp_path / "gui-settings.json"
+    monkeypatch.setattr("carm_roofline.gui.factory.gui_settings_path", lambda: settings_path)
+    app = create_app(_config(results_dir))
+    client = app.server.test_client()
+    layout = client.get("/_dash-layout").get_json()
+
+    record = {
+        "format_version": "3.0",
+        "aggregation": "global",
+        "metadata": {"name": "fresh profile", "date": "2026-01-03", "command": "./profiled"},
+        "points": [{"label": "main", "arithmetic_intensity": 2.0}],
+    }
+    applications_file = results_dir / "fixture-host" / "applications.jsonl"
+    worker_script = (
+        "import pathlib; "
+        f"pathlib.Path({json.dumps(str(applications_file))}).open('a', encoding='utf-8').write("
+        f"{json.dumps(json.dumps(record) + chr(10))})"
+    )
+    real_popen = subprocess.Popen
+
+    def launch_profile_worker(command: Any, stdout: Any = None, stderr: Any = None) -> subprocess.Popen[bytes]:
+        del command
+        return real_popen([sys.executable, "-c", worker_script], stdout=stdout, stderr=stderr)
+
+    with profile_runner._job_lock:
+        profile_runner._job_state["current"] = None
+    monkeypatch.setattr(profile_runner.subprocess, "Popen", launch_profile_worker)
+
+    try:
+        response = _dispatch(
+            app,
+            client,
+            layout,
+            str(ProfilePanelID.JOB),
+            "data",
+            overrides={
+                str(ProfilePanelID.START): 1,
+                str(ProfilePanelID.COMMAND): "/usr/bin/true",
+                str(ProfilePanelID.OUTPUT_DIR): "",
+            },
+            changed_id=f"{ProfilePanelID.START}.n_clicks",
+            input_id=str(ProfilePanelID.START),
+        )
+        job = response[str(ProfilePanelID.JOB)]["data"]
+        for tick in range(100):
+            if job["finished"]:
+                break
+            progress_response = _dispatch(
+                app,
+                client,
+                layout,
+                str(ProfilePanelID.JOB),
+                "data",
+                overrides={
+                    str(ProfilePanelID.JOB): job,
+                    str(ProfilePanelID.INTERVAL): tick + 1,
+                },
+                changed_id=f"{ProfilePanelID.INTERVAL}.n_intervals",
+                input_id=str(ProfilePanelID.INTERVAL),
+            )
+            if str(ProfilePanelID.JOB) in progress_response:
+                job = progress_response[str(ProfilePanelID.JOB)]["data"]
+            time.sleep(0.02)
+
+        assert job["finished"] is True
+        assert job["return_code"] == 0
+
+        sidebar = _dispatch(
+            app,
+            client,
+            layout,
+            str(SidebarID.SIDEBAR_CONTENT),
+            "children",
+            overrides={
+                str(ProfilePanelID.JOB): job,
+                str(StoreID.ROOF_STORE): RoofStore(roof_template=RoofConfig(machine="fixture-host")).to_dict(),
+                json.dumps({"index": ["ALL"], "type": str(RoofCardID.DROPDOWN_MACHINE)}): ["fixture-host"],
+            },
+            changed_id=f"{ProfilePanelID.JOB}.data",
+        )[str(SidebarID.SIDEBAR_CONTENT)]["children"]
+        app_options = [
+            option
+            for component in _walk_components(sidebar)
+            if isinstance((component_id := component.get("props", {}).get("id")), dict)
+            and component_id.get("type") == RoofCardID.DROPDOWN_APPS
+            for option in component.get("props", {}).get("options", [])
+        ]
+        assert any(option["label"] == "fresh profile — 2026-01-03 (global)" for option in app_options)
+    finally:
+        with profile_runner._job_lock:
+            profile_runner._job_state["current"] = None
