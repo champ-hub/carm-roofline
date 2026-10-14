@@ -332,9 +332,9 @@ def run_microbenchmarks(
 ) -> str:
     """Execute the compiled microbenchmarks and return their output.
 
-    All benchmark configuration is embedded in the generated header at compile
-    time. Only the interleaved flag is passed as a runtime argument. The
-    timeout derives from the physical byte-transfer cost of every benchmark.
+    Benchmark metadata is embedded in the generated header; allocation layout
+    settings are passed to the harness at runtime. The timeout derives from
+    the physical byte-transfer cost of every benchmark.
 
     Args:
         context: Full CARM context with execution interface configuration.
@@ -359,7 +359,7 @@ def run_microbenchmarks(
     debug(f"Running microbenchmarks from {binary_path}")
     debug(f"Calculated timeout: {timeout} for {len(spec_list)} benchmark(s) ({num_runs} runs each)")
 
-    args = []
+    args = ["--thread-stride-gap-bytes", str(int(context.benchmarking.thread_stride_gap))]
     if context.benchmarking.interleaved:
         args.append("--interleaved")
 

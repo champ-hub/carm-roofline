@@ -106,6 +106,20 @@ def mem_test_size_type(arg: str) -> Bytes | None:
         ) from e
 
 
+def thread_stride_gap_type(arg: str) -> Bytes:
+    """Parse a non-negative per-thread stride gap in bytes or binary units."""
+    value = arg.strip()
+    try:
+        gap = Bytes(int(value)) if value.isdecimal() else Bytes.from_argparse(arg)
+    except argparse.ArgumentTypeError:
+        raise
+    except Exception as e:
+        raise argparse.ArgumentTypeError(f"Invalid thread stride gap: {arg!r}") from e
+    if gap.value < 0:
+        raise argparse.ArgumentTypeError("Thread stride gap must not be negative")
+    return gap
+
+
 _T = TypeVar("_T")
 
 
@@ -153,6 +167,7 @@ class Benchmarking(InsertsArguments):
         if self.ai_points == 1 and self.ai_range[0] != self.ai_range[1]:
             raise ValueError("--ai-range endpoints must be equal when --ai-points is 1")
         self.mem_test_sizes: list[Bytes | None] | None = args.mem_test_sizes
+        self.thread_stride_gap: Bytes = args.thread_stride_gap
         self.verbose: int = args.verbose
         self.test_time: float = args.test_time
         if self.test_time < 10.0:
@@ -199,6 +214,14 @@ class Benchmarking(InsertsArguments):
         )
         parser.add_argument(
             "--threads", nargs="+", default=[1], type=positive_int, help="Number of threads to benchmark (Default: 1)"
+        )
+        parser.add_argument(
+            "--per-thread-buffer-gap",
+            dest="thread_stride_gap",
+            type=thread_stride_gap_type,
+            default=Bytes(16 * 1024),
+            metavar="SIZE",
+            help="Extra space between per-thread memory regions (e.g. 16KiB; Default: 16KiB)",
         )
         parser.add_argument(
             "--interleaved",

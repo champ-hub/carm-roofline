@@ -21,8 +21,8 @@ def test_invalid_mixed_ratio_exits_parser() -> None:
     ("arguments", "expected_bytes"),
     [
         ([], 16 * 1024),
-        (["--thread-stride-gap", "32KiB"], 32 * 1024),
-        (["--thread-stride-gap", "0"], 0),
+        (["--per-thread-buffer-gap", "32KiB"], 32 * 1024),
+        (["--per-thread-buffer-gap", "0"], 0),
     ],
 )
 def test_thread_stride_gap_argument(arguments: list[str], expected_bytes: int) -> None:
@@ -34,7 +34,7 @@ def test_thread_stride_gap_argument(arguments: list[str], expected_bytes: int) -
 def test_thread_stride_gap_rejects_negative_value() -> None:
     """The benchmark CLI rejects negative allocation gaps."""
     with pytest.raises(SystemExit) as exc_info:
-        carm._create_parser().parse_args(["benchmark", "--thread-stride-gap", "-1"])
+        carm._create_parser().parse_args(["benchmark", "--per-thread-buffer-gap", "-1"])
     assert exc_info.value.code == 2
 
 def test_benchmark_emit_config_creates_file(tmp_path: Path) -> None:

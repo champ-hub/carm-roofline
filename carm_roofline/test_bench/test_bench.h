@@ -92,7 +92,9 @@ extern uint64_t g_max_reps;
 
 void *aligned_malloc(size_t align, size_t size)
 {
-    // align must be a power of 2
+    // Keep the allocation overhead addition from wrapping.
+    if (align == 0 || (align & (align - 1)) != 0 || size > SIZE_MAX - (align - 1) - sizeof(void *))
+        return NULL;
     void *raw = malloc(size + align - 1 + sizeof(void *));
     if (!raw)
         return NULL;

@@ -66,9 +66,9 @@ These options control the test performed on the system. The main selection is `-
 
 Each micro-benchmark loops until `--test-time` seconds elapse. The default (25s) gives reliable results on most systems. You can reduce this for a quicker benchmark, but accuracy may suffer. However, even 1 second is enough for a rough comparison between machines/configurations.
 
-### Threading (`--threads`, `--interleaved`)
+### Threading and per-thread allocation (`--threads`, `--interleaved`, `--per-thread-buffer-gap`)
 
-Benchmark with multiple threads by passing one or more thread counts, e.g. `--threads 1 4 8`. The tool will run the full suite at each count. `--interleaved` changes thread pinning for NUMA systems where core indices are interleaved across nodes (e.g. node 0 has cores 0, 2, 4…).
+Benchmark with multiple threads by passing one or more thread counts, e.g. `--threads 1 4 8`. The tool will run the full suite at each count. `--interleaved` changes thread pinning for NUMA systems where core indices are interleaved across nodes (e.g. node 0 has cores 0, 2, 4…). `--per-thread-buffer-gap` reserves extra space between adjacent threads' memory regions; it accepts byte sizes such as `16KiB` and defaults to `16KiB`. This changes only allocation layout, not the benchmark working-set sizes or reported bytes. Use `--per-thread-buffer-gap 0` to disable the padding. It is necessary on systems with aggressive prefetching.
 
 ### Output and verbosity (`--verbose`, `--progress-format`, `--name`, `--dry-run`, `--output-dir`, `--output-fmt`, `--keep-artifacts`)
 

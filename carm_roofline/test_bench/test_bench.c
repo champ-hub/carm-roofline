@@ -5,6 +5,7 @@
 #include "test_bench.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <microbenchmarks.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,32 @@
 #include <sys/resource.h>
 
 #define CARM_BENCH_DATA_ALIGNMENT 4096UL
+static size_t g_thread_stride_gap = 16 * 1024;
+
+static void parse_harness_args(int argc, char *argv[])
+{
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--thread-stride-gap-bytes") == 0) {
+            char *end = NULL;
+            unsigned long long value;
+            if (i + 1 >= argc) {
+                fprintf(stderr, "ERROR: --thread-stride-gap-bytes requires a non-negative integer\n");
+                exit(2);
+            }
+            errno = 0;
+            value = strtoull(argv[++i], &end, 10);
+            if (argv[i][0] == '-' || errno == ERANGE || end == argv[i] || *end != '\0' || value > SIZE_MAX) {
+                fprintf(stderr, "ERROR: invalid --thread-stride-gap-bytes value: %s\n", argv[i]);
+                exit(2);
+            }
+            g_thread_stride_gap = (size_t) value;
+        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            printf("Usage: %s [--thread-stride-gap-bytes N]\n", argv[0]);
+            printf("  --thread-stride-gap-bytes N  Extra per-thread allocation gap in bytes (default: 16384)\n");
+            exit(0);
+        }
+    }
+}
 
 static int align_up_size(size_t size, size_t align, size_t *aligned_size)
 {
@@ -157,7 +184,12 @@ measure_benchmark(const benchmark_metadata_t *metadata, wrapper_fn_t wrapper_fn,
         return;
     }
 
-    size_t per_thread_stride = aligned_read + aligned_write;
+    size_t stride_gap = (aligned_read == 0 && aligned_write == 0) ? 0 : g_thread_stride_gap;
+    if (aligned_read > SIZE_MAX - aligned_write || aligned_read + aligned_write > SIZE_MAX - stride_gap) {
+        fprintf(stderr, "ERROR: Per-thread allocation stride overflow for benchmark %s\n", test_id);
+        return;
+    }
+    size_t per_thread_stride = aligned_read + aligned_write + stride_gap;
 
     /* Initialize global state */
     g_max_reps = 0;
@@ -165,10 +197,10 @@ measure_benchmark(const benchmark_metadata_t *metadata, wrapper_fn_t wrapper_fn,
 
     /* Allocate timing arrays for each thread */
     for (int i = 0; i < num_threads; i++) {
-        tdata[i].tid = i;
         size_t thread_offset = (size_t) i * per_thread_stride;
-        tdata[i].read_ptr = (void *) ((char *) combined_data + thread_offset);
-        tdata[i].write_ptr = (void *) ((char *) combined_data + thread_offset + aligned_read);
+        tdata[i].read_ptr = combined_data != NULL ? (void *) ((char *) combined_data + thread_offset) : NULL;
+        tdata[i].write_ptr =
+                combined_data != NULL ? (void *) ((char *) combined_data + thread_offset + aligned_read) : NULL;
         tdata[i].freq = freq;
         tdata[i].read_size = aligned_read;
         tdata[i].write_size = aligned_write;
@@ -310,11 +342,12 @@ static inline void update_max_combined_stride(size_t *max_total_size, const benc
         exit(1);
     }
 
-    if (aligned_read > SIZE_MAX - aligned_write) {
-        fprintf(stderr, "ERROR: Combined stride overflow for benchmark %s\n", metadata->name);
+    size_t stride_gap = (aligned_read == 0 && aligned_write == 0) ? 0 : g_thread_stride_gap;
+    if (aligned_read > SIZE_MAX - aligned_write || aligned_read + aligned_write > SIZE_MAX - stride_gap) {
+        fprintf(stderr, "ERROR: Per-thread allocation stride overflow for benchmark %s\n", metadata->name);
         exit(1);
     }
-    per_thread_stride = aligned_read + aligned_write;
+    per_thread_stride = aligned_read + aligned_write + stride_gap;
 
     if (multiply_size(per_thread_stride, (size_t) metadata->num_threads, &required_total_size) != 0) {
         fprintf(stderr,
@@ -331,10 +364,9 @@ static inline void update_max_combined_stride(size_t *max_total_size, const benc
 
 int main(int argc, char *argv[])
 {
-    /* Compute maximum combined (read+write) per-thread stride across all benchmarks.
-     * For each benchmark, each thread gets a contiguous [read | write] region of size
-     * aligned(read_array_size_bytes) + aligned(write_array_size_bytes), so the read
-     * and write arrays are physically adjacent, eliminating cache-set aliasing. */
+    parse_harness_args(argc, argv);
+
+    // Compute maximum combined (read+write+gap) allocation across benchmarks.
     size_t max_combined_total = 0;
 #define X(wrapper_fn, metadata_ptr) update_max_combined_stride(&max_combined_total, (metadata_ptr));
     MICROBENCHMARK_LIST
