@@ -1,0 +1,157 @@
+easyblock = "PythonBundle"
+
+name = "carm-roofline"
+version = "1.4.0"
+versionsuffix = "-mn5-py39"
+
+homepage = "https://github.com/champ-hub/carm-roofline"
+
+description = """
+The CARM Tool - benchmark, visualize and profile Intel, AMD, ARM, RISC-V CPUs
+with the Cache-Aware Roofline Model
+"""
+
+toolchain = SYSTEM
+# The companion metadata maps the lowercase Python module to EasyBuild's Python.
+dependencies = [
+    ("hdf5/1.14.1-2-gcc", EXTERNAL_MODULE),
+    ("mkl/2023.2.0", EXTERNAL_MODULE),
+    ("impi/2021.10.0", EXTERNAL_MODULE),
+    ("python/3.9.16-gcc", EXTERNAL_MODULE),
+]
+
+# Ignore user-site packages. They can conflict with this isolated application module.
+modluafooter = '''
+setenv("PYTHONNOUSERSITE", "1")
+depends_on("hdf5/1.14.1-2-gcc")
+depends_on("mkl/2023.2.0")
+depends_on("impi/2021.10.0")
+depends_on("python/3.9.16-gcc")
+'''
+
+use_pip = True
+sanity_pip_check = True
+
+exts_default_options = {
+    "use_pip_for_deps": True,
+    "download_dep_fail": True,
+}
+
+exts_list = [
+    (
+        "matplotlib",
+        "3.9.4",
+        {
+            "source_tmpl": "matplotlib-%(version)s-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "checksums": ["57aa235109e9eed52e2c2949db17da185383fa71083c00c6c143a60e07e0888c"],
+        },
+    ),
+    (
+        "platformdirs",
+        "4.3.7",
+        {
+            "source_tmpl": "platformdirs-%(version)s-py3-none-any.whl",
+            "checksums": ["a03875334331946f13c549dbd8f4bac7a13a50a895a0eb1e8c6a8ace80d40a94"],
+        },
+    ),
+    (
+        "pandas",
+        "2.3.3",
+        {
+            "source_tmpl": "pandas-%(version)s-cp39-cp39-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+            "checksums": ["bf1f8a81d04ca90e32a0aceb819d34dbd378a98bf923b6398b9a3ec0bf44de29"],
+        },
+    ),
+    (
+        "rich",
+        "14.3.2",
+        {
+            "source_tmpl": "rich-%(version)s-py3-none-any.whl",
+            "checksums": ["08e67c3e90884651da3239ea668222d19bea7b589149d8014a21c633420dbb69"],
+        },
+    ),
+    (
+        "rich-argparse",
+        "1.8.0",
+        {
+            "source_tmpl": "rich_argparse-%(version)s-py3-none-any.whl",
+            "checksums": ["d2a3ce7854654e2253c578763ab0a32f05016f23a55fadba7b9a91b6c0e92142"],
+        },
+    ),
+    (
+        "tomli",
+        "2.4.1",
+        {
+            "source_tmpl": "tomli-%(version)s-py3-none-any.whl",
+            "checksums": ["0d85819802132122da43cb86656f8d1f8c6587d54ae7dcaf30e90533028b49fe"],
+        },
+    ),
+    (
+        "argcomplete",
+        "3.7.0",
+        {
+            "source_tmpl": "argcomplete-%(version)s-py3-none-any.whl",
+            "checksums": ["d8f0f22d2a8a7caa383be1e22b6caf1ecaf0ebd10d8f83cc125e36540c95830c"],
+        },
+    ),
+    (
+        "dash",
+        "4.4.1",
+        {
+            "source_tmpl": "dash-%(version)s-py3-none-any.whl",
+            "checksums": ["72120a91b10ee4d73f9446efd5d6a4ec218086feed7b1b479d2259844d1f658f"],
+        },
+    ),
+    (
+        "dash-bootstrap-components",
+        "2.0.4",
+        {
+            "source_tmpl": "dash_bootstrap_components-%(version)s-py3-none-any.whl",
+            "checksums": ["767cf0084586c1b2b614ccf50f79fe4525fdbbf8e3a161ed60016e584a14f5d1"],
+        },
+    ),
+    (
+        "tenacity",
+        "9.1.2",
+        {
+            "source_tmpl": "tenacity-%(version)s-py3-none-any.whl",
+            "checksums": ["f77bf36710d8b73a50b2dd155c97b870017ad21afe6ab300326b0371b3b05138"],
+        },
+    ),
+    (
+        "narwhals",
+        "2.0.1",
+        {
+            "source_tmpl": "narwhals-%(version)s-py3-none-any.whl",
+            "checksums": ["837457e36a2ba1710c881fb69e1f79ce44fb81728c92ac378f70892a53af8ddb"],
+        },
+    ),
+    (
+        "plotly",
+        "6.7.0",
+        {
+            "source_tmpl": "plotly-%(version)s-py3-none-any.whl",
+            "checksums": ["ac8aca1c25c663a59b5b9140a549264a5badde2e057d79b8c772ae2920e32ff0"],
+        },
+    ),
+    (
+        name,
+        version,
+        {
+            "source_urls": ["https://github.com/champ-hub/carm-roofline/archive/refs/tags"],
+            "source_tmpl": "v%(version)s.tar.gz",
+            "checksums": ["f3908a87da5f2d1b2c18eae8897f2f0fda0a30ca7ce0d4e4a51982f730b1be95"],
+            "preinstallopts": "pip install --no-build-isolation --prefix=%(installdir)s 'setuptools>=64.0' 'wheel' && ",
+            "use_pip_for_deps": False,
+        },
+    ),
+]
+
+sanity_check_paths = {
+    "files": ["bin/carm"],
+    "dirs": [],
+}
+
+sanity_check_commands = ["carm --help"]
+
+moduleclass = "perf"
