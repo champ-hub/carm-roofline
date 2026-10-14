@@ -16,6 +16,8 @@ import pytest
 from carm_roofline.gui import benchmark_runner
 from carm_roofline.gui.config import GUIConfig
 from carm_roofline.gui.factory import create_app
+from carm_roofline.gui.data import RoofConfig, RoofStore
+from carm_roofline.gui.providers import BenchmarkAppsProvider
 from carm_roofline.gui.ids import (
     BenchmarkPanelID,
     PlotAreaID,
@@ -294,6 +296,7 @@ def test_welcome_panel_dismissal_and_config_persistence(
     app = create_app(_config(results_dir))
     client = app.server.test_client()
     layout = client.get("/_dash-layout").get_json()
+    assert _component(layout, str(StoreID.ROOF_STORE))["data"]["roofs"] == []
     welcome = _component(layout, str(WelcomePanelID.CONTAINER))
     assert welcome["style"] == {"display": "block"}
 
@@ -364,14 +367,9 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
     assert layout_response.status_code == dependencies_response.status_code == 200
     layout = layout_response.get_json()
     store = _component(layout, str(StoreID.ROOF_STORE))["data"]
-    assert store["roofs"]
-    app_dropdown = next(
-        component
-        for component in _walk_components(layout)
-        if isinstance(component.get("props", {}).get("id"), dict)
-        and component["props"]["id"].get("type") == RoofCardID.DROPDOWN_APPS
-    )
-    app_id = app_dropdown["props"]["options"][0]["value"]
+    assert not store["roofs"]
+    app_id = next(iter(BenchmarkAppsProvider(results_dir).load()))
+    store["roofs"] = RoofStore(roof_template=RoofConfig(machine="fixture-host", app_ids=[app_id])).to_dict()["roofs"]
     roof_index = store["roofs"][0]["id"]
     roof_input_overrides = {
         json.dumps(
@@ -703,6 +701,8 @@ def test_benchmark_action_tracks_real_job_and_refreshes_results(
     monkeypatch.setitem(benchmark_runner._job_state, "current", None)
     monkeypatch.setattr(benchmark_runner.subprocess, "Popen", launch_fake_external)
 
+    store = _component(layout, str(StoreID.ROOF_STORE))["data"]
+    store["roofs"] = RoofStore(roof_template=RoofConfig(machine="fixture-host")).to_dict()["roofs"]
     baseline = _figure_from_response(
         _dispatch(
             app,

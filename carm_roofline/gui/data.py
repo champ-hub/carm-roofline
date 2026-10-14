@@ -1056,7 +1056,29 @@ def _finalize_axes_and_layout(
     xaxis["tickfont"] = {"size": axis_tick_font_size}
     yaxis["tickfont"] = {"size": axis_tick_font_size}
 
+    images = (
+        [
+            {
+                "source": "/assets/CHAMP_logo.svg",
+                "xref": "paper",
+                "yref": "paper",
+                "x": 0.5,
+                "xanchor": "center",
+                "yanchor": "middle",
+                "y": 0.5,
+                "sizex": 0.7,
+                "sizey": 0.7,
+                "sizing": "contain",
+                "opacity": 0.1,
+                "layer": "below",
+            }
+        ]
+        if not fig.data
+        else []
+    )
+
     fig.update_layout(
+        images=images,
         template="plotly_white",
         xaxis=xaxis,
         yaxis=yaxis,

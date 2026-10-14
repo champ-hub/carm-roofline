@@ -15,6 +15,7 @@ from carm_roofline.gui.config import GUIConfig
 from carm_roofline.gui.factory import create_app
 from carm_roofline.gui.ids import ExportPanelID, ParaverID, PlotAreaID, StoreID
 from carm_roofline.gui.providers import ParaverProvider
+from carm_roofline.gui.data import RoofConfig, RoofStore
 from carm_roofline.paraver import shim
 from carm_roofline.paraver.counters import INTEL_COUNTERS
 from carm_roofline.paraver.pipeline import write_counter_configs
@@ -243,6 +244,8 @@ def test_paraver_trace_to_gui_and_all_exports(
     expected_extent = list(provider.window_extent)
 
     store = _component_values(layout)[(StoreID.ROOF_STORE.value, "data")]
+    assert store["roofs"] == []
+    store["roofs"] = RoofStore(roof_template=RoofConfig(machine="fixture-machine")).to_dict()["roofs"]
     assert store["paraver"]["time_window"] == pytest.approx(expected_extent)
     time_window = (0.0, float(data.trace["time_s"].iloc[len(data.trace) // 2 - 1]))
     store = _dash_callback(

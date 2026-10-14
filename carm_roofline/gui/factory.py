@@ -36,7 +36,7 @@ def create_app(config: GUIConfig) -> dash.Dash:
         external_stylesheets=[dbc.themes.BOOTSTRAP],
         assets_folder="assets",
         suppress_callback_exceptions=True,
-        title="CARM Roofline",
+        title="CARM Tool",
     )
 
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
@@ -76,7 +76,7 @@ def create_app(config: GUIConfig) -> dash.Dash:
     def serve_layout() -> html.Div:
         saved = load_gui_settings(gui_settings_path())
         fresh_store = RoofStore(roof_template=initial_roof)
-        fresh_store.roofs = [initial_roof]
+        fresh_store.roofs = []
         fresh_store.settings = saved
         if initial_window is not None:
             fresh_store.paraver_state.time_window = initial_window

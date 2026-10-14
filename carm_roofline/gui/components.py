@@ -321,7 +321,7 @@ def build_navbar(active_panel: ActivePanel, mode: GUIMode = GUIMode.CARM) -> htm
                         src="/assets/CARM_icon.svg",
                         className="navbar-logo",
                     ),
-                    html.Span("CARM Roofline", className="navbar-title"),
+                    html.Span("CARM Tool", className="navbar-title"),
                 ],
             ),
             # Right: toggle buttons

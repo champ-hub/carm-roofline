@@ -35,6 +35,34 @@ from carm_roofline.roofline_assembly import ApplicationPoint, ApplicationRecord,
 pytestmark = pytest.mark.unit
 
 
+def test_empty_roofline_figures_show_faint_logo_only_when_clear() -> None:
+    """Both plot builders show the CHAMP image only when they have no traces."""
+    empty_carm = build_roofline_figure([], [])
+    empty_paraver = build_paraver_figure([], [], None, None)
+
+    for figure in (empty_carm, empty_paraver):
+        assert not figure.data
+        assert len(figure.layout.images) == 1
+        image = figure.layout.images[0]
+        assert image.source == "/assets/CHAMP_logo.svg"
+        assert image.opacity == 0.15
+
+    trace = _paraver_trace()
+    trace["legend_label"] = ["Running", "Wait/WaitAll", "Wait/WaitAll"]
+    trace["legend_color"] = ["rgb(0,0,255)", "rgb(235,0,0)", "rgb(235,0,0)"]
+    paraver = ParaverData(
+        trace=trace,
+        label="t",
+        window_mode=ParaverWindowMode.CODE,
+        time_unit="Microseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    with_points = build_paraver_figure([], [], paraver, trace)
+    assert with_points.data
+    assert not with_points.layout.images
+
+
 def test_roofstore_round_trip_preserves_all_fields() -> None:
     """to_dict -> from_dict preserves all RoofConfig fields including compute_insts."""
     roof = RoofConfig(
