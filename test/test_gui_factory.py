@@ -1,10 +1,12 @@
 from __future__ import annotations
-
+import math
 from typing import Any
 
 import pytest
 
-from carm_roofline.gui.callbacks.helpers import clicked_point_residency, selection_payload
+from carm_roofline.gui.callbacks.helpers import selection_payload
+from carm_roofline.gui.callbacks.roofline import _point_guide_shapes
+
 
 pytestmark = pytest.mark.unit
 
@@ -71,87 +73,95 @@ def test_paraver_time_slider_marks_are_readable() -> None:
     assert "0.066146038" not in marks.values()
 
 
-def test_clicked_point_residency_parses_customdata() -> None:
-    """clickData payloads map to (roof_id, fractions); invalid payloads return None."""
-    assert clicked_point_residency(None) is None
-    assert clicked_point_residency({}) is None
-    assert clicked_point_residency({"points": []}) is None
-    valid = {
-        "points": [
-            {
-                "customdata": [
-                    "<b>tooltip</b>",
-                    {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02},
-                    "r1",
-                ]
-            }
-        ]
-    }
-    assert clicked_point_residency(valid) == ("r1", {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02})
-    # 3-bucket schema: keys pass through untouched (no shape assumption in parsing).
-    valid_3key = {
-        "points": [
-            {
-                "customdata": [
-                    "<b>tooltip</b>",
-                    {"l1": 0.6, "l2": 0.3, "l3plus": 0.1},
-                    "r1",
-                ]
-            }
-        ]
-    }
-    assert clicked_point_residency(valid_3key) == ("r1", {"l1": 0.6, "l2": 0.3, "l3plus": 0.1})
-    # missing element 2 -> None
-    assert clicked_point_residency({"points": [{"customdata": ["t", {}]}]}) is None
-    # non-str roof id -> None
-    assert clicked_point_residency({"points": [{"customdata": ["t", {"l1": 0.6}, 42]}]}) is None
-    # empty fractions dict -> None
-    assert clicked_point_residency({"points": [{"customdata": ["t", {}, "r1"]}]}) is None
-    # non-dict fractions -> None
-    assert clicked_point_residency({"points": [{"customdata": ["t", "residency", "r1"]}]}) is None
-    # customdata not a list -> None
-    assert clicked_point_residency({"points": [{"customdata": "nope"}]}) is None
-
-
-def test_selection_payload_clears_on_background_click() -> None:
-    """A background-click trigger clears the selection even when clickData holds an old point."""
-    valid_click = {
-        "points": [
-            {
-                "customdata": [
-                    "<b>tooltip</b>",
-                    {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02},
-                    "r1",
-                ]
-            }
-        ]
+def test_selection_payload_parses_application_identity_and_clears_background() -> None:
+    """Application clicks preserve identity without requiring residency data."""
+    customdata = ["<b>tooltip</b>", {}, "r1", "app-1", 0]
+    valid_click = {"points": [{"customdata": customdata}]}
+    assert selection_payload(valid_click, "roofline-plot.clickData", None) == {
+        "roof_id": "r1",
+        "fractions": {},
+        "app_id": "app-1",
+        "point_index": 0,
     }
     assert selection_payload(valid_click, "roofline-bg-click.value", {"roof_id": "r1"}) is None
     assert selection_payload(None, "roofline-bg-click.value", None) is None
-    assert selection_payload(valid_click, "roofline-plot.clickData", None) == {
-        "roof_id": "r1",
-        "fractions": {"l1": 0.6, "l2": 0.3, "l3": 0.08, "dram": 0.02},
-    }
-    # 3-bucket schema: fractions pass through untouched.
-    valid_click_3key = {
-        "points": [
+    assert selection_payload(None, "roofline-plot.clickData", {"roof_id": "r1"}) == {"roof_id": "r1"}
+    assert selection_payload({"points": [{"customdata": ["t", {}, "r1", "", 0]}]}, "plot.clickData", None) is None
+    assert selection_payload({"points": [{"customdata": ["t", {}, "r1", "app-1", -1]}]}, "plot.clickData", None) is None
+    assert selection_payload({"points": [{"customdata": ["t", {}, "r1"]}]}, "plot.clickData", None) is None
+
+
+def test_point_guide_shapes_follow_stable_identity_and_visible_roof_ceiling() -> None:
+    figure = {
+        "data": [
             {
-                "customdata": [
-                    "<b>tooltip</b>",
-                    {"l1": 0.6, "l2": 0.3, "l3plus": 0.1},
-                    "r1",
-                ]
-            }
-        ]
+                "meta": {"carm_role": "application", "roof_id": "r1", "app_id": "app-1"},
+                "x": [2.0, 4.0],
+                "y": [1.5, 1.0],
+            },
+            {
+                "meta": {"carm_role": "roof-ceiling"},
+                "legendgroup": "r1",
+                "name": "visible roof",
+                "x": [1.0, 5.0],
+                "y": [10.0, 10.0],
+            },
+            {
+                "meta": {"carm_role": "roof-ceiling"},
+                "legendgroup": "r1",
+                "name": "sloped ceiling",
+                "x": [1.0, 5.0],
+                "y": [3.0, 15.0],
+            },
+            {
+                "meta": {"carm_role": "roof-ceiling"},
+                "legendgroup": "r2",
+                "name": "hidden roof",
+                "visible": "legendonly",
+                "x": [1.0, 5.0],
+                "y": [100.0, 100.0],
+            },
+        ],
+        "layout": {
+            "meta": {"carm_selected_point": {"roof_id": "r1", "app_id": "app-1", "point_index": 1}},
+            "yaxis": {"range": [0.0, 3.0]},
+            "shapes": [],
+        },
     }
-    assert selection_payload(valid_click_3key, "roofline-plot.clickData", None) == {
-        "roof_id": "r1",
-        "fractions": {"l1": 0.6, "l2": 0.3, "l3plus": 0.1},
+    hover = {"points": [{"curveNumber": 2, "pointNumber": 0, "customdata": ["tip", {}, "r1", "app-1", 0]}]}
+
+    shapes = _point_guide_shapes(figure, hover)
+
+    assert [(shape["name"], shape["x0"]) for shape in shapes] == [
+        ("carm-hover-guide", 2.0),
+        ("carm-selected-guide", 4.0),
+    ]
+    assert shapes[0]["y1"] == pytest.approx(1 / 3)
+    assert shapes[1]["y1"] == pytest.approx(math.log10(12) / 3)
+
+def test_point_guide_shapes_clear_hover_but_keep_selected_and_drop_stale_points() -> None:
+    figure = {
+        "data": [
+            {
+                "meta": {"carm_role": "application", "roof_id": "r1", "app_id": "app-1"},
+                "x": [2.0],
+                "y": [1.5],
+            },
+            {
+                "meta": {"carm_role": "roof-ceiling"},
+                "legendgroup": "r1",
+                "name": "roof",
+                "x": [1.0, 5.0],
+                "y": [10.0, 10.0],
+            },
+        ],
+        "layout": {
+            "meta": {"carm_selected_point": {"roof_id": "r1", "app_id": "app-1", "point_index": 0}},
+            "yaxis": {"range": [0.0, 3.0]},
+            "shapes": [],
+        },
     }
-    # Echo of the callback's own clickData reset keeps the current selection.
-    assert selection_payload(None, "roofline-plot.clickData", {"roof_id": "r1", "fractions": {"l1": 0.6}}) == {
-        "roof_id": "r1",
-        "fractions": {"l1": 0.6},
-    }
-    # non-app point (no customdata) -> None
-    assert selection_payload({"points": [{"x": 1, "y": 2}]}, "roofline-plot.clickData", None) is None
+
+    assert [shape["name"] for shape in _point_guide_shapes(figure, None)] == ["carm-selected-guide"]
+    stale_hover = {"points": [{"customdata": ["tip", {}, "removed-roof", "app-1", 0]}]}
+    assert [shape["name"] for shape in _point_guide_shapes(figure, stale_hover)] == ["carm-selected-guide"]

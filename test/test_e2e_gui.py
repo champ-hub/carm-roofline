@@ -126,7 +126,19 @@ def results_dir(tmp_path: Path) -> Path:
                 "flops_per_second": 2_000_000_000,
                 "bandwidth": 500_000_000,
                 "optional_fractions": {"cache-residency": {"l1": 0.7, "dram": 0.3}},
-            }
+            },
+            {
+                "label": "second-region",
+                "total_flops": 2_000_000_000,
+                "total_bytes": 2_000_000_000,
+                "runtime_s": 1.0,
+                "num_ranks": 1,
+                "num_threads": 2,
+                "num_regions": 1,
+                "arithmetic_intensity": 1.0,
+                "flops_per_second": 1_000_000_000,
+                "bandwidth": 1_000_000_000,
+            },
         ],
     }
     (machine_dir / "applications.jsonl").write_text(json.dumps(application) + "\n", encoding="utf-8")
@@ -308,8 +320,8 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
     points = _marker_traces(figure)
     assert any("solver" in trace.get("name", "") for trace in points), figure["data"]
     app_trace = next(trace for trace in points if "solver" in trace.get("name", ""))
-    assert app_trace["x"] == [4.0]
-    assert app_trace["y"] == [2.0]
+    assert app_trace["x"] == [4.0, 1.0]
+    assert app_trace["y"] == [2.0, 1.0]
     assert any(trace.get("mode") == "lines" for trace in figure["data"])
 
     # Click the actual rendered profile point, then clear it through the background-click control.
@@ -328,6 +340,8 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
         changed_id=f"{PlotAreaID.ROOFLINE_PLOT}.clickData",
     )
     selected = selection_response[str(StoreID.SELECTED_POINT)]["data"]
+    assert selected["app_id"] == app_id
+    assert selected["point_index"] == 0
     assert selected["roof_id"] == roof_index
     assert selected["fractions"] == {"l1": 0.7, "dram": 0.3}
     selected_plot = _dispatch(
@@ -343,6 +357,11 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
         changed_id=f"{StoreID.SELECTED_POINT}.data",
     )
     selected_figure = _figure_from_response(selected_plot)
+    assert selected_figure["layout"]["meta"]["carm_selected_point"] == {
+        "roof_id": roof_index,
+        "app_id": app_id,
+        "point_index": 0,
+    }
     selected_lines = [
         trace
         for trace in selected_figure["data"]
@@ -355,6 +374,46 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
     assert any(width == pytest.approx(5.0625) for width in line_widths)
     assert any(width == pytest.approx(2.8125) for width in line_widths)
 
+    # A point without residency remains selected without changing roof emphasis.
+    click_payload = {"points": [{"customdata": app_trace["customdata"][1]}]}
+    no_residency_response = _dispatch(
+        app,
+        client,
+        layout,
+        str(StoreID.SELECTED_POINT),
+        "data",
+        overrides={
+            str(PlotAreaID.ROOFLINE_PLOT): click_payload,
+            str(PlotAreaID.BG_CLICK_CLEAR): "0",
+            str(StoreID.SELECTED_POINT): selected,
+        },
+        changed_id=f"{PlotAreaID.ROOFLINE_PLOT}.clickData",
+    )
+    no_residency = no_residency_response[str(StoreID.SELECTED_POINT)]["data"]
+    assert no_residency == {"roof_id": roof_index, "fractions": {}, "app_id": app_id, "point_index": 1}
+    no_residency_figure = _figure_from_response(
+        _dispatch(
+            app,
+            client,
+            layout,
+            str(PlotAreaID.ROOFLINE_PLOT),
+            "figure",
+            overrides={**roof_input_overrides, str(StoreID.SELECTED_POINT): no_residency},
+            changed_id=f"{StoreID.SELECTED_POINT}.data",
+        )
+    )
+    assert no_residency_figure["layout"]["meta"]["carm_selected_point"] == {
+        "roof_id": roof_index,
+        "app_id": app_id,
+        "point_index": 1,
+    }
+    no_residency_lines = [
+        trace
+        for trace in no_residency_figure["data"]
+        if trace.get("mode") == "lines" and trace.get("legendgroup") == roof_index
+    ]
+    assert all("opacity" not in trace for trace in no_residency_lines)
+
     clear_response = _dispatch(
         app,
         client,
@@ -364,7 +423,7 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
         overrides={
             str(PlotAreaID.ROOFLINE_PLOT): click_payload,
             str(PlotAreaID.BG_CLICK_CLEAR): "1",
-            str(StoreID.SELECTED_POINT): selected,
+            str(StoreID.SELECTED_POINT): no_residency,
         },
         changed_id=f"{PlotAreaID.BG_CLICK_CLEAR}.value",
     )
@@ -381,6 +440,7 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
         },
         changed_id=f"{StoreID.SELECTED_POINT}.data",
     )
+    assert _figure_from_response(cleared_plot)["layout"]["meta"]["carm_selected_point"] is None
     assert _figure_from_response(cleared_plot) == figure
 
     # Normalize by the two-thread roof; the application point moves from 2 to 1 GFLOP/s.
@@ -417,7 +477,7 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
         for trace in _marker_traces(_figure_from_response(normalized_plot))
         if "solver" in trace.get("name", "")
     )
-    assert normalized_point["y"] == [1.0]
+    assert normalized_point["y"] == [1.0, 0.5]
     assert json.loads(settings_path.read_text(encoding="utf-8"))["normalize_by_threads"] is True
     assert any(trace.get("fill") == "toself" for trace in _figure_from_response(normalized_plot)["data"])
 

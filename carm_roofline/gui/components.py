@@ -1059,6 +1059,7 @@ def build_plot_area(
             PlotAreaID.ROOFLINE_PLOT,
             figure=build_roofline_figure([], []),
             config={"responsive": True, "toImageButtonOptions": {"format": "svg", "filename": "roofline"}},
+            clear_on_unhover=mode.show_app_dropdown,
         ),
     ]
     if not mode.show_time_slider:
@@ -1208,11 +1209,17 @@ def dcc_input(
     return html.Div(dcc.Input(**kwargs))
 
 
-def dcc_graph(id_: str, figure: Any, config: Any = None) -> html.Div:
+def dcc_graph(id_: str, figure: Any, config: Any = None, clear_on_unhover: bool = False) -> html.Div:
     """A dcc.Graph wrapped in a div."""
 
     return html.Div(
-        dcc.Graph(id=id_, figure=figure, style={"height": "100%"}, config=config),
+        dcc.Graph(
+            id=id_,
+            figure=figure,
+            style={"height": "100%"},
+            config=config,
+            clear_on_unhover=clear_on_unhover,
+        ),
         style={"flex": "1", "height": "100%"},
     )
 

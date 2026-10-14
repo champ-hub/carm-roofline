@@ -536,6 +536,7 @@ def build_roofline_figure(
     settings: GUISettings | None = None,
     selected_roof_id: str | None = None,
     selected_residency: dict[str, float] | None = None,
+    selected_point: dict[str, Any] | None = None,
 ) -> go.Figure:
     """Build a Plotly roofline figure from real benchmark records.
 
@@ -555,6 +556,7 @@ def build_roofline_figure(
     marker_base_size = s.marker_base_size
     fig = go.Figure()
     models, x_range, y_range, y_min_gops = _prepare_roof_figure_data(roofs, records, s)
+    emitted_application_points: set[tuple[str, str, int]] = set()
 
     # Compute runtime range for marker-size normalization
     runtime_min = float("inf")
@@ -589,7 +591,7 @@ def build_roofline_figure(
         color = _COLORS[idx % len(_COLORS)]
         divisor = roof_divisor(roof, s)
 
-        if selected_roof_id is None or selected_residency is None:
+        if selected_roof_id is None or not selected_residency:
             level_fractions: dict[str, float] | None = None
         elif roof.id == selected_roof_id:
             level_fractions = _residency_to_level_fractions(
@@ -629,9 +631,14 @@ def build_roofline_figure(
                         _format_point_tooltip(rec, p, roof.num_threads),
                         p.optional_fractions.get("cache-residency", {}),
                         roof.id,
+                        app_id,
+                        point_index,
                     ]
-                    for p in rec.points
+                    for point_index, p in enumerate(rec.points)
                 ]
+                emitted_application_points.update(
+                    (roof.id, app_id, point_index) for point_index in range(len(rec.points))
+                )
                 display_labels = ["!" if m else None for m in mismatches]
                 fig.add_trace(
                     go.Scatter(
@@ -646,6 +653,7 @@ def build_roofline_figure(
                         name=rec.label,
                         legendgroup=roof.id,
                         showlegend=True,
+                        meta={"carm_role": "application", "roof_id": roof.id, "app_id": app_id},
                         marker={
                             "color": color,
                             "symbol": app_symbol[app_id],
@@ -660,6 +668,26 @@ def build_roofline_figure(
                         hovertemplate="%{customdata[0]}<extra></extra>",
                     )
                 )
+    selected_identity: dict[str, Any] | None = None
+    if selected_point is not None:
+        identity_roof_id = selected_point.get("roof_id")
+        identity_app_id = selected_point.get("app_id")
+        point_index = selected_point.get("point_index")
+        if (
+            isinstance(identity_roof_id, str)
+            and isinstance(identity_app_id, str)
+            and isinstance(point_index, int)
+            and not isinstance(point_index, bool)
+            and (identity_roof_id, identity_app_id, point_index) in emitted_application_points
+        ):
+            selected_identity = {
+                "roof_id": identity_roof_id,
+                "app_id": identity_app_id,
+                "point_index": point_index,
+            }
+    layout_meta = dict(fig.layout.meta) if isinstance(fig.layout.meta, dict) else {}
+    layout_meta["carm_selected_point"] = selected_identity
+    fig.update_layout(meta=layout_meta)
     _crop_legend_names(fig, s.legend_label_length)
     _finalize_axes_and_layout(fig, x_range, y_range, s)
     return fig
@@ -898,6 +926,7 @@ def _add_roof_ceilings(
                 hoverinfo="skip",
                 showlegend=_first,
                 **trace_opts,
+                meta={"carm_role": "roof-ceiling"},
             )
         )
         _first = False
@@ -931,6 +960,7 @@ def _add_roof_ceilings(
                 line={"color": color, **line_style},
                 hoverinfo="skip",
                 showlegend=_first,
+                meta={"carm_role": "roof-ceiling"},
                 **compute_trace_opts,
             )
         )

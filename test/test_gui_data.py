@@ -217,10 +217,41 @@ def test_build_roofline_figure_renders_application_points() -> None:
     assert "Work" in markers[0].customdata[0][0]
     assert "  Arithmetic Intensity: 0.500 OPS/Byte" in markers[0].customdata[0][0]
     assert "  Duration:" in markers[0].customdata[0][0]
-    # customdata[1] is the per-point cache-residency profile; customdata[2] the roof id
+    # customdata preserves tooltip/residency/roof fields and adds application identity.
     assert markers[0].customdata[0][1] == {}
-    assert markers[0].customdata[0][2] == "r1"
+    assert markers[0].customdata[0][2:] == ["r1", "r1", 0]
+    assert markers[0].meta == {"carm_role": "application", "roof_id": "r1", "app_id": "r1"}
     assert markers[0].hovertemplate == "%{customdata[0]}<extra></extra>"
+
+
+def test_build_roofline_figure_validates_selected_application_identity() -> None:
+    """The layout keeps only a selected point that the figure actually emits."""
+    point = ApplicationPoint(
+        label="p1",
+        total_flops=1e9,
+        total_bytes=1e6,
+        runtime_s=0.5,
+        num_ranks=1,
+        num_threads=1,
+        num_regions=1,
+        arithmetic_intensity=0.5,
+        flops_per_second=2e9,
+        bandwidth=1e9,
+    )
+    rec = ApplicationRecord(
+        id="app-1", label="run", aggregation="global", metadata={}, machine="test_machine", points=[point]
+    )
+    roof = RoofConfig(roof_id="roof-1", app_ids=["app-1"])
+    selected = {"roof_id": "roof-1", "app_id": "app-1", "point_index": 0, "fractions": {}}
+    fig = build_roofline_figure([roof], [], {"app-1": rec}, selected_point=selected)
+    assert fig.layout.meta["carm_selected_point"] == {"roof_id": "roof-1", "app_id": "app-1", "point_index": 0}
+    assert build_roofline_figure([roof], [], {"app-1": rec}, selected_point={**selected, "point_index": 1}).layout.meta[
+        "carm_selected_point"
+    ] is None
+    removed_roof = build_roofline_figure([], [], {"app-1": rec}, selected_point=selected)
+    assert removed_roof.layout.meta["carm_selected_point"] is None
+    removed_app = build_roofline_figure([roof], [], {}, selected_point=selected)
+    assert removed_app.layout.meta["carm_selected_point"] is None
 
 
 def test_build_roofline_figure_normalize_by_threads() -> None:
@@ -1443,6 +1474,11 @@ def test_selection_emphasis_defaults_without_selection() -> None:
     line2 = _memory_line(fig2, "r1", "L1")
     assert line2.line.width == pytest.approx(1.5 * 1.5)
     assert line2.opacity is None
+    # A valid selected roof with no residency also keeps the default styling.
+    fig_empty_selection = build_roofline_figure([roof], records, selected_roof_id="r1", selected_residency={})
+    empty_selection_line = _memory_line(fig_empty_selection, "r1", "L1")
+    assert empty_selection_line.line.width == pytest.approx(1.5 * 1.5)
+    assert empty_selection_line.opacity is None
     # A stale roof id (no longer in the roof list) also falls back to defaults.
     fig3 = build_roofline_figure(
         [roof],

@@ -23,36 +23,39 @@ def parse_trigger_id() -> dict[str, Any]:
         return {}
 
 
-def clicked_point_residency(click_data: dict[str, Any] | None) -> tuple[str, dict[str, float]] | None:
-    """Return a roof ID and residency fractions when clickData identifies an application point."""
-    if not click_data:
-        return None
-    points = click_data.get("points") or []
-    if not points:
-        return None
-    customdata = points[0].get("customdata")
-    if not isinstance(customdata, list) or len(customdata) != 3 or not customdata[1]:
-        return None
-    roof_id, fractions = customdata[2], customdata[1]
-    if not isinstance(roof_id, str) or not isinstance(fractions, dict):
-        return None
-    return roof_id, {key: float(value) for key, value in fractions.items()}
-
-
 def selection_payload(
     click_data: dict[str, Any] | None,
     triggered_prop_id: str,
     current_selection: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
-    """Return selected roof data, preserving selection on callback echoes and clearing on background clicks."""
+    """Return selected application identity and residency, or clear on background clicks."""
     if triggered_prop_id.startswith(f"{PlotAreaID.BG_CLICK_CLEAR}."):
         return None
     if click_data is None:
         return current_selection
-    clicked = clicked_point_residency(click_data)
-    if clicked is None:
+    points = click_data.get("points")
+    if not isinstance(points, list) or not points or not isinstance(points[0], dict):
         return None
-    return {"roof_id": clicked[0], "fractions": clicked[1]}
+    customdata = points[0].get("customdata")
+    if not isinstance(customdata, list) or len(customdata) != 5:
+        return None
+    fractions, roof_id, app_id, point_index = customdata[1:]
+    if (
+        not isinstance(fractions, dict)
+        or not isinstance(roof_id, str)
+        or not roof_id
+        or not isinstance(app_id, str)
+        or not app_id
+        or not isinstance(point_index, int)
+        or isinstance(point_index, bool)
+        or point_index < 0
+    ):
+        return None
+    try:
+        parsed_fractions = {key: float(value) for key, value in fractions.items()}
+    except (TypeError, ValueError):
+        return None
+    return {"roof_id": roof_id, "fractions": parsed_fractions, "app_id": app_id, "point_index": point_index}
 
 
 def get_trigger_index() -> int:
