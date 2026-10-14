@@ -240,7 +240,7 @@ _SLIDER_CONTROLS: list[tuple[str, str, str, dict[str, Any]]] = [
     ),
 ]
 
-# Paraver AI-filter slider. Positions are log10(ai threshold in OPS/Byte),
+# Paraver AI-filter slider. Positions are log10(ai threshold in FLOPS/Byte),
 # derived from the canonical filter constants in providers.py so the slider
 # geometry can never drift from the filter semantics.
 AI_FILTER_LOG_MIN = math.log10(AI_FILTER_OFF_AI)  # leftmost position: filtering off
@@ -735,7 +735,7 @@ def build_export_panel(store: RoofStore) -> html.Div:
                         item_id="export",
                         children=[
                             _export_row(
-                                "Performance (GFLOPS)",
+                                "Performance (GFLOPS/s)",
                                 ExportPanelID.BTN_EXPORT_PERFORMANCE,
                                 ExportPanelID.STATUS_PERFORMANCE,
                             ),

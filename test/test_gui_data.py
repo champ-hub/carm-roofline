@@ -243,7 +243,7 @@ def test_build_roofline_figure_renders_application_points() -> None:
     assert "Performance" in markers[0].customdata[0][0]
     assert "Execution" in markers[0].customdata[0][0]
     assert "Work" in markers[0].customdata[0][0]
-    assert "  Arithmetic Intensity: 0.500 OPS/Byte" in markers[0].customdata[0][0]
+    assert "  Arithmetic Intensity: 0.500 FLOPS/Byte" in markers[0].customdata[0][0]
     assert "  Duration:" in markers[0].customdata[0][0]
     # customdata preserves tooltip/residency/roof fields and adds application identity.
     assert markers[0].customdata[0][1] == {}

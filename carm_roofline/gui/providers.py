@@ -266,7 +266,7 @@ def filter_trace_by_window(trace: pd.DataFrame, window: tuple[float, float] | No
     return trace[(time_s >= lo) & (time_s <= hi)]
 
 
-# The GUI slider positions are log10(ai threshold in OPS/Byte); components.py
+# The GUI slider positions are log10(ai threshold in FLOPS/Byte); components.py
 # derives its slider geometry from these constants.
 AI_FILTER_OFF_AI = 1e-6  # thresholds at or below this disable filtering (slider leftmost)
 AI_FILTER_DEFAULT_AI = 1e-5  # default filter threshold (slider default position)
@@ -385,13 +385,13 @@ def _format_paraver_tooltip(label: str, row: TraceRow, state_label: str | None) 
         parts += ["<b>Paraver Value</b>", f"  {shown}"]
     parts += [
         "<b>Performance</b>",
-        f"  Arithmetic Intensity: {float(row.ai):.3f} OPS/Byte",
+        f"  Arithmetic Intensity: {float(row.ai):.3f} FLOPS/Byte",
         f"  Performance: {Performance(float(row.perf))!s}",
         f"  Bandwidth: {Bandwidth(float(row.bytes) / dur if dur > 0 else 0.0)!s}",
         "<b>Execution</b>",
         f"  Duration: {Seconds(dur)!s}",
         "<b>Work</b>",
-        f"  Total FLOPs: {Operations(int(row.flops))!s}",
+        f"  Total FLOPs: {str(Operations(int(row.flops))).replace('OPS', 'FLOPS')}",
         f"  Total Bytes: {Bytes(int(row.bytes))!s}",
         _load_store_pct_line(float(row.load_share)),
         _isa_pct_line(row),

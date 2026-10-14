@@ -11,7 +11,7 @@ Supported unit types:
   - Bytes: Memory sizes (cache, memory targets) with binary prefixes (KiB, MiB, GiB, ...)
   - Frequency: Clock frequencies with decimal prefixes (kHz, MHz, GHz, ...)
   - Bandwidth: Memory bandwidth in GB/s
-  - Performance: Arithmetic performance in GOPS (billion OPS/sec)
+  - Performance: Arithmetic performance in GFLOPS/s (billion FLOPS/sec)
   - Timing: Execution time in milliseconds
   - ArithmeticIntensity: FLOP/byte ratio (unitless)
 """
@@ -301,7 +301,7 @@ class Operations(IntUnit):
 
 
 class ArithmeticIntensity(FloatUnit):
-    """Represents arithmetic intensity in OPS/byte."""
+    """Represents arithmetic intensity in FLOP/byte."""
 
     _base_unit = "FLOP/B"
     _prefixes = _make_prefixes(1000.0, ["k", "M", "G", "T"])
@@ -339,7 +339,7 @@ class Bandwidth(FloatUnit):
 class Performance(FloatUnit):
     """Represents performance in arithmetic operations per second."""
 
-    _base_unit = "OPS/s"
+    _base_unit = "FLOPS/s"
     _prefixes = _make_prefixes(1000.0, ["k", "M", "G", "T"])
 
     @classmethod

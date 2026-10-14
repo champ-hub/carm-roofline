@@ -196,7 +196,9 @@ class ParaverState:
     """Per-session paraver view state. Not persisted to gui-settings.json."""
 
     time_window: tuple[float, float] | None = None  # (lo, hi) seconds; None = full range
-    ai_threshold: float | None = AI_FILTER_DEFAULT_AI  # OPS/Byte; 1e-5 default; None = filter off (slider at leftmost)
+    ai_threshold: float | None = (
+        AI_FILTER_DEFAULT_AI  # FLOPS/Byte; 1e-5 default; None = filter off (slider at leftmost)
+    )
     duration_threshold: float | None = DURATION_FILTER_DEFAULT_S  # s; 100 us default; None = off (slider at leftmost)
     color_mode: str = COLOR_MODE_PARAVER
 
@@ -451,14 +453,14 @@ def _format_point_tooltip(rec: ApplicationRecord, p: ApplicationPoint, roof_num_
         f"<b>{rec.label}</b>",
         f"<i>{p.label}</i>",
         "<b>Performance</b>",
-        f"  Arithmetic Intensity: {p.arithmetic_intensity:.3f} OPS/Byte",
+        f"  Arithmetic Intensity: {p.arithmetic_intensity:.3f} FLOPS/Byte",
         f"  Performance: {Performance(p.flops_per_second)!s}",
         f"  Bandwidth: {Bandwidth(p.bandwidth)!s}",
         "<b>Execution</b>",
         threads_line,
         f"  Duration: {Seconds(p.runtime_s)!s}",
         "<b>Work</b>",
-        f"  Total FLOPs: {Operations(int(p.total_flops))!s}",
+        f"  Total FLOPs: {str(Operations(int(p.total_flops))).replace('OPS', 'FLOPS')}",
         f"  Total Bytes: {Bytes(int(p.total_bytes))!s}",
         f"  Regions: {p.num_regions}",
     ]
@@ -770,8 +772,8 @@ def _add_mixed_benchmark_traces(
                     f"<b>Operation:</b> {operation}<br>"
                     f"<b>Memory level:</b> {cache_level}<br>"
                     "<b>Benchmark:</b> %{customdata[0]}<br>"
-                    "Arithmetic intensity: %{x:.3g} OPS/Byte<br>"
-                    "Performance: %{y:.3g} GOPS/s<extra></extra>"
+                    "Arithmetic intensity: %{x:.3g} FLOPS/Byte<br>"
+                    "Performance: %{y:.3g} GFLOPS/s<extra></extra>"
                 ),
             )
         )
@@ -983,8 +985,8 @@ def _add_roof_ceilings(
                             f"<b>{roof.label}</b><br>"
                             f"{op_name} x {level}<br>"
                             f"<b>Ridge Point</b><br>"
-                            f"  Arithmetic Intensity: {ridge_ai:.2f} OPS/Byte<br>"
-                            f"  Performance: {gops:.1f} GOPS/s<br>"
+                            f"  Arithmetic Intensity: {ridge_ai:.2f} FLOPS/Byte<br>"
+                            f"  Performance: {gops:.1f} GFLOPS/s<br>"
                             f"  Bandwidth: {bw / roof_divisor!s}"
                         ),
                         showlegend=False,
@@ -1026,7 +1028,7 @@ def _finalize_axes_and_layout(
 
     # Apply 2^N tick formatting when enabled
     xaxis: dict[str, object] = {
-        "title": "Arithmetic Intensity (OPS/Byte)",
+        "title": "Arithmetic Intensity (FLOPS/Byte)",
         "type": "log",
         "dtick": LOG10_2,
         "tick0": 0,
@@ -1035,7 +1037,7 @@ def _finalize_axes_and_layout(
         "range": x_range,
     }
     yaxis: dict[str, object] = {
-        "title": "Performance (GOPS/s)",
+        "title": "Performance (GFLOPS/s)",
         "type": "log",
         "dtick": LOG10_2,
         "tick0": 0,
