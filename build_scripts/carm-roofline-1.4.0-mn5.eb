@@ -2,7 +2,7 @@ easyblock = "PythonBundle"
 
 name = "carm-roofline"
 version = "1.4.0"
-versionsuffix = "-mn5-py39"
+versionsuffix = "-mn5"
 
 homepage = "https://github.com/champ-hub/carm-roofline"
 
@@ -12,22 +12,11 @@ with the Cache-Aware Roofline Model
 """
 
 toolchain = SYSTEM
-# The companion metadata maps the lowercase Python module to EasyBuild's Python.
 dependencies = [
-    ("hdf5/1.14.1-2-gcc", EXTERNAL_MODULE),
-    ("mkl/2023.2.0", EXTERNAL_MODULE),
-    ("impi/2021.10.0", EXTERNAL_MODULE),
-    ("python/3.9.16-gcc", EXTERNAL_MODULE),
+    ("EB/apps", EXTERNAL_MODULE),
+    ("foss/2025b", EXTERNAL_MODULE),
+    ("Python/3.13.5-GCCcore-14.3.0", EXTERNAL_MODULE),
 ]
-
-# Ignore user-site packages. They can conflict with this isolated application module.
-modluafooter = '''
-setenv("PYTHONNOUSERSITE", "1")
-depends_on("hdf5/1.14.1-2-gcc")
-depends_on("mkl/2023.2.0")
-depends_on("impi/2021.10.0")
-depends_on("python/3.9.16-gcc")
-'''
 
 use_pip = True
 sanity_pip_check = True
@@ -40,10 +29,10 @@ exts_default_options = {
 exts_list = [
     (
         "matplotlib",
-        "3.9.4",
+        "3.10.5",
         {
-            "source_tmpl": "matplotlib-%(version)s-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-            "checksums": ["57aa235109e9eed52e2c2949db17da185383fa71083c00c6c143a60e07e0888c"],
+            "source_tmpl": "matplotlib-%(version)s-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+            "checksums": ["d52fd5b684d541b5a51fb276b2b97b010c75bee9aa392f96b4a07aeb491e33c7"],
         },
     ),
     (
@@ -58,8 +47,8 @@ exts_list = [
         "pandas",
         "2.3.3",
         {
-            "source_tmpl": "pandas-%(version)s-cp39-cp39-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
-            "checksums": ["bf1f8a81d04ca90e32a0aceb819d34dbd378a98bf923b6398b9a3ec0bf44de29"],
+            "source_tmpl": "pandas-%(version)s-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+            "checksums": ["318d77e0e42a628c04dc56bcef4b40de67918f7041c2b061af1da41dcff670ac"],
         },
     ),
     (
@@ -82,8 +71,8 @@ exts_list = [
         "tomli",
         "2.4.1",
         {
-            "source_tmpl": "tomli-%(version)s-py3-none-any.whl",
-            "checksums": ["0d85819802132122da43cb86656f8d1f8c6587d54ae7dcaf30e90533028b49fe"],
+            "source_tmpl": "tomli-%(version)s-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+            "checksums": ["f3c6818a1a86dd6dca7ddcaaf76947d5ba31aecc28cb1b67009a5877c9a64f3f"],
         },
     ),
     (
@@ -141,7 +130,6 @@ exts_list = [
             "source_urls": ["https://github.com/champ-hub/carm-roofline/archive/refs/tags"],
             "source_tmpl": "v%(version)s.tar.gz",
             "checksums": ["f3908a87da5f2d1b2c18eae8897f2f0fda0a30ca7ce0d4e4a51982f730b1be95"],
-            "preinstallopts": "pip install --no-build-isolation --prefix=%(installdir)s 'setuptools>=64.0' 'wheel' && ",
             "use_pip_for_deps": False,
         },
     ),
