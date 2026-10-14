@@ -561,11 +561,11 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
         str(StoreID.ROOF_STORE),
         "data",
         overrides={
-            str(SettingsPanelID.SWITCH_SHOW_ROOF_FILLS): False,
+            str(SettingsPanelID.DROPDOWN_ROOF_FILL_MODE): "none",
             str(StoreID.ROOF_STORE): normalized_store,
         },
-        changed_id=f"{SettingsPanelID.SWITCH_SHOW_ROOF_FILLS}.value",
-        input_id=str(SettingsPanelID.SWITCH_SHOW_ROOF_FILLS),
+        changed_id=f"{SettingsPanelID.DROPDOWN_ROOF_FILL_MODE}.value",
+        input_id=str(SettingsPanelID.DROPDOWN_ROOF_FILL_MODE),
     )
     appearance_store = appearance_response[str(StoreID.ROOF_STORE)]["data"]
     appearance_plot = _dispatch(
@@ -583,7 +583,7 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
         changed_id=f"{StoreID.ROOF_STORE}.data",
     )
     assert all(trace.get("fill") != "toself" for trace in _figure_from_response(appearance_plot)["data"])
-    assert json.loads(settings_path.read_text(encoding="utf-8"))["show_roof_fills"] is False
+    assert json.loads(settings_path.read_text(encoding="utf-8"))["roof_fill_mode"] == "none"
 
     # Adding a roof card and configuring a second thread count creates a visible comparison roof.
     add_roof_response = _dispatch(

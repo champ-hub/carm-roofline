@@ -18,7 +18,7 @@ def register_settings_callbacks(app: dash.Dash) -> None:
         (SettingsPanelID.SLIDER_MARKER_SIZE, "marker_scale_factor", float, 50.0),
         (SettingsPanelID.SLIDER_MARKER_BASE_SIZE, "marker_base_size", float, 50.0),
         (SettingsPanelID.SWITCH_POWER2_TICKS, "power2_ticks", bool, False),
-        (SettingsPanelID.SWITCH_SHOW_ROOF_FILLS, "show_roof_fills", bool, True),
+        (SettingsPanelID.DROPDOWN_ROOF_FILL_MODE, "roof_fill_mode", str, "between"),
         (SettingsPanelID.SWITCH_SHOW_MIXED_BENCHMARKS, "show_mixed_benchmarks", bool, False),
         (SettingsPanelID.SLIDER_LINE_WIDTH, "line_width", float, 1.5),
         (SettingsPanelID.SLIDER_FONT_SIZE_AXIS_LABEL, "axis_label_font_size", int, 14),

@@ -590,6 +590,9 @@ def build_roofline_figure(
     if selected_roof_id is not None and all(r.id != selected_roof_id for r in roofs):
         selected_roof_id = None
 
+    if s.roof_fill_mode == "bound":
+        _add_bound_region_fills(fig, roofs, models, s, x_range, y_range)
+
     for idx, (roof, model) in enumerate(zip(roofs, models)):
         color = _COLORS[idx % len(_COLORS)]
         divisor = roof_divisor(roof, s)
@@ -780,6 +783,103 @@ def _add_mixed_benchmark_traces(
         )
 
 
+def _add_bound_region_fills(
+    fig: go.Figure,
+    roofs: list[RoofConfig],
+    models: list[AssembledRoofline],
+    settings: GUISettings,
+    x_range: list[float],
+    y_range: list[float],
+) -> None:
+    """Shade memory, mixed, and compute regions under the combined roof envelope."""
+    ridge_left: list[float] = []
+    ridge_right: list[float] = []
+    roof_lines: list[tuple[float, float]] = []
+    for roof, model in zip(roofs, models):
+        if not model.bandwidth_by_level or not model.peak_performance_by_op:
+            continue
+        divisor = roof_divisor(roof, settings)
+        bandwidths = [bw.value for bw in model.bandwidth_by_level.values()]
+        peaks = [perf.value for perf in model.peak_performance_by_op.values()]
+        ridge_left.append(min(peaks) / max(bandwidths))
+        ridge_right.append(max(peaks) / min(bandwidths))
+        max_bw = max(bandwidths) / divisor / 1e9
+        roof_lines.extend((max_bw, peak / divisor / 1e9) for peak in peaks)
+    if not ridge_left:
+        return
+
+    left_boundary = min(ridge_left)
+    right_boundary = max(ridge_right)
+    x_min, x_max = 10.0 ** x_range[0], 10.0 ** x_range[1]
+    regions: list[tuple[str, str, float | None, float | None]] = [
+        ("Memory-bound", "rgba(214,39,40,0.12)", None, left_boundary),
+        ("Mixed", "rgba(255,193,7,0.14)", left_boundary, right_boundary),
+        ("Compute-bound", "rgba(44,160,44,0.12)", right_boundary, None),
+    ]
+    fig_meta = dict(fig.layout.meta) if isinstance(fig.layout.meta, dict) else {}
+    fig_meta["carm_bound_region_specs"] = {
+        "regions": [
+            {"label": label, "fill": fill, "min": band_min, "max": band_max}
+            for label, fill, band_min, band_max in regions
+        ],
+        "roof_lines": roof_lines,
+    }
+    fig.update_layout(meta=fig_meta)
+
+    baseline = 10.0 ** y_range[0]
+    max_y = 10.0 ** y_range[1]
+
+    def envelope(intensity: float) -> float:
+        return float(min(max((min(slope * intensity, peak) for slope, peak in roof_lines), default=0.0), max_y))
+
+    for label, fill, region_min, region_max in regions:
+        band_min = max(x_min, region_min) if region_min is not None else x_min
+        band_max = min(x_max, region_max) if region_max is not None else x_max
+        visible = band_max > band_min
+        face_x: list[float] = []
+        top_y: list[float] = []
+        if visible:
+            knots = {band_min, band_max}
+            for slope, _ in roof_lines:
+                for limit in (baseline, max_y):
+                    crossing = limit / slope
+                    if band_min < crossing < band_max:
+                        knots.add(crossing)
+                for _, cap in roof_lines:
+                    crossing = cap / slope
+                    if band_min < crossing < band_max:
+                        knots.add(crossing)
+            face_x = sorted(knots)
+            top_y = [max(baseline, envelope(x)) for x in face_x]
+        fig.add_trace(
+            go.Scatter(
+                x=[*face_x, *reversed(face_x)] if visible else [],
+                y=[*top_y, *([baseline] * len(face_x))] if visible else [],
+                mode="lines",
+                fill="toself",
+                fillcolor=fill,
+                line={"width": 0},
+                showlegend=False,
+                hoverinfo="skip",
+                name="",
+                meta={"carm_role": "bound-region", "bound_region": label},
+            )
+        )
+        center = math.log10(math.sqrt(band_min * band_max)) if visible else 0.0
+        fig.add_annotation(
+            name=f"carm-bound-region:{label}",
+            text=label,
+            x=center,
+            y=0.12,
+            xref="x",
+            yref="paper",
+            yanchor="bottom",
+            showarrow=False,
+            visible=visible,
+            font={"color": fill.rsplit(",", 1)[0] + ",1)", "size": 11},
+        )
+
+
 def _add_roof_ceilings(
     fig: go.Figure,
     roof: RoofConfig,
@@ -800,7 +900,7 @@ def _add_roof_ceilings(
     opacities and unscaled lines.
     """
     line_width = settings.line_width
-    show_roof_fills = settings.show_roof_fills
+    show_roof_fills = settings.roof_fill_mode == "between"
 
     has_bw = bool(model.bandwidth_by_level)
     has_perf = bool(model.peak_performance_by_op)
@@ -1131,6 +1231,9 @@ def build_paraver_figure(
         runtime_max = float(duration_s.max())
         runtime_range = runtime_max - runtime_min
         x_range, y_range = _extend_ranges_to_points(x_range, y_range, trace)
+    if s.roof_fill_mode == "bound":
+        _add_bound_region_fills(fig, roofs, models, s, x_range, y_range)
+
     if has_points:
         assert trace is not None and paraver is not None
         _add_paraver_point_traces(fig, paraver, trace, s, runtime_min, runtime_range, color_mode)

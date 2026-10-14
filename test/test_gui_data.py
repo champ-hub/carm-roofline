@@ -20,6 +20,8 @@ from carm_roofline.gui.data import (
     MAX_LEGEND_LABEL_LENGTH,
     RoofConfig,
     RoofStore,
+    _add_bound_region_fills,
+    _prepare_roof_figure_data,
     _crop_legend_names,
     _format_point_tooltip,
     _residency_alpha,
@@ -45,7 +47,7 @@ def test_empty_roofline_figures_show_faint_logo_only_when_clear() -> None:
         assert len(figure.layout.images) == 1
         image = figure.layout.images[0]
         assert image.source == "/assets/CHAMP_logo.svg"
-        assert image.opacity == 0.15
+        assert image.opacity == 0.1
 
     trace = _paraver_trace()
     trace["legend_label"] = ["Running", "Wait/WaitAll", "Wait/WaitAll"]
@@ -91,6 +93,9 @@ def test_roofstore_round_trip_preserves_all_fields() -> None:
     assert r.actual_frequency_hz == 2500000000
     assert r.app_ids == []
     assert restored.settings.normalize_by_threads is False
+    store.settings.roof_fill_mode = "bound"
+    restored_with_mode = RoofStore.from_dict(store.to_dict())
+    assert restored_with_mode.settings.roof_fill_mode == "bound"
     store.settings.marker_base_size = 25.0
     restored_with_base_size = RoofStore.from_dict(store.to_dict())
     assert restored_with_base_size.settings.marker_base_size == 25.0
@@ -372,6 +377,101 @@ def test_build_roofline_figure_normalize_by_threads() -> None:
     assert list(norm_markers[0].y) == pytest.approx([2.0])
     perf_ceilings_norm = [t for t in fig_norm.data if t.mode == "lines" and t.name.startswith("Test Roof")]
     assert any(t.y[0] == pytest.approx(60.0) for t in perf_ceilings_norm)
+
+
+def test_bound_region_fills_follow_combined_roof_envelope() -> None:
+    """Bound shading adds labeled, clipped bands while no-fill adds none."""
+    records: list[BenchmarkRecord] = [
+        {
+            "type": "arithmetic",
+            "name": operation,
+            "isa": "test_isa",
+            "machine": "test_machine",
+            "data_type": "f32",
+            "num_threads": 1,
+            "operation": operation,
+            "performance_gops": perf,
+            "timestamp": "2026-01-01T00:00:00",
+        }
+        for operation, perf in (("fma", 100.0), ("add", 300.0))
+    ]
+    records.extend(
+        [
+            {
+                "type": "memory",
+                "name": level,
+                "isa": "test_isa",
+                "machine": "test_machine",
+                "data_type": "f32",
+                "num_threads": 1,
+                "load_store_ratio": "2:1",
+                "cache_level": level,
+                "bandwidth_gbps": bandwidth,
+                "timestamp": "2026-01-01T00:00:00",
+            }
+            for level, bandwidth in (("L1", 200.0), ("DRAM", 20.0))
+        ]
+    )
+    roofs = [
+        RoofConfig(
+            label=f"{operation} roof",
+            machine="test_machine",
+            isa="test_isa",
+            num_threads=1,
+            data_type="f32",
+            compute_insts=[operation],
+            load_store_ratio="2:1",
+        )
+        for operation in ("fma", "add")
+    ]
+
+    models, _, _, _ = _prepare_roof_figure_data(roofs, records, GUISettings())
+    ridge_left = [
+        min(perf.value for perf in model.peak_performance_by_op.values())
+        / max(bw.value for bw in model.bandwidth_by_level.values())
+        for model in models
+        if model.bandwidth_by_level and model.peak_performance_by_op
+    ]
+    ridge_right = [
+        max(perf.value for perf in model.peak_performance_by_op.values())
+        / min(bw.value for bw in model.bandwidth_by_level.values())
+        for model in models
+        if model.bandwidth_by_level and model.peak_performance_by_op
+    ]
+    left_boundary, right_boundary = min(ridge_left), max(ridge_right)
+
+    between = build_roofline_figure(roofs, records)
+    bound = build_roofline_figure(roofs, records, settings=GUISettings(roof_fill_mode="bound"))
+    regions = [trace for trace in bound.data if isinstance(trace.meta, dict) and trace.meta.get("carm_role") == "bound-region"]
+    regions_by_name = {trace.meta["bound_region"]: trace for trace in regions}
+    assert list(regions_by_name) == ["Memory-bound", "Mixed", "Compute-bound"]
+    assert all(trace.fill == "toself" for trace in regions)
+    baseline = 10.0**bound.layout.yaxis.range[0]
+    assert all(min(trace.y) == pytest.approx(baseline) for trace in regions)
+
+    mixed = regions_by_name["Mixed"]
+    assert list(mixed.x[:4]) == pytest.approx([left_boundary, 1.5, 3.0, right_boundary])
+    assert list(mixed.y[:4]) == pytest.approx([100.0, 300.0, 300.0, 300.0])
+    annotations = {annotation.text: annotation for annotation in bound.layout.annotations}
+    assert set(annotations) >= {"Memory-bound", "Mixed", "Compute-bound"}
+    assert annotations["Mixed"].x == pytest.approx(math.log10(math.sqrt(left_boundary * right_boundary)))
+    assert list(regions_by_name["Memory-bound"].x)[1] == pytest.approx(left_boundary)
+    assert list(regions_by_name["Compute-bound"].x)[0] == pytest.approx(right_boundary)
+    zoomed_figure = go.Figure()
+    _add_bound_region_fills(
+        zoomed_figure,
+        roofs,
+        models,
+        GUISettings(),
+        [math.log10(0.001), math.log10(0.5)],
+        [math.log10(10.0), math.log10(50.0)],
+    )
+    memory_region = next(trace for trace in zoomed_figure.data if trace.meta["bound_region"] == "Memory-bound")
+    assert list(memory_region.x[:4]) == pytest.approx([0.001, 0.05, 0.25, 0.5])
+    assert list(memory_region.y[:4]) == pytest.approx([10.0, 10.0, 50.0, 50.0])
+    assert len([trace for trace in between.data if trace.fill == "toself"]) == 4
+    no_fill = build_roofline_figure(roofs, records, settings=GUISettings(roof_fill_mode="none"))
+    assert all(trace.fill != "toself" for trace in no_fill.data)
 
 
 def test_build_roofline_figure_mixed_benchmarks_toggle_and_style() -> None:

@@ -671,16 +671,19 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
     ]
 
     # Plot style — everything else
-    plot_style_switches = [
+    plot_style_controls = [
         _build_settings_switch(
             "2^N axis tick labels",
             SettingsPanelID.SWITCH_POWER2_TICKS,
             s.power2_ticks,
         ),
-        _build_settings_switch(
-            "Show roof fills",
-            SettingsPanelID.SWITCH_SHOW_ROOF_FILLS,
-            s.show_roof_fills,
+        _field_row(
+            "Roof fill",
+            dcc_dropdown(
+                SettingsPanelID.DROPDOWN_ROOF_FILL_MODE,
+                [("Between-roof fills", "between"), ("No fill", "none"), ("Bound regions", "bound")],
+                s.roof_fill_mode,
+            ),
         ),
     ]
     plot_style_sliders = [
@@ -703,7 +706,7 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
                     dbc.AccordionItem(
                         title="Plot style",
                         item_id="plot-style",
-                        children=[*plot_style_switches, *plot_style_sliders],
+                        children=[*plot_style_controls, *plot_style_sliders],
                     ),
                 ],
                 always_open=True,
