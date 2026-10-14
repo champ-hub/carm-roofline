@@ -13,6 +13,8 @@ from carm_roofline.benchmark.generation.parameters import BenchParamError, Memor
 from carm_roofline.core import ArithmeticIntensity, ArithmeticOperation, Bytes, DataType, MemoryOperation
 from carm_roofline.isa.base import BaseISA, InlineASM
 
+pytestmark = pytest.mark.unit
+
 
 class DummyISA(BaseISA):
     name = "dummy"

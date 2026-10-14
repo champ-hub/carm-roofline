@@ -136,16 +136,16 @@ addopts = [
     "--strict-markers",
     "--strict-config",
 ]
+filterwarnings = [
+    "ignore::pyparsing.warnings.PyparsingDeprecationWarning",
+]
 
-# Test markers for filtering
+# Test-purpose markers are mutually exclusive; native is an orthogonal runtime requirement.
 markers = [
-    "unit: Fast unit tests for individual components",
-    "integration: Tests involving multiple components or I/O",
-    "slow: Long-running tests (e.g., full benchmark suites)",
-    "golden: Tests comparing against golden reference outputs",
-    "x86: Tests specific to x86 architecture",
-    "arm: Tests specific to ARM architecture",
-    "riscv: Tests specific to RISC-V architecture",
+    "unit: focused tests of individual algorithms, helpers, and models",
+    "integration: tests across component or process boundaries",
+    "e2e: complete user workflows through the CLI, UI, or API",
+    "native: requires compiling and executing generated benchmark code on the host machine",
 ]
 
 [tool.mypy]

@@ -18,6 +18,8 @@ from carm_roofline.benchmark.output import OutputKind
 from carm_roofline.results_paths import default_results_root
 from carm_roofline.core import Frequency, Operations, Performance, Seconds
 
+pytestmark = pytest.mark.unit
+
 
 def make_fake_matplotlib():
     """Create a fake `matplotlib` package with a `pyplot` submodule.
@@ -258,126 +260,6 @@ def test_factory_returns_registered_strategy_instance():
 
     strategy = _get_handler_for_test_type(TestType.ARITHMETIC)
     assert isinstance(strategy, ArithmeticOutputHandler)
-
-
-_SUPPORTED_OUTPUT_TEST_TYPES = (
-    BenchmarkTestType.ARITHMETIC,
-    BenchmarkTestType.ROOFLINE,
-    BenchmarkTestType.MEMORY,
-    BenchmarkTestType.MIXED,
-    BenchmarkTestType.MEMORY_SWEEP,
-)
-
-
-_STRATEGY_REGISTRY = {
-    BenchmarkTestType.ARITHMETIC: ("carm_roofline.benchmark.output.arithmetic", "ArithmeticOutputHandler"),
-    BenchmarkTestType.ROOFLINE: ("carm_roofline.benchmark.output.roofline", "RooflineOutputHandler"),
-    BenchmarkTestType.MEMORY: ("carm_roofline.benchmark.output.memory", "MemoryOutputHandler"),
-    BenchmarkTestType.MIXED: ("carm_roofline.benchmark.output.mixed", "MixedOutputHandler"),
-    BenchmarkTestType.MEMORY_SWEEP: ("carm_roofline.benchmark.output.memory_sweep", "MemorySweepOutputHandler"),
-}
-
-
-def _load_strategy(test_type: BenchmarkTestType):
-    module_name, class_name = _STRATEGY_REGISTRY[test_type]
-    module = importlib.import_module(module_name)
-    return module, getattr(module, class_name)
-
-
-def test_strategy_registry_covers_all_supported_output_tests():
-    """Strategy registry should cover every formatter-supported TestType."""
-    assert set(_STRATEGY_REGISTRY) == set(_SUPPORTED_OUTPUT_TEST_TYPES)
-
-
-@pytest.mark.parametrize("test_type", _SUPPORTED_OUTPUT_TEST_TYPES)
-def test_strategy_classes_expose_expected_methods(test_type):
-    """All output strategies expose CLI and plot entrypoints."""
-    _module, strategy_class = _load_strategy(test_type)
-    strategy = strategy_class()
-
-    assert hasattr(strategy, "print_table")
-    assert callable(strategy.print_table)
-    assert hasattr(strategy, "write_plot")
-    assert callable(strategy.write_plot)
-    assert hasattr(strategy, "write_jsonl")
-    assert callable(strategy.write_jsonl)
-
-
-def test_roofline_strategy_exposes_file_output_methods():
-    """Roofline strategy exposes strategy-local CSV hook."""
-    _module, strategy_class = _load_strategy(BenchmarkTestType.ROOFLINE)
-    strategy = strategy_class()
-    assert hasattr(strategy, "write_csv")
-    assert callable(strategy.write_csv)
-    assert hasattr(strategy, "write_jsonl")
-    assert callable(strategy.write_jsonl)
-
-
-@pytest.mark.parametrize("test_type", _SUPPORTED_OUTPUT_TEST_TYPES)
-def test_table_output_dispatches_via_registered_strategy_path(monkeypatch, test_type):
-    """Table output dispatches to the registered test-specific strategy path."""
-    from carm_roofline.benchmark.output import output_benchmark_results
-
-    context = _make_fake_context(["isa1"])
-    context.benchmarking.test = test_type
-    context.run_config.verbose = 99
-    context.run_config.output_formats = {OutputKind.TABLE}
-    isa_suites = {}
-
-    module, strategy_class = _load_strategy(test_type)
-    calls: list[tuple[str, object, object]] = []
-
-    def _module_dispatch(called_context, called_suites):
-        calls.append(("module", called_context, called_suites))
-
-    def _strategy_dispatch(_self, called_context, called_suites):
-        calls.append(("strategy", called_context, called_suites))
-
-    monkeypatch.setattr(module, "_print_table", _module_dispatch)
-    monkeypatch.setattr(strategy_class, "print_table", _strategy_dispatch, raising=False)
-
-    output_benchmark_results(context, isa_suites)
-
-    assert len(calls) == 1
-    _, called_context, called_suites = calls[0]
-    assert called_context is context
-    assert called_suites is isa_suites
-
-
-@pytest.mark.parametrize("test_type", _SUPPORTED_OUTPUT_TEST_TYPES)
-def test_plot_output_dispatches_via_registered_strategy_path(monkeypatch, test_type):
-    """Plot output dispatches to the registered test-specific strategy path."""
-    from carm_roofline.benchmark.output import output_benchmark_results
-
-    context = _make_fake_context(["isa1"])
-    context.benchmarking.test = test_type
-    context.run_config.output_dir = Path("plots_out")
-    context.run_config.output_formats = {OutputKind.PLOT}
-    isa_suites = {}
-
-    module, strategy_class = _load_strategy(test_type)
-    calls: list[tuple[str, object, object]] = []
-
-    def _module_dispatch(called_suites, output_path=None):
-        calls.append(("module", called_suites, output_path))
-
-    def _strategy_dispatch(_self, called_context, called_suites):
-        calls.append(("strategy", called_context, called_suites))
-
-    monkeypatch.setattr(module, "_write_plot", _module_dispatch)
-    monkeypatch.setattr(strategy_class, "write_plot", _strategy_dispatch, raising=False)
-
-    output_benchmark_results(context, isa_suites)
-
-    assert len(calls) == 1
-    call_type, arg1, arg2 = calls[0]
-    if call_type == "module":
-        assert arg1 is isa_suites
-        assert arg2 == context.run_config.output_dir / test_type.value
-    else:
-        assert arg1 is context
-        assert arg2 is isa_suites
-
 
 def test_arithmetic_cli_prints_gops(capsys):
     """CLI arithmetic output prints GOPS per ISA."""
@@ -1429,20 +1311,14 @@ class TestJsonlOutput:
         assert entries[0]["name"] == "bench1"
         assert entries[1]["name"] == "bench2"
 
-    def test_jsonl_default_in_output_kinds(self):
-        """JSONL is available in OutputKind and is used by default."""
-        from carm_roofline.benchmark.output import OutputKind
 
-        assert hasattr(OutputKind, "JSONL")
-        assert OutputKind.JSONL.value == "jsonl"
+def test_jsonl_is_a_default_output_format() -> None:
+    import argparse
 
-        import argparse
+    from carm_roofline.run_config import RunConfig
 
-        from carm_roofline.run_config import RunConfig
+    parser = argparse.ArgumentParser()
+    RunConfig.insert_arguments(parser)
+    config = RunConfig(parser.parse_args([]))
 
-        parser = argparse.ArgumentParser()
-        RunConfig.insert_arguments(parser)
-        args = parser.parse_args([])
-        config = RunConfig(args)
-
-        assert OutputKind.JSONL in config.output_formats, "JSONL should be in default output formats"
+    assert OutputKind.JSONL in config.output_formats

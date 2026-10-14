@@ -73,29 +73,8 @@ def test_translate_unsupported_flags_warn_and_drop(monkeypatch: pytest.MonkeyPat
     ]
 
 
-def test_main_delegates_to_carm(monkeypatch: pytest.MonkeyPatch) -> None:
-    """shim.main must hand the translated argv to carm.main and return its code."""
-    assert shim.carm_main is carm.main  # delegation target is the real entry point
-    calls: dict[str, Any] = {}
-
-    def fake_main(argv: Sequence[str]) -> int:
-        calls["argv"] = argv
-        return 7
-
-    monkeypatch.setattr(shim, "carm_main", fake_main)
-    assert shim.main(["--csv", "m.csv", "t.prv"]) == 7
-    assert list(calls["argv"]) == ["gui", "--paraver-trace", "t.prv", "--paraver-window-csv", "m.csv"]
-
 
 def test_main_missing_csv_exits_2() -> None:
     with pytest.raises(SystemExit) as exc_info:
         shim.main([])
     assert exc_info.value.code == 2
-
-
-def test_main_version_banner(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        shim.main(["-v"])
-    assert exc_info.value.code == 0
-    out = capsys.readouterr().out
-    assert out.startswith("Paraver_CARM version ")

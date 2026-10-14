@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 
+import pytest
 from carm_roofline.architecture.memory import CacheAwareThreadAffinity, MemoryLevelInfo
 from carm_roofline.benchmark.benchmarking import LoadStoreRatio
 from carm_roofline.benchmark.generation import MemoryLayoutMode
@@ -13,6 +14,9 @@ from carm_roofline.core import DataType, ArithmeticOperation, MemoryOperation
 from carm_roofline.benchmark.suites.memory import MemoryBenchmarkSuite
 from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
 from carm_roofline.core import Bytes, Frequency
+
+
+pytestmark = pytest.mark.unit
 
 
 @dataclass

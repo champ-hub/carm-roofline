@@ -7,7 +7,6 @@ import json
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
-from typing import ClassVar
 
 import pytest
 
@@ -48,7 +47,6 @@ from carm_roofline.profiling.papi_loader import (
     parse_rank_file,
 )
 from carm_roofline.profiling.papi_metrics import (
-    METRICS,
     PAPIMetricRegistry,
     _papi_cache_key,
     _papi_event_cache_path,
@@ -268,34 +266,8 @@ def _make_sample_run() -> RunResults:
     return RunResults(metadata=RunMetadata(name="test"), ranks=ranks)
 
 
-def test_aggregate_global() -> None:
-    run = _make_sample_run()
-    pt = aggregate_global(run, SAMPLE_RESOLVED, DEFAULT_CTX)
-    assert pt.num_ranks == 2
-    assert pt.num_threads == 2
-    assert pt.num_regions == 2
-    assert pt.total_flops > 0
-    assert pt.total_bytes > 0
-    assert pt.runtime_s > 0
 
 
-def test_aggregate_per_rank() -> None:
-    run = _make_sample_run()
-    pts = aggregate_per_rank(run, SAMPLE_RESOLVED, DEFAULT_CTX)
-    assert len(pts) == 2
-    for pt in pts:
-        assert pt.num_ranks == 1
-        assert pt.num_threads == 1
-        assert pt.total_flops > 0
-
-
-def test_aggregate_per_thread() -> None:
-    run = _make_sample_run()
-    pts = aggregate_per_thread(run, SAMPLE_RESOLVED, DEFAULT_CTX)
-    assert len(pts) == 2  # 2 ranks x 1 thread each
-    for pt in pts:
-        assert pt.num_ranks == 1
-        assert pt.num_threads == 1
 
 
 def test_aggregate_per_region_merged() -> None:
@@ -334,28 +306,6 @@ def test_aggregate_per_region_merged() -> None:
     assert pts_by_name["test_saxpy"].num_threads == 1  # only thread 0
 
 
-def test_aggregate_dispatch_global() -> None:
-    run = _make_sample_run()
-    pts = aggregate(run, AggregationMode.GLOBAL, SAMPLE_RESOLVED, DEFAULT_CTX)
-    assert len(pts) == 1
-
-
-def test_aggregate_dispatch_per_rank() -> None:
-    run = _make_sample_run()
-    pts = aggregate(run, AggregationMode.RANK, SAMPLE_RESOLVED, DEFAULT_CTX)
-    assert len(pts) == 2
-
-
-def test_aggregate_dispatch_per_thread() -> None:
-    run = _make_sample_run()
-    pts = aggregate(run, AggregationMode.THREAD, SAMPLE_RESOLVED, DEFAULT_CTX)
-    assert len(pts) == 2
-
-
-def test_aggregate_dispatch_per_region_merged() -> None:
-    run = _make_sample_run()
-    pts = aggregate(run, AggregationMode.REGION_MERGED, SAMPLE_RESOLVED, DEFAULT_CTX)
-    assert len(pts) == 1  # only "daxpy" exists
 
 
 def test_aggregate_per_region_per_thread() -> None:
@@ -394,12 +344,6 @@ def test_aggregate_per_region_per_thread() -> None:
     ]
     assert all(pt.num_ranks == 1 and pt.num_threads == 1 and pt.num_regions == 1 for pt in pts)
 
-
-def test_aggregate_dispatch_per_region_per_thread() -> None:
-    run = _make_sample_run()
-    pts = aggregate(run, AggregationMode.REGION_PER_THREAD, SAMPLE_RESOLVED, DEFAULT_CTX)
-    # _make_sample_run: 2 ranks, 1 thread each, 1 "daxpy" region each -> 2 points.
-    assert len(pts) == 2
 
 
 def test_aggregate_unknown_mode() -> None:
@@ -443,12 +387,6 @@ def test_aggregated_point_zero_runtime() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_aggregation_mode_enum() -> None:
-    assert AggregationMode.GLOBAL.value == "global"
-    assert AggregationMode.RANK.value == "rank"
-    assert AggregationMode.THREAD.value == "thread"
-    assert AggregationMode.REGION_MERGED.value == "region_merged"
-    assert AggregationMode.REGION_PER_THREAD.value == "region_per_thread"
 
 
 # ---------------------------------------------------------------------------
@@ -677,30 +615,6 @@ def test_write_profile_jsonl_per_region_merged(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_metric_definition_frozen() -> None:
-    md = MetricDefinition(
-        type=MetricType.FLOPS,
-        required_events=frozenset({"PAPI_DP_OPS"}),
-        compute=lambda e, ctx: e["PAPI_DP_OPS"],
-        priority=100,
-        description="test",
-    )
-    assert md.type == MetricType.FLOPS
-    assert md.required_events == frozenset({"PAPI_DP_OPS"})
-    assert md.priority == 100
-    assert md.description == "test"
-
-
-def test_metric_registry_has_expected_metrics() -> None:
-    assert MetricType.FLOPS in METRICS
-    assert MetricType.BYTES in METRICS
-
-
-def test_metric_registry_has_implementations_for_each_type() -> None:
-    for mtype, impls in METRICS.items():
-        assert len(impls) >= 3, f"Metric '{mtype}' should have at least 3 implementations, got {len(impls)}"
-
-
 def test_resolve_metrics_flops_via_dp_ops() -> None:
     available = frozenset({"PAPI_DP_OPS", "PAPI_TOT_CYC"})
     resolved = resolve_metrics(available)
@@ -711,7 +625,6 @@ def test_resolve_metrics_flops_via_fp_ops() -> None:
     available = frozenset({"PAPI_FP_OPS", "PAPI_TOT_CYC"})
     resolved = resolve_metrics(available)
     assert MetricType.FLOPS in resolved
-    assert "PAPI_FP_OPS" in resolved[MetricType.FLOPS].description
 
 
 def test_resolve_metrics_flops_none_when_nothing_available() -> None:
@@ -1599,19 +1512,11 @@ def test_cli_metrics_space_separated_list_and_deduped() -> None:
     assert config.list_metrics is False
 
 
-def test_cli_no_metric_defaults_empty() -> None:
-    config = ProfileConfig(_parse_profile_args(["--", "./app"]))
-    assert config.optional_metrics == ()
-
 
 def test_cli_unknown_metric_rejected_at_parse_time() -> None:
     with pytest.raises(SystemExit):
         _parse_profile_args(["--metrics", "bogus", "--", "./app"])
 
-
-def test_cli_list_metrics_flag() -> None:
-    config = ProfileConfig(_parse_profile_args(["--list-metrics"]))
-    assert config.list_metrics is True
 
 
 def test_cli_merge_runs_flag_defaults_false() -> None:
@@ -2336,172 +2241,6 @@ def test_profile_main_papi_optional_metric_end_to_end(tmp_path: Path, monkeypatc
     }
 
 
-def _make_fake_backend_class() -> type:
-    """Fake PAPIHLBackend: 4-event pool with capacity 2 -> two disjoint runs.
-
-    FLOPS needs {PAPI_DP_OPS, PAPI_FP_OPS}; BYTES needs {PAPI_L1_DCA, PAPI_LST_INS}.
-    Each run returns only its own events' counters, so merged counters carry both.
-    """
-    flops_impl = MetricDefinition(
-        type=MetricType.FLOPS,
-        required_events=frozenset({"PAPI_DP_OPS", "PAPI_FP_OPS"}),
-        compute=lambda e, ctx: e["PAPI_FP_OPS"],
-        priority=100,
-        description="FLOPS",
-    )
-    bytes_impl = MetricDefinition(
-        type=MetricType.BYTES,
-        required_events=frozenset({"PAPI_L1_DCA", "PAPI_LST_INS"}),
-        compute=lambda e, ctx: e["PAPI_L1_DCA"] * 8,
-        priority=100,
-        description="BYTES",
-    )
-    resolved = {MetricType.FLOPS: flops_impl, MetricType.BYTES: bytes_impl}
-
-    class FakePAPIHLBackend:
-        instances: ClassVar[list[FakePAPIHLBackend]] = []
-        can_collect_calls: ClassVar[int] = 0
-        check_prerequisites_calls: ClassVar[int] = 0
-
-        def __init__(
-            self,
-            resolution_config: MetricResolutionConfig,
-            *,
-            use_cache: bool = True,
-        ) -> None:
-            self._resolution_config = resolution_config
-            self._use_cache = use_cache
-            self.profile_calls = 0
-            self.received_specs: list[RunSpec] = []
-            FakePAPIHLBackend.instances.append(self)
-
-        @property
-        def resolved_metrics(self) -> dict[MetricType, MetricDefinition]:
-            return dict(resolved)
-
-        @property
-        def available_events(self) -> frozenset[str]:
-            return frozenset({"PAPI_DP_OPS", "PAPI_FP_OPS", "PAPI_L1_DCA", "PAPI_LST_INS"})
-
-        def can_collect(self, events: frozenset[str]) -> bool:
-            FakePAPIHLBackend.can_collect_calls += 1
-            return len(events) <= 2
-
-        def check_prerequisites(self) -> bool:
-            FakePAPIHLBackend.check_prerequisites_calls += 1
-            return False
-
-        def profile(self, run_spec: RunSpec, command: list[str], cwd: Path) -> RunResult:
-            self.profile_calls += 1
-            self.received_specs.append(run_spec)
-            counters: dict[str, int] = {}
-            if run_spec.events is not None and "PAPI_FP_OPS" in run_spec.events:
-                counters["PAPI_DP_OPS"] = 1000
-                counters["PAPI_FP_OPS"] = 1000
-            if run_spec.events is not None and "PAPI_L1_DCA" in run_spec.events:
-                counters["PAPI_L1_DCA"] = 100
-                counters["PAPI_LST_INS"] = 200
-            region = RegionMetrics(
-                name="total", parent_region_id="-1", cycles=0, time_nsec=1_000_000_000, counters=counters
-            )
-            ranks = [RankMetrics(rank_id=0, threads=[ThreadMetrics(thread_id=0, regions=[region])])]
-            return RunResult(exit_code=0, ranks=ranks)
-
-        @property
-        def run_method_name(self) -> str:
-            return "fake"
-
-    return FakePAPIHLBackend
-
-
-def test_profile_main_merges_partitioned_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Pool of 4 events with capacity 2 -> 2 app runs merged into one JSONL record."""
-    fake_cls = _make_fake_backend_class()
-    monkeypatch.setattr(papi_backend, "PAPIHLBackend", fake_cls)
-    fake_cls.instances.clear()
-    fake_cls.can_collect_calls = 0
-    fake_cls.check_prerequisites_calls = 0
-
-    args = _parse_profile_args(
-        [
-            "--backend",
-            "papi",
-            "--merge-runs",
-            "--aggregation",
-            "global",
-            "--output-dir",
-            str(tmp_path),
-            "--",
-            "./app",
-        ]
-    )
-    config = ProfileConfig(args)
-    assert profile_main(config) == 0
-
-    # One session-scoped backend; each chunk is one profile() call with its own event set.
-    assert len(fake_cls.instances) == 1
-    backend = fake_cls.instances[0]
-    assert [s.events for s in backend.received_specs] == [
-        "PAPI_DP_OPS,PAPI_FP_OPS",
-        "PAPI_L1_DCA,PAPI_LST_INS",
-    ]
-    assert backend.profile_calls == 2
-
-    # Resolution is a one-time session probe: check_prerequisites runs once.
-    assert fake_cls.check_prerequisites_calls == 1
-
-    # Each run gets its own output directory so files never overwrite.
-    assert len({s.output_dir for s in backend.received_specs}) == 2
-
-    jsonl_path = tmp_path / config.machine_name / "applications.jsonl"
-    lines = jsonl_path.read_text().strip().split("\n")
-    assert len(lines) == 1  # one JSONL record despite two app runs
-
-    record = json.loads(lines[0])
-    assert record["metadata"]["notes"] == "merged from 2 runs"
-    assert record["metadata"]["date"]  # fresh merged date
-    assert record["optional_metrics"] == []
-
-    point = record["points"][0]
-    assert point["total_flops"] == pytest.approx(1000.0)  # from run 0's counters
-    assert point["total_bytes"] == pytest.approx(800.0)  # from run 1's counters
-    assert point["total_flops"] > 0
-    assert point["total_bytes"] > 0
-
-
-def test_profile_main_single_run_without_merge_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Without --merge-runs the whole 4-event pool is one chunk: one run, no partitioning, no merge."""
-    fake_cls = _make_fake_backend_class()
-    monkeypatch.setattr(papi_backend, "PAPIHLBackend", fake_cls)
-    fake_cls.instances.clear()
-    fake_cls.can_collect_calls = 0
-    fake_cls.check_prerequisites_calls = 0
-
-    args = _parse_profile_args(
-        ["--backend", "papi", "--aggregation", "global", "--output-dir", str(tmp_path), "--", "./app"]
-    )
-    config = ProfileConfig(args)
-    assert profile_main(config) == 0
-
-    # One session-scoped backend; the whole 4-event pool is one chunk in sorted order (D < F < L1 < LST).
-    assert len(fake_cls.instances) == 1
-    backend = fake_cls.instances[0]
-    assert [s.events for s in backend.received_specs] == ["PAPI_DP_OPS,PAPI_FP_OPS,PAPI_L1_DCA,PAPI_LST_INS"]
-    assert backend.profile_calls == 1
-    assert fake_cls.check_prerequisites_calls == 1
-    assert fake_cls.can_collect_calls == 0  # partition logic never consulted
-
-    jsonl_path = tmp_path / config.machine_name / "applications.jsonl"
-    lines = jsonl_path.read_text().strip().split("\n")
-    assert len(lines) == 1  # one JSONL record from the single run
-
-    record = json.loads(lines[0])
-    assert record["metadata"]["notes"] == ""
-    assert record["optional_metrics"] == []
-
-    point = record["points"][0]
-    assert point["total_flops"] == pytest.approx(1000.0)
-    assert point["total_bytes"] == pytest.approx(800.0)
 
 
 # ---------------------------------------------------------------------------

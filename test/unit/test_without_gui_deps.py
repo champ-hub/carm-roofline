@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest.mark.integration
 
 # Optional GUI extras; the CLI must be usable without them.
 _GUI_MODULES = ("dash", "dash_bootstrap_components", "plotly")

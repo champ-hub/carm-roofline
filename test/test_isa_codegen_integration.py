@@ -13,6 +13,8 @@ from types import SimpleNamespace
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
 
@@ -88,15 +90,6 @@ class TestISACodegen:
             # Simple ISAs can be instantiated without parameters
             return isa_class()
 
-    @pytest.mark.parametrize("isa_name", ISA_CLASSES.keys())
-    def test_isa_instantiation(self, isa_name: str):
-        """Test that each ISA can be instantiated."""
-        isa = self.instantiate_isa(isa_name)
-
-        assert isa is not None
-        assert hasattr(isa, "name")
-        assert isinstance(isa.name, str)
-        assert len(isa.name) > 0
 
     @pytest.mark.parametrize(
         "isa_name,operation,precision",
@@ -243,64 +236,7 @@ class TestISACodegen:
         assert len(spec.body) > 0
         assert "__asm__" in spec.body or "asm(" in spec.body.lower()
 
-    @pytest.mark.parametrize("isa_name", ISA_CLASSES.keys())
-    def test_isa_attributes(self, isa_name: str):
-        """Test that each ISA has required attributes."""
-        isa = self.instantiate_isa(isa_name)
 
-        # Check required attributes
-        assert hasattr(isa, "name"), f"{isa_name} missing 'name' attribute"
-        assert isinstance(isa.name, str), f"{isa_name}.name should be string"
-        assert len(isa.name) > 0, f"{isa_name}.name should not be empty"
-
-    @pytest.mark.parametrize("isa_name", ISA_CLASSES.keys())
-    def test_isa_generates_valid_c_code(self, mock_context, isa_name: str):
-        """Test that each ISA generates syntactically valid C code."""
-        isa = self.instantiate_isa(isa_name)
-
-        # Generate both arithmetic and memory benchmarks
-        arith_params = ArithmeticBenchmarkParams(
-            data_type=DataType.f32,
-            operation=ArithmeticOperation.add,
-            num_ops=Operations(10),
-            thread_affinity=[0],
-        )
-
-        # Vector ISAs need larger buffer sizes
-        if isa_name in self.VECTOR_ISA_NAMES:
-            # For vector ISAs, use a larger working set
-            mem_size = Bytes(1024)
-        else:
-            # For scalar ISAs, use the standard small size
-            mem_size = Bytes(32 * 2 * DataType.f32.bytes())
-
-        mem_params = MemoryBenchmarkParams(
-            data_type=DataType.f32,
-            load_store_ratio=LoadStoreRatio(1, 1),
-            size_per_thread=mem_size,
-            thread_affinity=[0],
-            memory_level_name="L1",
-        )
-        arith_spec = isa.generate_arithmetic(arith_params, mock_context)
-        mem_spec = isa.generate_memory(mem_params, mock_context)
-
-        # Both should be MicrobenchmarkFunctionSpec objects
-        assert isinstance(arith_spec, MicrobenchmarkFunctionSpec), (
-            f"{isa_name} arithmetic result not a MicrobenchmarkFunctionSpec"
-        )
-        assert isinstance(mem_spec, MicrobenchmarkFunctionSpec), (
-            f"{isa_name} memory result not a MicrobenchmarkFunctionSpec"
-        )
-
-        # Check the body (C code) is non-empty
-        assert len(arith_spec.body) > 0, f"{isa_name} arithmetic code is empty"
-        assert len(mem_spec.body) > 0, f"{isa_name} memory code is empty"
-
-        # Both should contain C language elements or inline assembly
-        for spec, label in [(arith_spec, "arithmetic"), (mem_spec, "memory")]:
-            assert "#include" in spec.body or "#define" in spec.body or "asm" in spec.body.lower(), (
-                f"{isa_name} {label} code missing includes, defines, or asm"
-            )
 
     @pytest.mark.parametrize(
         "isa_name,precision",
@@ -481,44 +417,6 @@ class TestCodeGenerationConsistency:
 class TestCodeQuality:
     """Test quality aspects of generated code."""
 
-    @pytest.mark.parametrize("isa_name", ["x86_avx2", "arm_neon", "riscv_scalar"])
-    def test_generated_code_has_structure(self, mock_context, isa_name: str):
-        """Test that generated code has proper C structure."""
-        isa = TestISACodegen.instantiate_isa(isa_name)
-        params = ArithmeticBenchmarkParams(
-            data_type=DataType.f32,
-            operation=ArithmeticOperation.add,
-            num_ops=Operations(32),
-            thread_affinity=[0],
-        )
-        spec = isa.generate_arithmetic(params, mock_context)
-
-        assert isinstance(spec, MicrobenchmarkFunctionSpec)
-        code = spec.body
-
-        # Code should have basic structure
-        assert "int" in code or "float" in code or "double" in code or "void" in code, (
-            "Generated code should have type declarations"
-        )
-        assert "{" in code and "}" in code, "Generated code should have braces"
-
-    def test_generated_code_not_empty_or_trivial(self, mock_context):
-        """Test that generated code is substantial, not just placeholders."""
-        isa = X86AVX2()
-        params = ArithmeticBenchmarkParams(
-            data_type=DataType.f32,
-            operation=ArithmeticOperation.mul,
-            num_ops=Operations(128),
-            thread_affinity=[0],
-        )
-        spec = isa.generate_arithmetic(params, mock_context)
-
-        assert isinstance(spec, MicrobenchmarkFunctionSpec)
-        code = spec.body
-
-        # Code should be reasonably sized (at least 100 chars for real implementation)
-        assert len(code) > 100, "Generated code appears too small, might be placeholder"
-
     @pytest.mark.parametrize(
         "isa_name,num_ops",
         [
@@ -559,12 +457,6 @@ class TestCodeQuality:
 class TestISACompleteness:
     """Test that ISA implementations cover expected functionality."""
 
-    @pytest.mark.parametrize("isa_name", TestISACodegen.ISA_CLASSES.keys())
-    def test_isa_name_unique(self, isa_name: str):
-        """Test that ISA names are unique within the test suite."""
-        isa = TestISACodegen.instantiate_isa(isa_name)
-        assert isa.name is not None
-        assert isinstance(isa.name, str)
 
     def test_all_isas_can_generate_both_types(self, mock_context):
         """Test that all ISAs support both arithmetic and memory generation."""

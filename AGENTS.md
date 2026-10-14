@@ -94,8 +94,9 @@ carm benchmark --isa x86_avx2 --test memory --mem-target L1
 carm benchmark --test arithmetic --dry-run --verbose 4
 
 # Tests
-pytest -m unit test/ # Fast unit tests
-pytest # All tests
+pytest -m unit test/ # Focused isolated tests
+python -m test.paraver_fixture # Optional: prefetch Paraver E2E data
+pytest # All tests; Paraver downloads its pinned fixture on first use if needed
 
 # Lint, format, type-check
 ruff check --fix
@@ -103,6 +104,10 @@ ruff format
 mypy .
 pre-commit run --all-files
 ```
+
+Paraver fixture data is stored in ignored `test/.cache/`.
+Only Paraver tests download it; collection and other tests do not access the network.
+Prefetch the fixture before running tests offline.
 
 ## Code Conventions & Common Patterns
 
@@ -179,14 +184,15 @@ Generic arithmetic wrapper `Unit[T]` (ABC) with subclasses: `Bytes`, `Operations
 
 ## Testing & QA
 
-- **Framework**: pytest ≥7.0, configured in `pyproject.toml`
-- **Root**: `test/`, with `test/unit/` for fast unit tests
-- **Markers** (7 defined): `unit`, `integration`, `slow`, `golden`, `x86`, `arm`, `riscv` — only `unit` is actively used
-- **Fixtures**: 5 in `test/conftest.py` — `x86avx_isa`, `x86sse_isa`, `arm_neon_isa`, `riscv_scalar_isa`, `mock_context`
-- **Mocking**: lightweight — `unittest.mock.Mock` for context, `monkeypatch` for module-level intercepts
-- **Dominant pattern**: parametrized ISA cross-product tests via `@pytest.mark.parametrize`
-- **Categories**: Unit (`test/unit/`, marked `unit`) for profiling model, CLI smoke, register abstraction, ISA helpers. Integration-ish (`test/` root, no markers) for ISA codegen (11-ISA matrix), typed benchmarks, output handlers, memory suite generation.
-Static analysis (`mypy .` and `ruff check`) is a hard gate: no plan should consider code changes done until both pass on changed code. See `RULES.md` for the full tooling-expectations policy.
+- **Framework**: pytest ≥7.0, configured in `pyproject.toml`.
+- Prefer E2E tests at real CLI, API, or UI boundaries for complex features.
+- Keep focused tests for unique boundaries, invariants, calculations, parsing, or failure paths not covered by E2E. Mock expensive external work (hardware, compilers, profilers, tools), not simple argument forwarding.
+- Avoid wording-only, source-shape, and mock-forwarding tests. Check actual E2E assertions before removing existing behavior coverage.
+- **Root**: `test/`, with `test/unit/` for focused tests.
+- **Markers**: `unit`, `integration`, and `e2e` are the primary markers. Assign exactly one to each test.
+- Add the optional `native` marker only when real native compilation and benchmark execution are required.
+- **Fixtures**: shared fixtures live in `test/conftest.py`; prefer small local fixtures when they clarify a focused case.
+- Existing multi-component/code-generation/output/parsing tests may retain unique behaviors not covered by E2E. Static analysis (`mypy .` and `ruff check`) remains a hard gate for code changes; see `RULES.md`.
 
 ### GUI Smoke Tests
 

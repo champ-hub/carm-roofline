@@ -25,7 +25,7 @@ from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec, run_mic
 def make_context() -> SimpleNamespace:
     """Create the minimum context required by the benchmark runner."""
     return SimpleNamespace(
-        benchmarking=SimpleNamespace(test_time=1, interleaved=False),
+        benchmarking=SimpleNamespace(test_time=1, interleaved=False, thread_stride_gap=Bytes(16 * 1024)),
         exec_interface=ExecutionInterface(argparse.Namespace(sim_cmd=None, compiler=None)),
     )
 
@@ -49,7 +49,9 @@ def write_executable(path: Path, source: str) -> Path:
     return path
 
 
-@pytest.mark.unit
+
+
+@pytest.mark.integration
 def test_streaming_runner_reports_completed_lines_and_debug_stderr(tmp_path, monkeypatch):
     """The streaming path reports flushed result lines and preserves stderr."""
     binary = write_executable(
@@ -70,7 +72,7 @@ def test_streaming_runner_reports_completed_lines_and_debug_stderr(tmp_path, mon
     assert any("diagnostic" in message for message in debug_messages)
 
 
-@pytest.mark.unit
+@pytest.mark.integration
 def test_streaming_runner_timeout_reports_partial_output_and_kills_child(tmp_path, monkeypatch):
     """The streaming timeout keeps received output and terminates the child."""
     pid_file = tmp_path / "child.pid"
@@ -96,7 +98,7 @@ def test_streaming_runner_timeout_reports_partial_output_and_kills_child(tmp_pat
         os.kill(int(pid_file.read_text()), 0)
 
 
-@pytest.mark.unit
+@pytest.mark.integration
 def test_streaming_runner_reaps_child_when_progress_callback_fails(tmp_path):
     """A failing progress callback terminates and reaps the benchmark process."""
     pid_file = tmp_path / "child.pid"
@@ -118,7 +120,7 @@ def test_streaming_runner_reaps_child_when_progress_callback_fails(tmp_path):
         os.kill(int(pid_file.read_text()), 0)
 
 
-@pytest.mark.unit
+@pytest.mark.integration
 @pytest.mark.parametrize("verbosity", [0, 1, 2])
 def test_progress_runner_skips_progress_below_detail(verbosity, monkeypatch):
     """Quiet through result verbosity uses the blocking runner without a bar."""
@@ -133,7 +135,7 @@ def test_progress_runner_skips_progress_below_detail(verbosity, monkeypatch):
     assert console.getvalue() == ""
 
 
-@pytest.mark.unit
+@pytest.mark.integration
 @pytest.mark.parametrize("verbosity", [Verbosity.CONFIG, Verbosity.DEBUG])
 def test_progress_runner_shows_canonical_total(verbosity, monkeypatch):
     """Detail and debug verbosity show completed canonical measurements."""
@@ -157,7 +159,7 @@ def test_progress_runner_shows_canonical_total(verbosity, monkeypatch):
     assert "2/2" in output
 
 
-@pytest.mark.unit
+@pytest.mark.integration
 def test_structured_progress_reports_measurements_without_rich(monkeypatch):
     """JSONL measurement events use the canonical total regardless of verbosity."""
     context = SimpleNamespace(run_config=SimpleNamespace(verbose=Verbosity.DEBUG))
@@ -185,7 +187,7 @@ def test_structured_progress_reports_measurements_without_rich(monkeypatch):
     ]
 
 
-@pytest.mark.unit
+@pytest.mark.integration
 def test_jsonl_progress_emitter_prefixes_and_flushes(capsys):
     """Structured progress is a prefixed JSON object written to stderr."""
     import json
@@ -204,7 +206,7 @@ def test_jsonl_progress_emitter_prefixes_and_flushes(capsys):
     }
 
 
-@pytest.mark.unit
+@pytest.mark.integration
 def test_benchmark_progress_format_defaults_to_rich():
     """Rich remains the default benchmark progress format."""
     from carm_roofline.carm import _create_parser

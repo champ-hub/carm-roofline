@@ -26,6 +26,8 @@ from carm_roofline.benchmark.generation import ArithmeticBenchmarkParams, Memory
 from carm_roofline.core import ArithmeticIntensity, ArithmeticOperation, Bytes, DataType, Frequency, Operations, Seconds
 from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
 
+pytestmark = pytest.mark.unit
+
 
 def make_spec(
     name: str = "test",
