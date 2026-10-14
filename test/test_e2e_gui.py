@@ -16,7 +16,14 @@ import pytest
 from carm_roofline.gui import benchmark_runner
 from carm_roofline.gui.config import GUIConfig
 from carm_roofline.gui.factory import create_app
-from carm_roofline.gui.ids import BenchmarkPanelID, PlotAreaID, RoofCardID, SettingsPanelID, StoreID
+from carm_roofline.gui.ids import (
+    BenchmarkPanelID,
+    PlotAreaID,
+    RoofCardID,
+    SettingsPanelID,
+    StoreID,
+    WelcomePanelID,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -274,6 +281,71 @@ def _figure_from_response(response: dict[str, Any]) -> dict[str, Any]:
 
 def _marker_traces(figure: dict[str, Any]) -> list[dict[str, Any]]:
     return [trace for trace in figure["data"] if "markers" in trace.get("mode", "")]
+
+
+def test_welcome_panel_dismissal_and_config_persistence(
+    results_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    settings_path = tmp_path / "gui-settings.json"
+    monkeypatch.setattr("carm_roofline.gui.factory.gui_settings_path", lambda: settings_path)
+    monkeypatch.setattr("carm_roofline.gui.callbacks.settings.gui_settings_path", lambda: settings_path)
+    monkeypatch.setattr("carm_roofline.gui.callbacks.welcome.gui_settings_path", lambda: settings_path)
+
+    app = create_app(_config(results_dir))
+    client = app.server.test_client()
+    layout = client.get("/_dash-layout").get_json()
+    welcome = _component(layout, str(WelcomePanelID.CONTAINER))
+    assert welcome["style"] == {"display": "block"}
+
+    dismissed = _dispatch(
+        app,
+        client,
+        layout,
+        str(WelcomePanelID.CONTAINER),
+        "style",
+        overrides={str(WelcomePanelID.GOT_IT): 1},
+        changed_id=f"{WelcomePanelID.GOT_IT}.n_clicks",
+    )
+    assert dismissed[str(WelcomePanelID.CONTAINER)]["style"] == {"display": "none"}
+    assert not settings_path.exists()
+
+    app = create_app(_config(results_dir))
+    client = app.server.test_client()
+    layout = client.get("/_dash-layout").get_json()
+    stale_roof_store = _component(layout, str(StoreID.ROOF_STORE))["data"]
+    assert _component(layout, str(WelcomePanelID.CONTAINER))["style"] == {"display": "block"}
+    hidden = _dispatch(
+        app,
+        client,
+        layout,
+        str(WelcomePanelID.CONTAINER),
+        "style",
+        overrides={str(WelcomePanelID.DO_NOT_SHOW_AGAIN): ["hide"]},
+        changed_id=f"{WelcomePanelID.DO_NOT_SHOW_AGAIN}.value",
+    )
+    assert hidden[str(WelcomePanelID.CONTAINER)]["style"] == {"display": "none"}
+    assert json.loads(settings_path.read_text(encoding="utf-8"))["show_welcome_panel"] is False
+
+    _dispatch(
+        app,
+        client,
+        layout,
+        str(StoreID.ROOF_STORE),
+        "data",
+        overrides={
+            str(SettingsPanelID.SWITCH_NORMALIZE): True,
+            str(StoreID.ROOF_STORE): stale_roof_store,
+        },
+        changed_id=f"{SettingsPanelID.SWITCH_NORMALIZE}.value",
+        input_id=str(SettingsPanelID.SWITCH_NORMALIZE),
+    )
+    saved = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert saved["show_welcome_panel"] is False
+    assert saved["normalize_by_threads"] is True
+
+    restarted = create_app(_config(results_dir))
+    restarted_layout = restarted.server.test_client().get("/_dash-layout").get_json()
+    assert _component(restarted_layout, str(WelcomePanelID.CONTAINER))["style"] == {"display": "none"}
 
 
 def test_carm_results_to_roofline_and_settings_via_dash_http(

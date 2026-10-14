@@ -37,6 +37,17 @@ class NavbarID(ID):
     BTN_BENCHMARK = "btn-benchmark"
     BTN_SETTINGS = "btn-settings"
     BTN_EXPORT = "btn-export"
+    TOOLTIP_CARM_VIEW = "tooltip-carm-view"
+    TOOLTIP_BENCHMARK = "tooltip-benchmark"
+    TOOLTIP_SETTINGS = "tooltip-settings"
+
+
+class WelcomePanelID(ID):
+    """IDs for the floating first-run welcome panel."""
+
+    CONTAINER = "welcome-panel"
+    GOT_IT = "welcome-got-it"
+    DO_NOT_SHOW_AGAIN = "welcome-do-not-show-again"
 
 
 class BenchmarkPanelID(ID):
@@ -90,6 +101,7 @@ class CarmViewPanelID(ID):
     """IDs for the CARM View panel (add-roof button)."""
 
     BTN_ADD_ROOF = "btn-add-roof"
+    TOOLTIP_ADD_ROOF = "tooltip-add-roof"
 
 
 class RoofCardID(ID):

@@ -29,6 +29,7 @@ from carm_roofline.gui.ids import (
     SettingsPanelID,
     SidebarID,
     StoreID,
+    WelcomePanelID,
 )
 from carm_roofline.gui.providers import (
     AI_FILTER_LOG_STEP,
@@ -333,6 +334,12 @@ def build_navbar(active_panel: ActivePanel, mode: GUIMode = GUIMode.CARM) -> htm
                         className=f"navbar-btn{' navbar-btn--active' if carm_view_active else ''}",
                         n_clicks=0,
                     ),
+                    dbc.Tooltip(
+                        "Explore the roofline and compare the performance of applications and architectures.",
+                        id=NavbarID.TOOLTIP_CARM_VIEW,
+                        target=NavbarID.BTN_CARM_VIEW,
+                        trigger="hover focus",
+                    ),
                     *(
                         [
                             html.Button(
@@ -351,11 +358,23 @@ def build_navbar(active_panel: ActivePanel, mode: GUIMode = GUIMode.CARM) -> htm
                         className=f"navbar-btn{' navbar-btn--active' if benchmark_active else ''}",
                         n_clicks=0,
                     ),
+                    dbc.Tooltip(
+                        "Configure and run a new benchmark (on the same machine the GUI is running).",
+                        id=NavbarID.TOOLTIP_BENCHMARK,
+                        target=NavbarID.BTN_BENCHMARK,
+                        trigger="hover focus",
+                    ),
                     html.Button(
                         "Settings",
                         id=NavbarID.BTN_SETTINGS,
                         className=f"navbar-btn{' navbar-btn--active' if settings_active else ''}",
                         n_clicks=0,
+                    ),
+                    dbc.Tooltip(
+                        "Adjust plot appearance and how the performance is displayed.",
+                        id=NavbarID.TOOLTIP_SETTINGS,
+                        target=NavbarID.BTN_SETTINGS,
+                        trigger="hover focus",
                     ),
                 ],
             ),
@@ -422,6 +441,11 @@ def build_carm_view_panel(
                 id=CarmViewPanelID.BTN_ADD_ROOF,
                 className="btn-add-roof",
                 n_clicks=0,
+            ),
+            dbc.Tooltip(
+                "Add another roof to visualize and compare.",
+                id=CarmViewPanelID.TOOLTIP_ADD_ROOF,
+                target=CarmViewPanelID.BTN_ADD_ROOF,
             ),
         ],
     )
@@ -1100,6 +1124,32 @@ def build_plot_area(
     )
 
 
+def build_welcome_panel(visible: bool) -> html.Div:
+    """Build the non-blocking first-run help panel."""
+    return html.Div(
+        id=WelcomePanelID.CONTAINER,
+        className="welcome-panel",
+        style={"display": "block"} if visible else {"display": "none"},
+        children=[
+            html.H4("Welcome to the CARM Tool"),
+            html.P("Hover over each UI element for help."),
+            html.P('If you haven\'t benchmarked your system yet, start with the "Benchmark" panel.'),
+            dbc.Checklist(
+                id=WelcomePanelID.DO_NOT_SHOW_AGAIN,
+                options=[{"label": "Do not show again", "value": "hide"}],
+                value=[],
+                className="welcome-panel-checkbox",
+            ),
+            html.Button(
+                "Got it",
+                id=WelcomePanelID.GOT_IT,
+                className="btn btn-primary",
+                n_clicks=0,
+            ),
+        ],
+    )
+
+
 def build_layout(
     store: RoofStore,
     roof_options: FilterOptions | None = None,
@@ -1116,6 +1166,7 @@ def build_layout(
         className="app-container",
         children=[
             build_navbar(store.active_panel, mode),
+            build_welcome_panel(store.settings.show_welcome_panel),
             html.Div(
                 className="content-row",
                 children=[

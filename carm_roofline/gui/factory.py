@@ -15,6 +15,7 @@ from carm_roofline.gui.callbacks.roofline import register_roofline_callbacks
 from carm_roofline.gui.callbacks.roofs import register_roof_callbacks
 from carm_roofline.gui.callbacks.settings import register_settings_callbacks
 from carm_roofline.gui.callbacks.state import CallbackState
+from carm_roofline.gui.callbacks.welcome import register_welcome_callbacks
 from carm_roofline.gui.components import build_layout
 from carm_roofline.gui.config import (
     GUIConfig,
@@ -100,4 +101,5 @@ def _register_callbacks(app: dash.Dash, state: CallbackState) -> None:
     register_roof_callbacks(app, state)
     register_roofline_callbacks(app, state)
     register_settings_callbacks(app)
+    register_welcome_callbacks(app)
     register_paraver_callbacks(app, state)

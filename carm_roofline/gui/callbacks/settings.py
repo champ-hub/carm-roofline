@@ -6,7 +6,7 @@ from typing import Any, Callable
 import dash
 from dash import Input, Output, State
 
-from carm_roofline.gui.config import gui_settings_path, save_gui_settings
+from carm_roofline.gui.config import gui_settings_path, load_gui_settings, save_gui_settings
 from carm_roofline.gui.data import RoofStore
 from carm_roofline.gui.ids import SettingsPanelID, StoreID
 
@@ -48,5 +48,7 @@ def _register_setting_callback(
         store = RoofStore.from_dict(store_data or {})
         value = converter(val) if val is not None else default
         store.settings = replace(store.settings, **{field_name: value})
-        save_gui_settings(gui_settings_path(), store.settings)
+        path = gui_settings_path()
+        persisted = load_gui_settings(path)
+        save_gui_settings(path, replace(persisted, **{field_name: value}))
         return store.to_dict()

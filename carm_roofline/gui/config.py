@@ -129,6 +129,7 @@ class GUISettings:
     tooltip_font_size: int = 12
     legend_font_size: int = 10
     legend_label_length: int = 32
+    show_welcome_panel: bool = True
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

@@ -462,3 +462,33 @@
 .benchmark-help-tooltip .tooltip-inner {
     max-width: 320px;
 }
+
+.welcome-panel {
+    position: fixed;
+    top: 64px;
+    right: 16px;
+    z-index: 1070;
+    width: min(360px, calc(100vw - 32px));
+    padding: 16px;
+    background: white;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.welcome-panel h4 {
+    margin-bottom: 8px;
+    font-size: 16px;
+}
+
+.welcome-panel p {
+    margin-bottom: 12px;
+}
+
+.welcome-panel-checkbox {
+    margin-bottom: 12px;
+}
+
+.welcome-panel .form-check {
+    min-height: auto;
+}
