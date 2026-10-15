@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import Any, cast
 
 import dash
+import plotly.graph_objects as go
 from dash import ALL, Input, Output, Patch, State, callback_context, html
 
+from carm_roofline.core.units import Performance
 from carm_roofline.gui.callbacks.helpers import filter_app_options_for_roofs, selection_payload
 from carm_roofline.gui.callbacks.resolution import resolve_roofs
 from carm_roofline.gui.callbacks.state import CallbackState
@@ -17,9 +19,13 @@ from carm_roofline.gui.ids import BenchmarkPanelID, PlotAreaID, ProfilePanelID, 
 from carm_roofline.gui.providers import BenchmarkAppsProvider, filter_trace
 from carm_roofline.roofline_assembly import discover_filter_options, load_all_benchmarks
 
-_HOVER_GUIDE = "carm-hover-guide"
-_SELECTED_GUIDE = "carm-selected-guide"
-_GUIDE_NAMES = {_HOVER_GUIDE, _SELECTED_GUIDE}
+_GUIDE_TRACE_ROLE = "point-guide"
+_GUIDE_TRACE_KEYS: tuple[tuple[str, str], ...] = (
+    ("hover", "line"),
+    ("hover", "intersections"),
+    ("selected", "line"),
+    ("selected", "intersections"),
+)
 
 
 def _guide_point(figure: dict[str, Any], identity: dict[str, Any] | None) -> tuple[float, float] | None:
@@ -48,9 +54,10 @@ def _guide_point(figure: dict[str, Any], identity: dict[str, Any] | None) -> tup
     return None
 
 
-def _roof_height(figure: dict[str, Any], intensity: float) -> float | None:
+def _roof_intersections(figure: dict[str, Any], intensity: float) -> list[float]:
+    """Return unique visible roof performances intersecting the guide intensity."""
     log_x = math.log10(intensity)
-    maximum: float | None = None
+    intersections: dict[float, float] = {}
     for trace in figure.get("data", []):
         meta = trace.get("meta")
         if (
@@ -72,14 +79,21 @@ def _roof_height(figure: dict[str, Any], intensity: float) -> float | None:
             log_x1, log_x2 = math.log10(x1), math.log10(x2)
             if not min(log_x1, log_x2) <= log_x <= max(log_x1, log_x2):
                 continue
-            fraction = (log_x - log_x1) / (log_x2 - log_x1) if log_x1 != log_x2 else 0.0
-            y = 10 ** (math.log10(y1) + fraction * (math.log10(y2) - math.log10(y1)))
-            if math.isfinite(y) and (maximum is None or y > maximum):
-                maximum = y
-    return maximum
+            if log_x1 == log_x2:
+                if log_x != log_x1:
+                    continue
+                performance = max(y1, y2)
+            else:
+                fraction = (log_x - log_x1) / (log_x2 - log_x1)
+                performance = 10 ** (math.log10(y1) + fraction * (math.log10(y2) - math.log10(y1)))
+            if not math.isfinite(performance):
+                continue
+            intersections[round(math.log10(performance), 10)] = performance
+    return sorted(intersections.values(), reverse=True)
 
 
-def _point_guide_shapes(figure: dict[str, Any], hover_data: dict[str, Any] | None) -> list[dict[str, Any]]:
+def _point_guide_traces(figure: dict[str, Any], hover_data: dict[str, Any] | None) -> list[go.Scatter]:
+    """Build fixed hover and selection overlay traces from the current figure."""
     layout = figure.get("layout", {})
     meta = layout.get("meta")
     selected_identity = meta.get("carm_selected_point") if isinstance(meta, dict) else None
@@ -94,51 +108,98 @@ def _point_guide_shapes(figure: dict[str, Any], hover_data: dict[str, Any] | Non
                 "point_index": customdata[4],
             }
 
-    shapes = [shape for shape in layout.get("shapes", []) if shape.get("name") not in _GUIDE_NAMES]
-    yaxis = layout.get("yaxis", {})
-    axis_range = yaxis.get("range") if isinstance(yaxis, dict) else None
-    if not isinstance(axis_range, list) or len(axis_range) != 2:
-        return shapes
-    try:
-        low, high = map(float, axis_range)
-    except (TypeError, ValueError):
-        return shapes
-    if not math.isfinite(low) or not math.isfinite(high) or high <= low:
-        return shapes
-
     font = layout.get("font")
-    color = font.get("color") if isinstance(font, dict) else None
+    color_value = font.get("color") if isinstance(font, dict) else None
+    color = color_value if isinstance(color_value, str) else "#666666"
+    guide_traces: dict[tuple[str, str], go.Scatter] = {}
+    for guide, kind in _GUIDE_TRACE_KEYS:
+        trace_meta = {"carm_role": _GUIDE_TRACE_ROLE, "guide": guide, "kind": kind}
+        if kind == "line":
+            guide_traces[(guide, kind)] = go.Scatter(
+                x=[],
+                y=[],
+                mode="lines",
+                name="",
+                line={"color": color, "width": 3},
+                opacity=0.5,
+                showlegend=False,
+                hoverinfo="skip",
+                meta=trace_meta,
+            )
+        else:
+            guide_traces[(guide, kind)] = go.Scatter(
+                x=[],
+                y=[],
+                mode="markers",
+                name="",
+                marker={"color": color, "symbol": "circle", "size": 10, "opacity": 0.5},
+                hovertext=[],
+                hovertemplate="%{hovertext}<extra></extra>",
+                showlegend=False,
+                meta=trace_meta,
+            )
+
+    yaxis = layout.get("yaxis", {})
+    y_range = yaxis.get("range") if isinstance(yaxis, dict) else None
+    xaxis = layout.get("xaxis", {})
+    x_range = xaxis.get("range") if isinstance(xaxis, dict) else None
+    if not isinstance(y_range, list) or len(y_range) != 2:
+        return [guide_traces[key] for key in _GUIDE_TRACE_KEYS]
+    try:
+        low, high = map(float, y_range)
+    except (TypeError, ValueError):
+        return [guide_traces[key] for key in _GUIDE_TRACE_KEYS]
+    if not math.isfinite(low) or not math.isfinite(high) or high <= low:
+        return [guide_traces[key] for key in _GUIDE_TRACE_KEYS]
+
+    x_limits: tuple[float, float] | None = None
+    if isinstance(x_range, list) and len(x_range) == 2:
+        try:
+            x_low, x_high = map(float, x_range)
+        except (TypeError, ValueError):
+            pass
+        else:
+            if math.isfinite(x_low) and math.isfinite(x_high) and x_high > x_low:
+                x_limits = (x_low, x_high)
+
     guides: list[tuple[str, dict[str, Any] | None]] = [
-        (_HOVER_GUIDE, hover_identity),
-        (_SELECTED_GUIDE, selected_identity),
+        ("hover", hover_identity),
+        ("selected", selected_identity),
     ]
-    resolved = [(name, _guide_point(figure, identity)) for name, identity in guides]
+    resolved = [(guide, _guide_point(figure, identity)) for guide, identity in guides]
     if resolved[0][1] and resolved[1][1] and resolved[0][1][0] == resolved[1][1][0]:
-        resolved[0] = (_HOVER_GUIDE, None)
-    for name, point in resolved:
+        resolved[0] = ("hover", None)
+    for guide, point in resolved:
         if point is None:
             continue
-        roof = _roof_height(figure, point[0])
-        if roof is None or math.log10(roof) < low:
+        log_x = math.log10(point[0])
+        if x_limits is not None and not x_limits[0] <= log_x <= x_limits[1]:
             continue
-        shapes.append(
-            {
-                "type": "line",
-                "name": name,
-                "xref": "x",
-                "x0": point[0],
-                "x1": point[0],
-                "yref": "paper",
-                "y0": 0,
-                "y1": min(1, (math.log10(roof) - low) / (high - low)),
-                "line": {"color": color or "#666666", "width": 1, "dash": "solid"},
-                "layer": "above",
-                "editable": False,
-                "showlegend": False,
-                "captureevents": False,
-            }
-        )
-    return shapes
+        intersections = _roof_intersections(figure, point[0])
+        if not intersections:
+            continue
+        roof = intersections[0]
+        if math.log10(roof) < low:
+            continue
+
+        line_trace = guide_traces[(guide, "line")]
+        line_trace.x = [point[0], point[0]]
+        line_trace.y = [10**low, roof]
+        markers = guide_traces[(guide, "intersections")]
+        marker_x: list[float] = []
+        marker_y: list[float] = []
+        labels: list[str] = []
+        for performance in intersections:
+            log_y = math.log10(performance)
+            if math.log10(performance / point[1]) <= 1e-9 or not low <= log_y <= high:
+                continue
+            marker_x.append(point[0])
+            marker_y.append(performance)
+            labels.append(f"{Performance(performance * 1e9)!s} · {performance / point[1]:.2f}x")
+        markers.x = marker_x
+        markers.y = marker_y
+        markers.hovertext = labels
+    return [guide_traces[key] for key in _GUIDE_TRACE_KEYS]
 
 
 def _guide_trace_key(trace: dict[str, Any]) -> tuple[str, ...] | None:
@@ -260,23 +321,37 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
             }
             triggered = set(callback_context.triggered_prop_ids)
             if triggered and triggered <= interactions:
-                patch = Patch()
                 figure_state = current_figure or {}
-                patch["layout"]["shapes"] = _point_guide_shapes(figure_state, hover_data)
-                if f"{PlotAreaID.ROOFLINE_PLOT}.relayoutData" in triggered:
-                    layout = figure_state.get("layout", {})
-                    meta = layout.get("meta")
-                    manual_axes = set(meta.get("carm_manual_guide_axes", [])) if isinstance(meta, dict) else set()
-                    for axis in ("xaxis", "yaxis"):
-                        has_range = f"{axis}.range" in (relayout_data or {}) or (
-                            f"{axis}.range[0]" in (relayout_data or {}) and f"{axis}.range[1]" in (relayout_data or {})
-                        )
-                        if has_range:
-                            manual_axes.add(axis)
-                        elif (relayout_data or {}).get(f"{axis}.autorange") is True:
-                            manual_axes.discard(axis)
-                    patch["layout"]["meta"]["carm_manual_guide_axes"] = sorted(manual_axes)
-                return patch
+                figure_data = figure_state.get("data", [])
+                slots = figure_data[-len(_GUIDE_TRACE_KEYS) :] if len(figure_data) >= len(_GUIDE_TRACE_KEYS) else []
+                slots_ready = len(slots) == len(_GUIDE_TRACE_KEYS) and all(
+                    isinstance(trace, dict)
+                    and isinstance(trace.get("meta"), dict)
+                    and trace["meta"].get("carm_role") == _GUIDE_TRACE_ROLE
+                    and (trace["meta"].get("guide"), trace["meta"].get("kind")) == key
+                    for trace, key in zip(slots, _GUIDE_TRACE_KEYS)
+                )
+                if slots_ready:
+                    patch = Patch()
+                    guide_traces = _point_guide_traces(figure_state, hover_data)
+                    first_guide_index = len(figure_data) - len(_GUIDE_TRACE_KEYS)
+                    for index, trace in enumerate(guide_traces, start=first_guide_index):
+                        patch["data"][index] = trace.to_plotly_json()
+                    if f"{PlotAreaID.ROOFLINE_PLOT}.relayoutData" in triggered:
+                        layout = figure_state.get("layout", {})
+                        meta = layout.get("meta")
+                        manual_axes = set(meta.get("carm_manual_guide_axes", [])) if isinstance(meta, dict) else set()
+                        for axis in ("xaxis", "yaxis"):
+                            has_range = f"{axis}.range" in (relayout_data or {}) or (
+                                f"{axis}.range[0]" in (relayout_data or {})
+                                and f"{axis}.range[1]" in (relayout_data or {})
+                            )
+                            if has_range:
+                                manual_axes.add(axis)
+                            elif (relayout_data or {}).get(f"{axis}.autorange") is True:
+                                manual_axes.discard(axis)
+                        patch["layout"]["meta"]["carm_manual_guide_axes"] = sorted(manual_axes)
+                    return patch
         state.trace("_update_plot enter")
         if (
             job_data
@@ -345,8 +420,10 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
             )
         if mode.show_app_dropdown:
             _preserve_guide_view(figure, current_figure)
+            figure_state = cast("dict[str, Any]", figure.to_dict())
+            for trace in _point_guide_traces(figure_state, hover_data):
+                figure.add_trace(trace)
             figure_dict = cast("dict[str, Any]", figure.to_dict())
-            figure_dict["layout"]["shapes"] = _point_guide_shapes(figure_dict, hover_data)
         else:
             figure_dict = cast("dict[str, Any]", figure.to_dict())
         state.trace(f"_update_plot exit traces={len(figure_dict.get('data', []))}")

@@ -26,6 +26,7 @@ The GUI displays the architecture's roofline — peak performance bounds for com
 - **Compute-bound points** sit on or near the compute roof — they benefit from increasing computational intensity.
 - The **distance to the roofline** shows how much performance headroom exists.
 - **Clicking an application point** emphasizes the roof ceilings according to the point's cache-residency fractions.
+- **After selecting an application point**, hover a small circle on its guide to see that roof's performance and ratio to the point.
 
 ## Arguments by Category
 

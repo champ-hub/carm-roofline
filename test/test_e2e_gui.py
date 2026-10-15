@@ -434,6 +434,20 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
         "app_id": app_id,
         "point_index": 0,
     }
+    selected_guides = [
+        trace
+        for trace in selected_figure["data"]
+        if isinstance(trace.get("meta"), dict)
+        and trace["meta"].get("carm_role") == "point-guide"
+        and trace["meta"].get("guide") == "selected"
+    ]
+    selected_line = next(trace for trace in selected_guides if trace["meta"]["kind"] == "line")
+    selected_markers = next(trace for trace in selected_guides if trace["meta"]["kind"] == "intersections")
+    assert selected_line["x"] == [4.0, 4.0]
+    assert selected_line["y"][0] == pytest.approx(10 ** selected_figure["layout"]["yaxis"]["range"][0])
+    assert selected_markers["mode"] == "markers"
+    assert all(text.endswith("x") for text in selected_markers["hovertext"])
+    assert selected_markers["hovertemplate"] == "%{hovertext}<extra></extra>"
     selected_lines = [
         trace
         for trace in selected_figure["data"]
