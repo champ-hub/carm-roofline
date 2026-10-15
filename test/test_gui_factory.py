@@ -159,7 +159,7 @@ def test_point_guide_traces_show_unique_visible_roof_intersections_and_labels() 
     assert list(selected_line.x) == [4.0, 4.0]
     assert list(selected_line.y) == pytest.approx([1.0, 12.0])
     assert hover_line.mode == selected_line.mode == "lines"
-    assert hover_line.line.width == selected_line.line.width == 2
+    assert hover_line.line.width == selected_line.line.width == 3
     assert hover_line.opacity == selected_line.opacity == 0.5
     assert list(hover_markers.x) == [2.0, 2.0]
     assert list(hover_markers.y) == pytest.approx([10.0, 6.0])
@@ -169,7 +169,7 @@ def test_point_guide_traces_show_unique_visible_roof_intersections_and_labels() 
     assert list(selected_markers.hovertext) == [f"{Performance(12e9)} · 4.80x", f"{Performance(10e9)} · 4.00x"]
     assert hover_markers.mode == selected_markers.mode == "markers"
     assert hover_markers.hovertemplate == selected_markers.hovertemplate == "%{hovertext}<extra></extra>"
-    assert hover_markers.marker.size == selected_markers.marker.size == 8
+    assert hover_markers.marker.size == selected_markers.marker.size == 10
     assert hover_markers.marker.opacity == selected_markers.marker.opacity == 0.5
     assert hover_markers.opacity is selected_markers.opacity is None
     assert all(trace.showlegend is False for trace in traces)
