@@ -49,6 +49,8 @@ str
 ```
 when a more precise type can describe the data.
 
-## General
+## Documentation
 
-In documentation, refer to this software as "the CARM Tool".
+`docs/` is user-facing: never put implementation details there. The documentation must be simple and include only relevant information for users.
+
+In the documentation, refer to this software as "the CARM Tool".
