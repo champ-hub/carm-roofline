@@ -217,8 +217,7 @@
             var angle = Math.atan2(dy, dx) * 180 / Math.PI;
             var measuredWidth = context ? context.measureText(trace.meta.carm_roof_label).width + 8 : 24;
             var halfWidth = Math.max(measuredWidth, 20) / 2;
-            var memoryOffsets = {L1: 0, L2: 0, L3: 34, DRAM: 51};
-            var inset = Math.min(halfWidth + 3 + (memoryOffsets[trace.meta.carm_roof_label] || 0), length / 2);
+            var inset = Math.min(halfWidth + 3, length / 2);
             var atRight = trace.meta.carm_roof_label !== "L1" &&
                 trace.meta.carm_roof_label !== "L2" &&
                 trace.meta.carm_roof_label !== "L3" &&
