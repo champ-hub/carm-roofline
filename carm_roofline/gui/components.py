@@ -411,6 +411,7 @@ def build_sidebar(
             include_apps_section=mode.show_app_dropdown,
         ),
         build_settings_panel(store, roof_options),
+        *_build_guide_panels(store.active_panel),
     ]
     if mode.has_export_tab:
         children.append(build_export_panel(store))
@@ -424,6 +425,17 @@ def build_sidebar(
             ),
         ],
     )
+
+
+def _build_guide_panels(active_panel: ActivePanel) -> list[dbc.Card]:
+    """Build sidebar guides, showing the one for the active task panel."""
+    from carm_roofline.gui.guides import BENCHMARK_GUIDE, build_guide_panel
+    from carm_roofline.gui.profile_guide import PROFILE_GUIDE
+
+    return [
+        build_guide_panel("Benchmark guide", BENCHMARK_GUIDE, visible=active_panel == ActivePanel.BENCHMARK),
+        build_guide_panel("Profile guide", PROFILE_GUIDE, visible=active_panel == ActivePanel.PROFILE),
+    ]
 
 
 def build_carm_view_panel(

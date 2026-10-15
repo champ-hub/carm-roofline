@@ -59,7 +59,7 @@ Passing `--paraver-trace` (optionally with `--paraver-window-csv`) switches the 
 
 ### Benchmark
 
-Use the **Benchmark** navbar button to configure and run `carm benchmark` on the GUI server host. Basic settings cover test type, ISA, data types, thread counts, target run time, and result name. Hover over a field label to read more detail.
+Use the **Benchmark** navbar button to configure and run `carm benchmark` on the GUI server host. A guide appears in the left sidebar beside the benchmark controls. Basic settings cover test type, ISA, data types, thread counts, target run time, and result name. Hover over a field label to read more detail.
 
 Open **Advanced settings** to configure memory, arithmetic, hardware, compiler, simulator, and output options. Click **Start benchmark** to launch the CLI process. The page shows the current pipeline stage, completed measurements, elapsed time, process output, and final status. Only one benchmark can run at a time for each GUI server.
 

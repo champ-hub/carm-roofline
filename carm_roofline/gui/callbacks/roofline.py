@@ -7,13 +7,18 @@ from typing import Any, cast
 
 import dash
 import plotly.graph_objects as go
-from dash import ALL, Input, Output, Patch, State, callback_context, html
+from dash import ALL, Input, Output, Patch, State, callback_context
 
 from carm_roofline.core.units import Performance
 from carm_roofline.gui.callbacks.helpers import filter_app_options_for_roofs, selection_payload
 from carm_roofline.gui.callbacks.resolution import resolve_roofs
 from carm_roofline.gui.callbacks.state import CallbackState
-from carm_roofline.gui.components import build_carm_view_panel, build_export_panel, build_settings_panel
+from carm_roofline.gui.components import (
+    _build_guide_panels,
+    build_carm_view_panel,
+    build_export_panel,
+    build_settings_panel,
+)
 from carm_roofline.gui.data import build_paraver_figure, build_roofline_figure
 from carm_roofline.gui.ids import BenchmarkPanelID, PlotAreaID, ProfilePanelID, RoofCardID, SidebarID, StoreID
 from carm_roofline.gui.providers import BenchmarkAppsProvider, filter_trace
@@ -456,7 +461,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
         freq_vals: list[str | None],
         app_ids_vals: list[list[str] | None],
         _profile_job_data: dict[str, Any] | None,
-    ) -> list[html.Div]:
+    ) -> list[Any]:
         state.trace("_update_sidebar enter")
         store, resolved_roofs, per_roof_opts = resolve_roofs(
             state,
@@ -479,7 +484,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
             include_apps_section=state.mode.show_app_dropdown,
         )
         settings_panel = build_settings_panel(store, None)
-        children = [carm_view_panel, settings_panel]
+        children = [carm_view_panel, settings_panel, *_build_guide_panels(store.active_panel)]
         if mode.has_export_tab:
             children.append(build_export_panel(store))
         state.trace(f"_update_sidebar exit panel={store.active_panel}")

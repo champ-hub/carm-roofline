@@ -370,6 +370,82 @@
     margin-bottom: 20px;
 }
 
+.guide-panel {
+    min-width: 0;
+    max-height: calc(100vh - 72px);
+    margin: 12px;
+    overflow-y: auto;
+    border-color: #dee2e6;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.guide-panel-header {
+    color: #343a40;
+    font-weight: 600;
+    background: #f8f9fa;
+}
+
+.guide-panel-body {
+    padding: 16px;
+}
+
+.guide-markdown {
+    color: #495057;
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+.guide-markdown h1,
+.guide-markdown h2,
+.guide-markdown h3,
+.guide-markdown h4 {
+    margin: 0 0 8px;
+    color: #343a40;
+    font-weight: 600;
+}
+
+.guide-markdown h1 {
+    font-size: 20px;
+}
+
+.guide-markdown h2 {
+    font-size: 18px;
+}
+
+.guide-markdown h3 {
+    font-size: 14px;
+}
+
+.guide-markdown h4 {
+    font-size: 12px;
+}
+
+.guide-markdown h2:not(:first-child),
+.guide-markdown h3:not(:first-child),
+.guide-markdown h4:not(:first-child) {
+    margin-top: 18px;
+}
+
+.guide-markdown p,
+.guide-markdown ul,
+.guide-markdown ol {
+    margin-bottom: 10px;
+}
+
+.guide-markdown ul,
+.guide-markdown ol {
+    padding-left: 20px;
+}
+
+.guide-markdown code {
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: #f1f3f5;
+    color: #495057;
+    overflow-wrap: anywhere;
+}
+
+
 .benchmark-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
