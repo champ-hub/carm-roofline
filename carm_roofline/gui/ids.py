@@ -175,6 +175,7 @@ class SettingsPanelID(ID):
     SWITCH_POWER2_TICKS = "switch-power2-ticks"
     DROPDOWN_ROOF_FILL_MODE = "dropdown-roof-fill-mode"
     SWITCH_SHOW_MIXED_BENCHMARKS = "switch-show-mixed-benchmarks"
+    SWITCH_SHOW_ROOF_LABELS = "switch-show-roof-labels"
     SLIDER_LINE_WIDTH = "slider-line-width"
     SLIDER_FONT_SIZE_AXIS_LABEL = "slider-font-size-axis-label"
     SLIDER_FONT_SIZE_AXIS_TICK = "slider-font-size-axis-tick"

@@ -677,6 +677,11 @@ def build_settings_panel(store: RoofStore, options: FilterOptions | None = None)
             SettingsPanelID.SWITCH_POWER2_TICKS,
             s.power2_ticks,
         ),
+        _build_settings_switch(
+            "Show roof labels",
+            SettingsPanelID.SWITCH_SHOW_ROOF_LABELS,
+            s.show_roof_labels,
+        ),
         _field_row(
             "Roof fill",
             dcc_dropdown(

@@ -123,6 +123,7 @@ class GUISettings:
     power2_ticks: bool = False
     roof_fill_mode: Literal["between", "none", "bound"] = "between"
     show_mixed_benchmarks: bool = False
+    show_roof_labels: bool = True
     line_width: float = 1.5
     axis_label_font_size: int = 14
     axis_tick_font_size: int = 12

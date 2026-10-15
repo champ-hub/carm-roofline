@@ -870,13 +870,13 @@ def _add_bound_region_fills(
             name=f"carm-bound-region:{label}",
             text=label,
             x=center,
-            y=0.12,
+            y=0.02,
             xref="x",
             yref="paper",
             yanchor="bottom",
             showarrow=False,
             visible=visible,
-            font={"color": fill.rsplit(",", 1)[0] + ",1)", "size": 11},
+            font={"color": fill.rsplit(",", 1)[0] + ",1)", "size": 16},
         )
 
 
@@ -1029,7 +1029,7 @@ def _add_roof_ceilings(
                 hoverinfo="skip",
                 showlegend=_first,
                 **trace_opts,
-                meta={"carm_role": "roof-ceiling"},
+                meta={"carm_role": "roof-ceiling", "carm_roof_label": level},
             )
         )
         _first = False
@@ -1061,9 +1061,8 @@ def _add_roof_ceilings(
                 name=f"{roof.label} {op_name} ({perf_norm!s})",
                 legendgroup=roof.id,
                 line={"color": color, **line_style},
-                hoverinfo="skip",
+                meta={"carm_role": "roof-ceiling", "carm_roof_label": op_name},
                 showlegend=_first,
-                meta={"carm_role": "roof-ceiling"},
                 **compute_trace_opts,
             )
         )
@@ -1180,8 +1179,12 @@ def _finalize_axes_and_layout(
         else []
     )
 
+    layout_meta = dict(fig.layout.meta) if isinstance(fig.layout.meta, dict) else {}
+    layout_meta["carm_show_roof_labels"] = settings.show_roof_labels
+
     fig.update_layout(
         images=images,
+        meta=layout_meta,
         template="plotly_white",
         xaxis=xaxis,
         yaxis=yaxis,

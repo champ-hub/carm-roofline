@@ -85,4 +85,4 @@ Leave the output directory blank to use the configured results directory shown i
 The **Settings** panel (navbar button) groups plotting and appearance controls:
 
 - Plotting settings: **Normalize performance by threads**
-- Plot style: **2^N axis tick labels**, **Roof fill** (between-roof fills, no fill, or bound regions), **Point size multiplier**, **Line width**, and font sizes for axis labels, axis ticks, tooltips, and the legend
+- Plot style: **Show roof labels**, **2^N axis tick labels**, **Roof fill** (between-roof fills, no fill, or bound regions), **Point size multiplier**, **Line width**, and font sizes for axis labels, axis ticks, tooltips, and the legend.
