@@ -145,12 +145,12 @@ class ApplicationPoint:
     """A single application roofline point from an application run."""
 
     label: str
-    total_flops: float
-    total_bytes: float
+    total_flops: float | None
+    total_bytes: float | None
     runtime_s: float
-    num_ranks: int
+    num_ranks: int | None
     num_threads: int
-    num_regions: int
+    num_regions: int | None
     arithmetic_intensity: float
     flops_per_second: float
     bandwidth: float
@@ -278,7 +278,12 @@ def load_applications(path: Path, machine: str = "") -> list[ApplicationRecord]:
             if not name and not date and not aggregation:
                 warn(f"Skipping application record with empty metadata: {stripped[:120]}")
                 continue
-            id_ = f"{name}_{hashlib.sha1(f'{name}|{date}|{aggregation}|{command}'.encode()).hexdigest()[:8]}"
+            identity = json.dumps(
+                [machine, name, date, aggregation, command],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            id_ = f"{name}_{hashlib.sha1(identity.encode()).hexdigest()[:8]}"
             label = f"{name} \u2014 {date} ({aggregation})"
             raw_points: list[dict[str, Any]] = raw.get("points", []) or []
             points: list[ApplicationPoint] = []
@@ -286,12 +291,12 @@ def load_applications(path: Path, machine: str = "") -> list[ApplicationRecord]:
                 points.append(
                     ApplicationPoint(
                         label=p.get("label", ""),
-                        total_flops=float(p.get("total_flops", 0)),
-                        total_bytes=float(p.get("total_bytes", 0)),
+                        total_flops=float(p.get("total_flops", 0)) if p.get("total_flops", 0) is not None else None,
+                        total_bytes=float(p.get("total_bytes", 0)) if p.get("total_bytes", 0) is not None else None,
                         runtime_s=float(p.get("runtime_s", 0)),
-                        num_ranks=int(p.get("num_ranks", 0)),
+                        num_ranks=int(p.get("num_ranks", 0)) if p.get("num_ranks", 0) is not None else None,
                         num_threads=int(p.get("num_threads", 0)),
-                        num_regions=int(p.get("num_regions", 0)),
+                        num_regions=int(p.get("num_regions", 0)) if p.get("num_regions", 0) is not None else None,
                         arithmetic_intensity=float(p.get("arithmetic_intensity", 0)),
                         flops_per_second=float(p.get("flops_per_second", 0)),
                         bandwidth=float(p.get("bandwidth", 0)),

@@ -72,7 +72,7 @@ Check that the `carm` command is available:
 carm --help
 ```
 
-You should see the top-level help screen listing the available subcommands: `benchmark`, `gui`, and `profile`.
+You should see the top-level help screen listing the available subcommands: `benchmark`, `gui`, `profile`, and `convert`.
 
 ## Next Steps
 

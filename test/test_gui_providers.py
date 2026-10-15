@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -564,6 +565,49 @@ def test_benchmark_apps_provider_loads_applications_jsonl(tmp_path: Path) -> Non
     assert rec.machine == "machine-a"
 
 
+def test_benchmark_apps_provider_keeps_identical_runs_separate_by_machine(tmp_path: Path) -> None:
+    """Same run metadata on distinct machines keeps IDs and selector options distinct."""
+    from carm_roofline.gui.callbacks.helpers import filter_app_options_for_roofs
+
+    record = {
+        "format_version": "3.0",
+        "metadata": {"name": "stream_ONLY_SCALE", "date": "2026-02-19T15:47:49", "command": ""},
+        "aggregation": "global",
+        "points": [
+            {
+                "label": "global",
+                "runtime_s": 1,
+                "num_threads": 1,
+                "arithmetic_intensity": 0.0625,
+                "flops_per_second": 10,
+                "bandwidth": 160,
+            }
+        ],
+    }
+    for machine, bandwidth in (("MareNostrum_5", 160), ("MareNostrum_5_HBM", 320)):
+        machine_record = {**record, "points": [{**record["points"][0], "bandwidth": bandwidth}]}
+        machine_dir = tmp_path / machine
+        machine_dir.mkdir()
+        (machine_dir / "applications.jsonl").write_text(json.dumps(machine_record), encoding="utf-8")
+
+    app_by_id = BenchmarkAppsProvider(tmp_path).load()
+    assert len(app_by_id) == 2
+    assert len(set(app_by_id)) == 2
+    options = [{"label": app.label, "value": app.id} for app in app_by_id.values()]
+    normal_options, hbm_options = filter_app_options_for_roofs(
+        [SimpleNamespace(machine="MareNostrum_5"), SimpleNamespace(machine="MareNostrum_5_HBM")],
+        options,
+        app_by_id,
+    )
+    assert len(normal_options) == len(hbm_options) == 1
+    normal = app_by_id[normal_options[0]["value"]]
+    hbm = app_by_id[hbm_options[0]["value"]]
+    assert normal.machine == "MareNostrum_5"
+    assert normal.points[0].bandwidth == 160
+    assert hbm.machine == "MareNostrum_5_HBM"
+    assert hbm.points[0].bandwidth == 320
+
+
 def test_load_applications_round_trips_time_s(tmp_path: Path) -> None:
     """A point's time_s survives the JSONL round trip; absent time_s loads as None."""
     path = tmp_path / "applications.jsonl"
@@ -612,6 +656,43 @@ def test_load_applications_round_trips_time_s(tmp_path: Path) -> None:
     assert traced.time_s == pytest.approx(12.5)
     assert carm.label == "p_carm"
     assert carm.time_s is None
+
+def test_load_applications_preserves_nullable_legacy_fields(tmp_path: Path) -> None:
+    """Unknown legacy totals and rank/region counts stay None, not false zeroes."""
+    path = tmp_path / "applications.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "format_version": "3.0",
+                "metadata": {"name": "legacy", "date": "2026-01-01", "command": "", "isa": None},
+                "aggregation": "global",
+                "points": [
+                    {
+                        "label": "p",
+                        "total_flops": None,
+                        "total_bytes": None,
+                        "runtime_s": 2.0,
+                        "num_ranks": None,
+                        "num_threads": 4,
+                        "num_regions": None,
+                        "arithmetic_intensity": 0.5,
+                        "flops_per_second": 2e9,
+                        "bandwidth": 4e9,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    record = load_applications(path)[0]
+    point = record.points[0]
+    assert point.total_flops is None
+    assert point.total_bytes is None
+    assert point.num_ranks is None
+    assert point.num_threads == 4
+    assert point.num_regions is None
+    assert record.metadata["isa"] is None
 
 
 def test_load_applications_mixed_format_versions_preserves_optional_fractions(tmp_path: Path) -> None:

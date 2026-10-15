@@ -1126,6 +1126,31 @@ def test_point_tooltip_includes_cache_residency() -> None:
     assert "<b>Cache Residency</b>" in tooltip
     assert "L1: 60.0% | L2: 30.0% | L3: 8.0% | DRAM: 2.0%" in tooltip
 
+def test_point_tooltip_displays_unknown_legacy_application_fields() -> None:
+    """Unknown application metrics are labelled, never rendered as zero."""
+    rec = ApplicationRecord(id="r1", label="legacy", aggregation="global", metadata={}, points=[])
+    point = ApplicationPoint(
+        label="p1",
+        total_flops=None,
+        total_bytes=None,
+        runtime_s=1.0,
+        num_ranks=None,
+        num_threads=4,
+        num_regions=None,
+        arithmetic_intensity=0.5,
+        flops_per_second=2e9,
+        bandwidth=4e9,
+    )
+
+    tooltip = _format_point_tooltip(rec, point)
+
+    assert "4 thread(s), Unknown ranks" in tooltip
+    assert "Total FLOPs: Unknown" in tooltip
+    assert "Total Bytes: Unknown" in tooltip
+    assert "Regions: Unknown" in tooltip
+    assert "Total FLOPs: 0" not in tooltip
+
+
 def test_point_tooltip_includes_cache_line_utilization() -> None:
     """Tooltip displays a cache-line-utilization ratio as a percentage."""
     rec = ApplicationRecord(id="r1", label="run1", aggregation="global", metadata={}, machine="m", points=[])

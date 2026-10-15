@@ -446,10 +446,15 @@ def _residency_tooltip_items(residency: dict[str, float]) -> tuple[tuple[str, fl
 
 def _format_point_tooltip(rec: ApplicationRecord, p: ApplicationPoint, roof_num_threads: int | None = None) -> str:
     """Format a rich tooltip string for an application roofline point."""
+    rank_count = f"{p.num_ranks} rank(s)" if p.num_ranks is not None else "Unknown ranks"
     if roof_num_threads is not None and roof_num_threads != p.num_threads:
-        threads_line = f"  {p.num_threads} thread(s) <b>[ROOF USES {roof_num_threads}!]</b>, {p.num_ranks} rank(s)"
+        threads_line = f"  {p.num_threads} thread(s) <b>[ROOF USES {roof_num_threads}!]</b>, {rank_count}"
     else:
-        threads_line = f"  {p.num_threads} thread(s), {p.num_ranks} rank(s)"
+        threads_line = f"  {p.num_threads} thread(s), {rank_count}"
+    total_flops = (
+        str(Operations(int(p.total_flops))).replace("OPS", "FLOPS") if p.total_flops is not None else "Unknown"
+    )
+    total_bytes = f"{Bytes(int(p.total_bytes))!s}" if p.total_bytes is not None else "Unknown"
     parts = [
         f"<b>{rec.label}</b>",
         f"<i>{p.label}</i>",
@@ -461,9 +466,9 @@ def _format_point_tooltip(rec: ApplicationRecord, p: ApplicationPoint, roof_num_
         threads_line,
         f"  Duration: {Seconds(p.runtime_s)!s}",
         "<b>Work</b>",
-        f"  Total FLOPs: {str(Operations(int(p.total_flops))).replace('OPS', 'FLOPS')}",
-        f"  Total Bytes: {Bytes(int(p.total_bytes))!s}",
-        f"  Regions: {p.num_regions}",
+        f"  Total FLOPs: {total_flops}",
+        f"  Total Bytes: {total_bytes}",
+        f"  Regions: {p.num_regions if p.num_regions is not None else 'Unknown'}",
     ]
     residency = p.optional_fractions.get("cache-residency") or {}
     if residency:

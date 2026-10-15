@@ -21,6 +21,7 @@ from carm_roofline.exec_interface import ExecutionInterface
 from carm_roofline.gui.config import GUIConfig
 from carm_roofline.output_utils import configure_verbosity, debug, detail, error, info, warn
 from carm_roofline.profiling.config import ProfileConfig
+from carm_roofline.results_paths import default_results_root
 from carm_roofline.run_config import RunConfig
 
 RichHelpFormatter.styles.update(
@@ -141,6 +142,25 @@ def _handle_profile(args: argparse.Namespace) -> int:
     return profile_main(config)
 
 
+def _handle_convert(args: argparse.Namespace) -> int:
+    from carm_roofline.conversion import ConversionOptions, convert
+
+    summary = convert(
+        ConversionOptions(
+            input_path=args.input,
+            from_format=args.from_format,
+            to_format=args.to_format,
+            output_dir=args.output_dir,
+            overwrite=args.overwrite,
+            dry_run=args.dry_run,
+            allow_lossy=args.allow_lossy,
+        )
+    )
+    for line in summary:
+        sys.stdout.write(f"{line}\n")
+    return 0
+
+
 @dataclass
 class SubParserInfo:
     name: str
@@ -173,6 +193,12 @@ SUBPARSERS = (
         "Usage: carm profile [options] -- <command>",
         handler=_handle_profile,
         arg_inserting_modules=(ProfileConfig,),
+    ),
+    SubParserInfo(
+        name="convert",
+        help_short="Convert legacy CSV and CARM JSONL results",
+        help_long="Convert result datasets between legacy CSV and GUI-visible JSONL",
+        handler=_handle_convert,
     ),
 )
 
@@ -209,6 +235,19 @@ def _create_parser() -> argparse.ArgumentParser:
                 help="Progress display format (default: rich)",
             )
 
+        if subparser.name == "convert":
+            sp.add_argument("input", type=Path, help="Input CSV/JSONL file or directory")
+            sp.add_argument("--from", dest="from_format", choices=("legacy-csv", "jsonl"), required=True)
+            sp.add_argument("--to", dest="to_format", choices=("legacy-csv", "jsonl"), required=True)
+            sp.add_argument(
+                "--output-dir",
+                type=Path,
+                default=default_results_root(),
+                help="Output directory (default: CARM user data directory)",
+            )
+            sp.add_argument("--overwrite", action="store_true", help="Replace existing output files")
+            sp.add_argument("--dry-run", action="store_true", help="Validate and report output without writing")
+            sp.add_argument("--allow-lossy", action="store_true", help="Allow supported lossy JSONL-to-CSV projections")
     return parser
 
 

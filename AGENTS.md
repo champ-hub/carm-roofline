@@ -13,13 +13,14 @@ CARM (Cache-Aware Roofline Model) is a micro-benchmarking toolkit that construct
 
 ## Commands
 
-The `carm` CLI has three subcommands:
+The `carm` CLI has four subcommands:
 
 | Command | Purpose |
 |---------|---------|
 | `carm benchmark` | Run benchmarks (arithmetic, memory, roofline) to construct performance models |
 | `carm profile` | Profile instrumented applications (MPI, threaded, hybrid) for roofline metrics |
 | `carm gui` | Launch the interactive Dash+Plotly roofline dashboard |
+| `carm convert` | Convert legacy CSV datasets and CARM JSONL results |
 
 Run `carm <command> --help` for command-specific options. Configuration classes inject arguments modularly via `InsertsArguments`.
 

@@ -7,7 +7,7 @@ has_children: true
 
 # CARM subcommands
 
-The CARM tool provides three main subcommands covering benchmarking, profiling, and visualization, plus a Paraver trace-analysis mode inside the GUI. See each page for detailed usage instructions and examples.
+The CARM Tool provides four subcommands covering benchmarking, profiling, visualization, and result conversion, plus a Paraver trace-analysis mode inside the GUI. See each page for detailed usage instructions and examples.
 
 ---
 
@@ -38,6 +38,21 @@ Profile instrumented applications (MPI, threaded, hybrid) to compute roofline me
 ```bash
 carm profile [options] -- <command>
 ```
+
+---
+
+## Conversion
+
+Convert legacy application or two-header roofline CSV files into GUI-discoverable JSONL, or export JSONL back to CSV:
+
+```bash
+carm convert legacy-results --from legacy-csv --to jsonl
+carm convert results --from jsonl --to legacy-csv --output-dir restored
+```
+
+The output directory defaults to CARM's user data directory; use `--output-dir` to choose another destination.
+
+Use `--dry-run` to validate and preview outputs, and `--overwrite` to replace existing destination files.
 
 ---
 
