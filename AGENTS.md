@@ -198,8 +198,8 @@ Generic arithmetic wrapper `Unit[T]` (ABC) with subclasses: `Bytes`, `Operations
 
 After making a change to the Dash GUI (`carm_roofline/gui/`), validate it with the headless browser tool if you are running under the omp harness:
 
-1. Start the GUI via `hub {op: "start", name: "carm-gui", application: "carm", args: ["gui"]}` and wait for `"Dash is running"` in logs.
-2. Open the browser: `write xd://browser {action: "open", url: "http://0.0.0.0:8050/"}`
+1. Start the GUI via `hub {op: "start", name: "carm-gui", application: "carm", args: ["gui"]}`, never use the default port.
+2. Open the browser: `write xd://browser {action: "open", url: "http://0.0.0.0:PORT/"}`
 3. Interact and inspect with `tab.ariaSnapshot()`, `tab.click()`, etc. via `write xd://browser {action: "run", code: <js>}`.
 4. Stop the GUI: `hub {op: "stop", name: "carm-gui"}`
 
