@@ -239,8 +239,19 @@ def _preserve_guide_view(figure: Any, current_figure: dict[str, Any] | None) -> 
     old_traces = {
         key: trace for trace in current_figure.get("data", []) if (key := _guide_trace_key(trace)) is not None
     }
+    hidden_legend_groups: dict[str, bool | str] = {}
+    for previous in current_figure.get("data", []):
+        legendgroup = previous.get("legendgroup")
+        visible = previous.get("visible")
+        if isinstance(legendgroup, str) and (visible is False or visible == "legendonly"):
+            hidden_legend_groups[legendgroup] = visible
     for trace in figure.data:
-        key = _guide_trace_key(trace.to_plotly_json())
+        trace_data = trace.to_plotly_json()
+        legendgroup = trace_data.get("legendgroup")
+        if isinstance(legendgroup, str) and legendgroup in hidden_legend_groups:
+            trace.visible = hidden_legend_groups[legendgroup]
+            continue
+        key = _guide_trace_key(trace_data)
         previous = old_traces.get(key) if key is not None else None
         if previous and previous.get("visible") in (False, "legendonly"):
             trace.visible = previous["visible"]
