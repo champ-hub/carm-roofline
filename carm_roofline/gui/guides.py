@@ -14,6 +14,8 @@ perfect accuracy.
 
 Then click **Start benchmark**, the GUI shows progress, elapsed time, output, and the generated command.
 
+For detailed instructions, see the `carm benchmark` [documentation](https://champ-hub.github.io/carm-roofline/benchmark.html).
+
 ## Parameters
 
 ### Test type
@@ -53,7 +55,9 @@ def build_guide_panel(title: str, markdown: str, visible: bool = True) -> dbc.Ca
     return dbc.Card(
         [
             dbc.CardHeader(title, class_name="guide-panel-header"),
-            dbc.CardBody(dcc.Markdown(markdown, className="guide-markdown"), class_name="guide-panel-body"),
+            dbc.CardBody(
+                dcc.Markdown(markdown, className="guide-markdown", link_target="_blank"), class_name="guide-panel-body"
+            ),
         ],
         class_name="guide-panel",
         style={"display": "block"} if visible else {"display": "none"},

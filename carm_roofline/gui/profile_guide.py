@@ -12,6 +12,8 @@ To profile your first application, choose **PAPI** if you have annotated it with
 Enter the executable and its arguments in **Command**, then select **Start profile**. The page shows progress, elapsed
 time, output, and the generated command. Results are written on the GUI server.
 
+For detailed instructions, see the `carm profile` [documentation](https://champ-hub.github.io/carm-roofline/profile.html).
+
 ## Parameters
 
 ### Backend
