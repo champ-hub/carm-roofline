@@ -100,28 +100,28 @@ def test_point_guide_traces_show_unique_visible_roof_intersections_and_labels() 
                 "y": [1.5, 2.5],
             },
             {
-                "meta": {"carm_role": "roof-ceiling"},
+                "meta": {"carm_role": "roof-ceiling", "carm_roof_label": "DRAM"},
                 "legendgroup": "r1",
                 "name": "visible roof",
                 "x": [1.0, 5.0],
                 "y": [10.0, 10.0],
             },
             {
-                "meta": {"carm_role": "roof-ceiling"},
+                "meta": {"carm_role": "roof-ceiling", "carm_roof_label": "L1"},
                 "legendgroup": "r1",
                 "name": "coincident roof",
                 "x": [1.0, 5.0],
                 "y": [10.0, 10.0],
             },
             {
-                "meta": {"carm_role": "roof-ceiling"},
+                "meta": {"carm_role": "roof-ceiling", "carm_roof_label": "L1"},
                 "legendgroup": "r1",
                 "name": "at and below application points",
                 "x": [1.0, 5.0],
                 "y": [1.5, 1.5],
             },
             {
-                "meta": {"carm_role": "roof-ceiling"},
+                "meta": {"carm_role": "roof-ceiling", "carm_roof_label": "add"},
                 "legendgroup": "r1",
                 "name": "sloped ceiling",
                 "x": [1.0, 5.0],
@@ -163,10 +163,10 @@ def test_point_guide_traces_show_unique_visible_roof_intersections_and_labels() 
     assert hover_line.opacity == selected_line.opacity == 0.5
     assert list(hover_markers.x) == [2.0, 2.0]
     assert list(hover_markers.y) == pytest.approx([10.0, 6.0])
-    assert list(hover_markers.hovertext) == [f"{Performance(10e9)} · 6.67x", f"{Performance(6e9)} · 4.00x"]
+    assert list(hover_markers.hovertext) == [f"{Performance(10e9)} · 6.67x @DRAM/L1", f"{Performance(6e9)} · 4.00x @add"]
     assert list(selected_markers.x) == [4.0, 4.0]
     assert list(selected_markers.y) == pytest.approx([12.0, 10.0])
-    assert list(selected_markers.hovertext) == [f"{Performance(12e9)} · 4.80x", f"{Performance(10e9)} · 4.00x"]
+    assert list(selected_markers.hovertext) == [f"{Performance(12e9)} · 4.80x @add", f"{Performance(10e9)} · 4.00x @DRAM/L1"]
     assert hover_markers.mode == selected_markers.mode == "markers"
     assert hover_markers.hovertemplate == selected_markers.hovertemplate == "%{hovertext}<extra></extra>"
     assert hover_markers.marker.size == selected_markers.marker.size == 10
@@ -218,7 +218,7 @@ def test_point_guide_traces_clear_hover_and_selection_without_touching_layout() 
     assert list(traces_by_key[("hover", "line")].x) == []
     assert list(traces_by_key[("hover", "intersections")].hovertext) == []
     assert list(traces_by_key[("selected", "line")].x) == [2.0, 2.0]
-    assert list(traces_by_key[("selected", "intersections")].hovertext) == [f"{Performance(10e9)} · 6.67x"]
+    assert list(traces_by_key[("selected", "intersections")].hovertext) == [f"{Performance(10e9)} · 6.67x @roof"]
     marker_hover = _point_guide_traces(figure, {"points": [{"customdata": None}]})
     marker_hover_by_key = {
         (trace.meta["guide"], trace.meta["kind"]): trace
@@ -227,7 +227,7 @@ def test_point_guide_traces_clear_hover_and_selection_without_touching_layout() 
     }
     assert list(marker_hover_by_key[("selected", "line")].x) == [2.0, 2.0]
     assert list(marker_hover_by_key[("selected", "intersections")].hovertext) == [
-        f"{Performance(10e9)} · 6.67x"
+        f"{Performance(10e9)} · 6.67x @roof"
     ]
     figure["layout"]["meta"]["carm_selected_point"] = None
     cleared = _point_guide_traces(figure, None)

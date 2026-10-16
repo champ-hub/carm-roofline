@@ -63,10 +63,10 @@ def _guide_point(figure: dict[str, Any], identity: dict[str, Any] | None) -> tup
     return None
 
 
-def _roof_intersections(figure: dict[str, Any], intensity: float) -> list[float]:
-    """Return unique visible roof performances intersecting the guide intensity."""
+def _roof_intersections(figure: dict[str, Any], intensity: float) -> list[tuple[float, list[str]]]:
+    """Return unique visible roof performances and their labels at the guide intensity."""
     log_x = math.log10(intensity)
-    intersections: dict[float, float] = {}
+    intersections: dict[float, tuple[float, set[str]]] = {}
     for trace in figure.get("data", []):
         meta = trace.get("meta")
         if (
@@ -75,6 +75,11 @@ def _roof_intersections(figure: dict[str, Any], intensity: float) -> list[float]
             or trace.get("visible") is False
             or trace.get("visible") == "legendonly"
         ):
+            continue
+        roof_label = meta.get("carm_roof_label")
+        if not isinstance(roof_label, str) or not roof_label:
+            roof_label = trace.get("name")
+        if not isinstance(roof_label, str) or not roof_label:
             continue
         xs, ys = trace.get("x", []), trace.get("y", [])
         for index in range(min(len(xs), len(ys)) - 1):
@@ -97,8 +102,12 @@ def _roof_intersections(figure: dict[str, Any], intensity: float) -> list[float]
                 performance = 10 ** (math.log10(y1) + fraction * (math.log10(y2) - math.log10(y1)))
             if not math.isfinite(performance):
                 continue
-            intersections[round(math.log10(performance), 10)] = performance
-    return sorted(intersections.values(), reverse=True)
+            key = round(math.log10(performance), 10)
+            if key not in intersections:
+                intersections[key] = (performance, set())
+            intersections[key][1].add(roof_label)
+    ordered = sorted(intersections.values(), key=lambda item: item[0], reverse=True)
+    return [(performance, sorted(labels)) for performance, labels in ordered]
 
 
 def _point_guide_traces(figure: dict[str, Any], hover_data: dict[str, Any] | None) -> list[go.Scatter]:
@@ -187,7 +196,7 @@ def _point_guide_traces(figure: dict[str, Any], hover_data: dict[str, Any] | Non
         intersections = _roof_intersections(figure, point[0])
         if not intersections:
             continue
-        roof = intersections[0]
+        roof, _roof_labels = intersections[0]
         if math.log10(roof) < low:
             continue
 
@@ -198,13 +207,14 @@ def _point_guide_traces(figure: dict[str, Any], hover_data: dict[str, Any] | Non
         marker_x: list[float] = []
         marker_y: list[float] = []
         labels: list[str] = []
-        for performance in intersections:
+        for performance, roof_labels in intersections:
             log_y = math.log10(performance)
             if math.log10(performance / point[1]) <= 1e-9 or not low <= log_y <= high:
                 continue
             marker_x.append(point[0])
             marker_y.append(performance)
-            labels.append(f"{Performance(performance * 1e9)!s} · {performance / point[1]:.2f}x")
+            label = f"{Performance(performance * 1e9)!s} · {performance / point[1]:.2f}x"
+            labels.append(f"{label} @{'/'.join(roof_labels)}")
         markers.x = marker_x
         markers.y = marker_y
         markers.hovertext = labels

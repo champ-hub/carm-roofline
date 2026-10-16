@@ -492,7 +492,7 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
     assert selected_line["x"] == [4.0, 4.0]
     assert selected_line["y"][0] == pytest.approx(10 ** selected_figure["layout"]["yaxis"]["range"][0])
     assert selected_markers["mode"] == "markers"
-    assert all(text.endswith("x") for text in selected_markers["hovertext"])
+    assert all("x @" in text for text in selected_markers["hovertext"])
     assert selected_markers["hovertemplate"] == "%{hovertext}<extra></extra>"
     selected_lines = [
         trace
