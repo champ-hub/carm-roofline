@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import subprocess
 import sys
@@ -14,12 +15,15 @@ import dash
 import pytest
 
 from carm_roofline.gui import benchmark_runner, profile_runner
+from carm_roofline.gui.callbacks.helpers import RoofControlPatch, apply_roof_controls
 from carm_roofline.gui.config import GUIConfig
-from carm_roofline.gui.factory import create_app
+from carm_roofline.gui.components import build_carm_view_panel
 from carm_roofline.gui.data import RoofConfig, RoofStore
+from carm_roofline.gui.factory import create_app
 from carm_roofline.gui.providers import BenchmarkAppsProvider
 from carm_roofline.gui.ids import (
     BenchmarkPanelID,
+    CarmViewPanelID,
     PlotAreaID,
     ProfilePanelID,
     RoofCardID,
@@ -191,6 +195,16 @@ def _component(layout: dict[str, Any], component_id: str | dict[str, Any]) -> di
     raise AssertionError(f"component not found in rendered layout: {component_id}")
 
 
+def _layout_with_roof_controls(layout: dict[str, Any], store: RoofStore) -> dict[str, Any]:
+    """Render actual roof cards into a copy of the server layout for callback dispatch."""
+    from plotly.utils import PlotlyJSONEncoder
+
+    rendered_layout = copy.deepcopy(layout)
+    controls = json.loads(json.dumps(build_carm_view_panel(store), cls=PlotlyJSONEncoder))
+    _component(rendered_layout, str(SidebarID.SIDEBAR_CONTENT))["children"] = controls
+    return rendered_layout
+
+
 def _output_parts(output: Any) -> list[tuple[str, str]]:
     outputs = output if isinstance(output, list) else [output]
     return [(str(item.component_id), str(item.component_property)) for item in outputs]
@@ -211,14 +225,10 @@ def _layout_value(layout: dict[str, Any], callback_id: str, property_name: str) 
     """Find a component property's current value in the server-rendered layout."""
     if callback_id.startswith("{"):
         pattern = json.loads(callback_id)
-        target_type = pattern.get("type")
-        values = [
-            component["props"].get(property_name)
-            for component in _walk_components(layout)
-            if isinstance(component.get("props", {}).get("id"), dict)
-            and component["props"]["id"].get("type") == target_type
-        ]
-        return values
+        try:
+            return _component(layout, pattern).get(property_name)
+        except AssertionError:
+            return None
     try:
         return _component(layout, callback_id).get(property_name)
     except AssertionError:
@@ -235,6 +245,7 @@ def _dispatch(
     overrides: dict[str, Any] | None = None,
     changed_id: str,
     input_id: str | None = None,
+    expected_status: int = 200,
 ) -> dict[str, Any]:
     """Dispatch one real Dash callback request through Flask's HTTP test client."""
     key = _callback_key(app, component_id, property_name, input_id)
@@ -251,11 +262,42 @@ def _dispatch(
                     return value
         return _layout_value(layout, item_id, property_name)
 
-    def make_items(specifications: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        items = []
+    def make_items(specifications: list[dict[str, Any]]) -> list[Any]:
+        items: list[Any] = []
         for specification in specifications:
             item_id = str(specification["id"])
             prop = str(specification["property"])
+            if item_id.startswith("{"):
+                pattern_id = json.loads(item_id)
+                if pattern_id.get("roof_id") == ["MATCH"]:
+                    changed_pattern = json.loads(changed_id.rsplit(".", 1)[0])
+                    items.append({
+                        "id": changed_pattern,
+                        "property": prop,
+                        "value": value_for(
+                            json.dumps(changed_pattern, separators=(",", ":"), sort_keys=True), prop
+                        ),
+                    })
+                else:
+                    matches = []
+                    for component in _walk_components(layout):
+                        concrete = component.get("props", {}).get("id")
+                        if not isinstance(concrete, dict) or any(
+                            key not in concrete
+                            or (
+                                isinstance(pattern_id[key], list)
+                                and pattern_id[key] not in (["ALL"], ["MATCH"])
+                                and concrete.get(key) not in pattern_id[key]
+                            )
+                            or (not isinstance(pattern_id[key], list) and pattern_id[key] != concrete.get(key))
+                            for key in pattern_id
+                        ):
+                            continue
+                        concrete_id = json.dumps(concrete, separators=(",", ":"), sort_keys=True)
+                        matches.append({"id": concrete, "property": prop, "value": value_for(concrete_id, prop)})
+                    matches.reverse()
+                    items.append(matches)
+                continue
             items.append({"id": item_id, "property": prop, "value": value_for(item_id, prop)})
         return items
 
@@ -275,7 +317,9 @@ def _dispatch(
             "changedPropIds": [changed_id],
         },
     )
-    assert response.status_code == 200, response.get_data(as_text=True)
+    assert response.status_code == expected_status, response.get_data(as_text=True)
+    if expected_status == 204:
+        return {}
     return response.get_json()["response"]
 
 
@@ -372,11 +416,13 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
     assert not store["roofs"]
     app_id = next(iter(BenchmarkAppsProvider(results_dir).load()))
     store["roofs"] = RoofStore(roof_template=RoofConfig(machine="fixture-host", app_ids=[app_id])).to_dict()["roofs"]
-    roof_index = store["roofs"][0]["id"]
+    roof_id = store["roofs"][0]["id"]
+    base_layout = layout
+    layout = _layout_with_roof_controls(base_layout, RoofStore.from_dict(store))
     roof_input_overrides = {
         json.dumps(
-            {"index": ["ALL"], "type": RoofCardID.DROPDOWN_APPS}, sort_keys=True, separators=(",", ":")
-        ): [[app_id]]
+            {"roof_id": roof_id, "type": RoofCardID.DROPDOWN_APPS}, sort_keys=True, separators=(",", ":")
+        ): [app_id]
     }
     # Dispatch the actual figure callback with the application selected in its roof card.
     plot_response = _dispatch(
@@ -414,7 +460,7 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
     selected = selection_response[str(StoreID.SELECTED_POINT)]["data"]
     assert selected["app_id"] == app_id
     assert selected["point_index"] == 0
-    assert selected["roof_id"] == roof_index
+    assert selected["roof_id"] == roof_id
     assert selected["fractions"] == {"l1": 0.7, "dram": 0.3}
     selected_plot = _dispatch(
         app,
@@ -430,7 +476,7 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
     )
     selected_figure = _figure_from_response(selected_plot)
     assert selected_figure["layout"]["meta"]["carm_selected_point"] == {
-        "roof_id": roof_index,
+        "roof_id": roof_id,
         "app_id": app_id,
         "point_index": 0,
     }
@@ -451,7 +497,7 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
     selected_lines = [
         trace
         for trace in selected_figure["data"]
-        if trace.get("mode") == "lines" and trace.get("legendgroup") == roof_index
+        if trace.get("mode") == "lines" and trace.get("legendgroup") == roof_id
     ]
     line_opacities = [trace["opacity"] for trace in selected_lines if "opacity" in trace]
     line_widths = [trace["line"]["width"] for trace in selected_lines]
@@ -476,7 +522,7 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
         changed_id=f"{PlotAreaID.ROOFLINE_PLOT}.clickData",
     )
     no_residency = no_residency_response[str(StoreID.SELECTED_POINT)]["data"]
-    assert no_residency == {"roof_id": roof_index, "fractions": {}, "app_id": app_id, "point_index": 1}
+    assert no_residency == {"roof_id": roof_id, "fractions": {}, "app_id": app_id, "point_index": 1}
     no_residency_figure = _figure_from_response(
         _dispatch(
             app,
@@ -489,14 +535,14 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
         )
     )
     assert no_residency_figure["layout"]["meta"]["carm_selected_point"] == {
-        "roof_id": roof_index,
+        "roof_id": roof_id,
         "app_id": app_id,
         "point_index": 1,
     }
     no_residency_lines = [
         trace
         for trace in no_residency_figure["data"]
-        if trace.get("mode") == "lines" and trace.get("legendgroup") == roof_index
+        if trace.get("mode") == "lines" and trace.get("legendgroup") == roof_id
     ]
     assert all("opacity" not in trace for trace in no_residency_lines)
 
@@ -553,8 +599,8 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
         overrides={
             str(StoreID.ROOF_STORE): normalized_store,
             json.dumps(
-                {"index": ["ALL"], "type": RoofCardID.DROPDOWN_APPS}, sort_keys=True, separators=(",", ":")
-            ): [[app_id]],
+                {"roof_id": roof_id, "type": RoofCardID.DROPDOWN_APPS}, sort_keys=True, separators=(",", ":")
+            ): [app_id],
         },
         changed_id=f"{StoreID.ROOF_STORE}.data",
     )
@@ -591,8 +637,8 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
         overrides={
             str(StoreID.ROOF_STORE): appearance_store,
             json.dumps(
-                {"index": ["ALL"], "type": RoofCardID.DROPDOWN_APPS}, sort_keys=True, separators=(",", ":")
-            ): [[app_id]],
+                {"roof_id": roof_id, "type": RoofCardID.DROPDOWN_APPS}, sort_keys=True, separators=(",", ":")
+            ): [app_id],
         },
         changed_id=f"{StoreID.ROOF_STORE}.data",
     )
@@ -612,43 +658,31 @@ def test_carm_results_to_roofline_and_settings_via_dash_http(
     )
     added_store = add_roof_response[str(StoreID.ROOF_STORE)]["data"]
     assert len(added_store["roofs"]) == 2
+    comparison_layout = _layout_with_roof_controls(base_layout, RoofStore.from_dict(added_store))
+    comparison_overrides: dict[str, Any] = {str(StoreID.ROOF_STORE): added_store}
+    for roof, threads, app_ids in zip(added_store["roofs"], ("2", "1"), ([app_id], [])):
+        for control_type, value in (
+            (RoofCardID.DROPDOWN_MACHINE, "fixture-host"),
+            (RoofCardID.DROPDOWN_ISA, "x86"),
+            (RoofCardID.DROPDOWN_THREADS, threads),
+            (RoofCardID.DROPDOWN_COMPUTE, ["fma"]),
+            (RoofCardID.DROPDOWN_DATA_TYPE, "f32"),
+            (RoofCardID.DROPDOWN_LS_RATIO, "2:1"),
+            (RoofCardID.DROPDOWN_FREQUENCY, "3000000000"),
+            (RoofCardID.DROPDOWN_APPS, app_ids),
+        ):
+            comparison_overrides[
+                json.dumps(
+                    {"roof_id": roof["id"], "type": control_type}, separators=(",", ":"), sort_keys=True
+                )
+            ] = value
     comparison_plot = _dispatch(
         app,
         client,
-        layout,
+        comparison_layout,
         str(PlotAreaID.ROOFLINE_PLOT),
         "figure",
-        overrides={
-            str(StoreID.ROOF_STORE): added_store,
-            json.dumps({"index": ["ALL"], "type": RoofCardID.DROPDOWN_MACHINE}, separators=(",", ":")): [
-                "fixture-host",
-                "fixture-host",
-            ],
-            json.dumps({"index": ["ALL"], "type": RoofCardID.DROPDOWN_ISA}, separators=(",", ":")): ["x86", "x86"],
-            json.dumps({"index": ["ALL"], "type": RoofCardID.DROPDOWN_THREADS}, separators=(",", ":")): [
-                "2",
-                "1",
-            ],
-            json.dumps({"index": ["ALL"], "type": RoofCardID.DROPDOWN_COMPUTE}, separators=(",", ":")): [
-                ["fma"],
-                ["fma"],
-            ],
-            json.dumps({"index": ["ALL"], "type": RoofCardID.DROPDOWN_DATA_TYPE}, separators=(",", ":")): [
-                "f32",
-                "f32",
-            ],
-            json.dumps({"index": ["ALL"], "type": RoofCardID.DROPDOWN_LS_RATIO}, separators=(",", ":")): [
-                "2:1",
-                "2:1",
-            ],
-            json.dumps({"index": ["ALL"], "type": RoofCardID.DROPDOWN_FREQUENCY}, separators=(",", ":")): [
-                "3000000000",
-                "3000000000",
-            ],
-            json.dumps(
-                {"index": ["ALL"], "type": RoofCardID.DROPDOWN_APPS}, separators=(",", ":")
-            ): [[app_id], []],
-        },
+        overrides=comparison_overrides,
         changed_id=f"{StoreID.ROOF_STORE}.data",
     )
     comparison_figure = _figure_from_response(comparison_plot)
@@ -905,7 +939,6 @@ def test_profile_completion_refreshes_application_selector_before_sidebar_render
             overrides={
                 str(ProfilePanelID.JOB): job,
                 str(StoreID.ROOF_STORE): RoofStore(roof_template=RoofConfig(machine="fixture-host")).to_dict(),
-                json.dumps({"index": ["ALL"], "type": str(RoofCardID.DROPDOWN_MACHINE)}): ["fixture-host"],
             },
             changed_id=f"{ProfilePanelID.JOB}.data",
         )[str(SidebarID.SIDEBAR_CONTENT)]["children"]
@@ -920,3 +953,90 @@ def test_profile_completion_refreshes_application_selector_before_sidebar_render
     finally:
         with profile_runner._job_lock:
             profile_runner._job_state["current"] = None
+
+
+def test_apply_roof_controls_preserves_absent_values_and_applies_explicit_clears() -> None:
+    store = RoofStore()
+    store.roofs = [
+        RoofConfig(roof_id="roof-a", machine="machine-a", isa="x86", compute_insts=["fma"], app_ids=["app-a"]),
+        RoofConfig(roof_id="roof-b", machine="machine-b", isa="arm", compute_insts=["add"], app_ids=["app-b"]),
+    ]
+    patches: dict[str, RoofControlPatch] = {
+        "roof-b": {"machine": None, "compute_insts": [], "app_ids": None},
+        "roof-a": {"compute_insts": None},
+    }
+
+    apply_roof_controls(store, patches)
+
+    assert store.roofs[0].machine == "machine-a"
+    assert store.roofs[0].isa == "x86"
+    assert store.roofs[0].compute_insts == ["fma"]
+    assert store.roofs[0].app_ids == ["app-a"]
+    assert store.roofs[1].machine is None
+    assert store.roofs[1].isa == "arm"
+    assert store.roofs[1].compute_insts == []
+    assert store.roofs[1].app_ids == []
+
+
+def test_remove_roof_targets_clicked_card(results_dir: Path) -> None:
+    app = create_app(_config(results_dir))
+    client = app.server.test_client()
+    layout = client.get("/_dash-layout").get_json()
+    store = RoofStore()
+    store.roofs = [
+        RoofConfig(
+            roof_id="roof-a", machine="fixture-host", num_threads=2, collapsed=True, advanced_collapsed=False
+        ),
+        RoofConfig(roof_id="roof-b", machine="fixture-host", num_threads=1),
+        RoofConfig(roof_id="roof-c", machine="fixture-host", num_threads=2),
+    ]
+    layout = _layout_with_roof_controls(layout, store)
+    overrides: dict[str, Any] = {str(StoreID.ROOF_STORE): store.to_dict()}
+    for roof_id, compute_insts in (("roof-a", ["add"]), ("roof-b", ["mul"]), ("roof-c", ["fma"])):
+        control_id = json.dumps(
+            {"type": RoofCardID.DROPDOWN_COMPUTE, "roof_id": roof_id}, separators=(",", ":"), sort_keys=True
+        )
+        overrides[control_id] = compute_insts
+    remove_pattern_id = json.dumps(
+        {"type": RoofCardID.BTN_REMOVE_ROOF, "roof_id": ["MATCH"]}, separators=(",", ":"), sort_keys=True
+    )
+    changed_id = json.dumps(
+        {"type": RoofCardID.BTN_REMOVE_ROOF, "roof_id": "roof-b"}, separators=(",", ":"), sort_keys=True
+    )
+    overrides[changed_id] = 1
+    response = _dispatch(
+        app, client, layout, str(StoreID.ROOF_STORE), "data",
+        overrides=overrides,
+        changed_id=f"{changed_id}.n_clicks", input_id=remove_pattern_id,
+    )
+    remaining = response[str(StoreID.ROOF_STORE)]["data"]["roofs"]
+    assert [roof["id"] for roof in remaining] == ["roof-a", "roof-c"]
+    assert remaining[0]["compute_insts"] == ["add"]
+    assert remaining[1]["compute_insts"] == ["fma"]
+    assert remaining[0]["collapsed"] is True
+    assert remaining[0]["advanced_collapsed"] is False
+    no_click = _dispatch(
+        app,
+        client,
+        layout,
+        str(StoreID.ROOF_STORE),
+        "data",
+        overrides={str(StoreID.ROOF_STORE): response[str(StoreID.ROOF_STORE)]["data"]},
+        changed_id=json.dumps(
+            {"type": RoofCardID.BTN_REMOVE_ROOF, "roof_id": "roof-c"}, separators=(",", ":"), sort_keys=True
+        ) + ".n_clicks",
+        input_id=remove_pattern_id,
+        expected_status=204,
+    )
+    assert no_click == {}
+    solo_store = RoofStore.from_dict(response[str(StoreID.ROOF_STORE)]["data"])
+    solo_store.roofs = [solo_store.roofs[0]]
+    solo_id = json.dumps(
+        {"type": RoofCardID.BTN_REMOVE_ROOF, "roof_id": "roof-a"}, separators=(",", ":"), sort_keys=True
+    )
+    final = _dispatch(
+        app, client, layout, str(StoreID.ROOF_STORE), "data",
+        overrides={str(StoreID.ROOF_STORE): solo_store.to_dict(), solo_id: 1},
+        changed_id=f"{solo_id}.n_clicks", input_id=remove_pattern_id,
+    )
+    assert final[str(StoreID.ROOF_STORE)]["data"]["roofs"] == []

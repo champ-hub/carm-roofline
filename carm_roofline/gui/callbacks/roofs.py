@@ -3,10 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 import dash
-from dash import ALL, Input, Output, State, callback_context
+from dash import ALL, MATCH, Input, Output, State, callback_context
 from dash.exceptions import PreventUpdate
 
-from carm_roofline.gui.callbacks.helpers import get_trigger_index
+from carm_roofline.gui.callbacks.helpers import apply_roof_controls, decode_roof_control_patches
+from carm_roofline.gui.callbacks.resolution import normalize_selected_roof_controls
 from carm_roofline.gui.callbacks.state import CallbackState
 from carm_roofline.gui.data import RoofStore, make_default_roof
 from carm_roofline.gui.ids import CarmViewPanelID, RoofCardID, StoreID
@@ -31,23 +32,40 @@ def register_roof_callbacks(app: dash.Dash, state: CallbackState) -> None:
 
     @app.callback(
         Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input({"type": RoofCardID.BTN_REMOVE_ROOF, "index": ALL}, "n_clicks"),
+        Input({"type": RoofCardID.BTN_REMOVE_ROOF, "roof_id": MATCH}, "n_clicks"),
         State(StoreID.ROOF_STORE, "data"),
+        State({"type": RoofCardID.DROPDOWN_MACHINE, "roof_id": ALL}, "value"),
+        State({"type": RoofCardID.DROPDOWN_ISA, "roof_id": ALL}, "value"),
+        State({"type": RoofCardID.DROPDOWN_THREADS, "roof_id": ALL}, "value"),
+        State({"type": RoofCardID.DROPDOWN_COMPUTE, "roof_id": ALL}, "value"),
+        State({"type": RoofCardID.DROPDOWN_DATA_TYPE, "roof_id": ALL}, "value"),
+        State({"type": RoofCardID.DROPDOWN_LS_RATIO, "roof_id": ALL}, "value"),
+        State({"type": RoofCardID.DROPDOWN_FREQUENCY, "roof_id": ALL}, "value"),
+        State({"type": RoofCardID.DROPDOWN_APPS, "roof_id": ALL}, "value"),
         prevent_initial_call=True,
     )
     def _remove_roof(
-        n_clicks_list: list[int | None],
+        n_clicks: int | None,
         store_data: dict[str, Any] | None,
+        *_control_state: Any,
     ) -> dict[str, Any]:
         context = callback_context
-        if not context.triggered or not context.triggered[0].get("value", 0):
+        if not n_clicks:
+            raise PreventUpdate
+        trigger_id = context.triggered_id
+        if not isinstance(trigger_id, dict):
+            raise PreventUpdate
+        roof_id = trigger_id.get("roof_id")
+        if not isinstance(roof_id, str):
             raise PreventUpdate
         store = RoofStore.from_dict(store_data or {})
-        state.trace(f"_remove_roof enter trigger={context.triggered[0].get('prop_id', '?')} roofs={len(store.roofs)}")
-        index = get_trigger_index()
-        if 0 <= index < len(store.roofs):
-            store.remove_roof(store.roofs[index].id)
-        state.trace(f"_remove_roof exit  roofs={len(store.roofs)}")
+        apply_roof_controls(store, decode_roof_control_patches(context.states_list))
+        try:
+            store.remove_roof(roof_id)
+        except KeyError:
+            raise PreventUpdate from None
+        normalize_selected_roof_controls(state, store)
+        state.trace(f"_remove_roof exit roofs={len(store.roofs)}")
         return store.to_dict()
 
     _register_collapse_callback(app, state, RoofCardID.BTN_COLLAPSE_ROOF, "collapsed", "toggle_collapse_roof")
@@ -65,22 +83,29 @@ def _register_collapse_callback(
 ) -> None:
     @app.callback(
         Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
-        Input({"type": input_type_id, "index": ALL}, "n_clicks"),
+        Input({"type": input_type_id, "roof_id": MATCH}, "n_clicks"),
         State(StoreID.ROOF_STORE, "data"),
         prevent_initial_call=True,
     )
     def _toggle_collapse(
-        n_clicks: list[int | None],
+        n_clicks: int | None,
         store_data: dict[str, Any] | None,
     ) -> dict[str, Any]:
         context = callback_context
-        if not context.triggered or not context.triggered[0].get("value", 0):
+        if not n_clicks:
+            raise PreventUpdate
+        trigger_id = context.triggered_id
+        if not isinstance(trigger_id, dict):
+            raise PreventUpdate
+        roof_id = trigger_id.get("roof_id")
+        if not isinstance(roof_id, str):
             raise PreventUpdate
         store = RoofStore.from_dict(store_data or {})
-        state.trace(f"_{label} trigger={context.triggered[0].get('prop_id', '?')} roofs={len(store.roofs)}")
-        index = get_trigger_index()
-        if 0 <= index < len(store.roofs):
-            old_value = getattr(store.roofs[index], field_name)
-            setattr(store.roofs[index], field_name, not old_value)
+        roof = next((item for item in store.roofs if item.id == roof_id), None)
+        if roof is None:
+            raise PreventUpdate
+        state.trace(f"_{label} trigger={trigger_id} roofs={len(store.roofs)}")
+        old_value = getattr(roof, field_name)
+        setattr(roof, field_name, not old_value)
         state.trace(f"_{label} exit roofs={len(store.roofs)}")
         return store.to_dict()

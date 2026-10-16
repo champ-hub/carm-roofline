@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, cast
 
+from carm_roofline.gui.callbacks.helpers import RoofControlPatch, apply_roof_controls
 from carm_roofline.gui.callbacks.state import CallbackState
-from carm_roofline.gui.data import ActivePanel, RoofConfig, RoofStore, format_roof_label
+from carm_roofline.gui.data import ActivePanel, RoofConfig, RoofStore
 from carm_roofline.output_utils import debug
 from carm_roofline.roofline_assembly import FilterOptions, RooflineFilter, discover_filter_options
 
@@ -26,50 +28,39 @@ _FILTER_FIELDS: tuple[tuple[str, str, bool], ...] = (
 )
 
 
+def normalize_selected_roof_controls(state: CallbackState, store: RoofStore) -> None:
+    """Clear selected filters no longer available after applying current controls."""
+    if not state.records:
+        return
+    for roof in store.roofs:
+        base_filter = RooflineFilter(
+            machine=roof.machine,
+            isa=roof.isa,
+            num_threads=roof.num_threads,
+            data_type=roof.data_type,
+            actual_frequency_hz=roof.actual_frequency_hz,
+            load_store_ratio=roof.load_store_ratio,
+        )
+        available = cast(dict[str, list[Any]], discover_filter_options(state.records, base_filter))
+        for field_name, filter_key, _is_int in _FILTER_FIELDS:
+            value = getattr(roof, field_name)
+            if value is not None and value not in available[filter_key]:
+                debug(f"_resolve_roof_data[{roof.id}]: {field_name} '{value}' not in options -> None")
+                setattr(roof, field_name, None)
+
+
 def resolve_roofs(
     state: CallbackState,
     store_data: dict[str, Any] | None,
-    machine_values: list[str | None],
-    isa_values: list[str | None],
-    thread_values: list[str | None],
-    compute_values: list[list[str] | None],
-    data_type_values: list[str | None],
-    load_store_values: list[str | None],
-    frequency_values: list[str | None],
-    app_id_values: list[list[str] | None],
+    roof_values: Mapping[str, RoofControlPatch],
     active_panel: str | None = None,
 ) -> tuple[RoofStore, list[RoofConfig], list[FilterOptions | None]]:
     """Merge current controls into the store and resolve incomplete roof fields."""
     store = RoofStore.from_dict(store_data or {})
     if active_panel is not None:
         store.active_panel = ActivePanel(active_panel) if active_panel else ActivePanel.CARM_VIEW
-    for index, roof in enumerate(store.roofs):
-        if index < len(machine_values):
-            previous_machine = roof.machine
-            roof.machine = machine_values[index]
-            if roof.machine != previous_machine:
-                roof.app_ids = []
-        if index < len(isa_values):
-            roof.isa = isa_values[index]
-        if index < len(thread_values):
-            value = thread_values[index]
-            roof.num_threads = int(value) if value is not None else None
-        if index < len(compute_values):
-            compute_value = compute_values[index]
-            if compute_value is not None:
-                roof.compute_insts = compute_value
-        if index < len(data_type_values):
-            roof.data_type = data_type_values[index]
-        if index < len(load_store_values):
-            roof.load_store_ratio = load_store_values[index]
-        if index < len(frequency_values):
-            value = frequency_values[index]
-            roof.actual_frequency_hz = int(value) if value is not None else None
-        if index < len(app_id_values):
-            roof.app_ids = list(app_id_values[index] or [])
-
-    for roof in store.roofs:
-        roof.label = format_roof_label(roof.machine, roof.isa, roof.num_threads, roof.data_type)
+    apply_roof_controls(store, roof_values)
+    normalize_selected_roof_controls(state, store)
 
     debug(f"_resolve_roof_data: {len(store.roofs)} roof(s), panel={store.active_panel}")
     resolved_roofs: list[RoofConfig] = []
@@ -80,21 +71,6 @@ def resolve_roofs(
             per_roof_options.append(None)
             resolved_roofs.append(roof)
             continue
-
-        base_filter = RooflineFilter(
-            machine=roof.machine,
-            isa=roof.isa,
-            num_threads=roof.num_threads,
-            data_type=roof.data_type,
-            actual_frequency_hz=roof.actual_frequency_hz,
-            load_store_ratio=roof.load_store_ratio,
-        )
-        available = cast(dict[str, list[Any]], discover_filter_options(records, base_filter))
-        for field_name, filter_key, _is_int in _FILTER_FIELDS:
-            value = getattr(roof, field_name)
-            if value is not None and value not in available[filter_key]:
-                debug(f"_resolve_roof_data[{roof.id}]: {field_name} '{value}' not in options -> None")
-                setattr(roof, field_name, None)
 
         user_locks = RooflineFilter(**{name: getattr(roof, name) for name, _, _ in _FILTER_FIELDS})
         accumulated: dict[str, Any] = {name: getattr(roof, name) for name, _, _ in _FILTER_FIELDS}

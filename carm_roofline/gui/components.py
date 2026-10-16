@@ -60,13 +60,6 @@ _PLACEHOLDER_SPEC: dict[str, tuple[str, Callable[..., Any]]] = {
 }
 
 
-def _make_id(type_: str, **parts: int) -> dict[str, str | int]:
-    """Build a pattern-matching ID dict."""
-    d: dict[str, str | int] = {"type": type_}
-    d.update(parts)
-    return d
-
-
 def _slider_marks(*values: float | int) -> dict[float | int, str]:
     """Generate marks dict for dcc.Slider from explicit label values."""
     return {v: str(v) for v in values}
@@ -454,7 +447,6 @@ def build_carm_view_panel(
             *[
                 build_roof_card(
                     roof,
-                    i,
                     per_roof_options[i] if per_roof_options and i < len(per_roof_options) else None,
                     resolved_roofs[i] if resolved_roofs and i < len(resolved_roofs) else None,
                     per_roof_app_options[i] if per_roof_app_options and i < len(per_roof_app_options) else None,
@@ -478,7 +470,7 @@ def build_carm_view_panel(
 
 
 def _build_apps_section(
-    index: int,
+    roof_id: str,
     app_ids: list[str],
     app_options: list[DropdownOption] | None,
     include: bool,
@@ -501,7 +493,7 @@ def _build_apps_section(
                     ],
                 ),
                 _multi_dropdown(
-                    _make_id(RoofCardID.DROPDOWN_APPS, index=index),
+                    {"type": RoofCardID.DROPDOWN_APPS, "roof_id": roof_id},
                     app_options or [],
                     app_ids,
                     clearable=True,
@@ -514,7 +506,6 @@ def _build_apps_section(
 
 def build_roof_card(
     roof: RoofConfig,
-    index: int,
     options: FilterOptions | None = None,
     resolved_roof: RoofConfig | None = None,
     app_options: list[DropdownOption] | None = None,
@@ -545,14 +536,14 @@ def build_roof_card(
                 children=[
                     html.Button(
                         "\u25b6" if roof.collapsed else "\u25bc",
-                        id=_make_id(RoofCardID.BTN_COLLAPSE_ROOF, index=index),
+                        id={"type": RoofCardID.BTN_COLLAPSE_ROOF, "roof_id": roof.id},
                         className="btn-collapse-roof",
                         n_clicks=0,
                     ),
                     html.Span(roof.label, className="roof-card-title"),
                     html.Button(
                         "\u00d7",
-                        id=_make_id(RoofCardID.BTN_REMOVE_ROOF, index=index),
+                        id={"type": RoofCardID.BTN_REMOVE_ROOF, "roof_id": roof.id},
                         className="btn-remove-roof",
                         n_clicks=0,
                     ),
@@ -567,7 +558,7 @@ def build_roof_card(
                         _field_row(
                             "Machine",
                             dcc_dropdown(
-                                _make_id(RoofCardID.DROPDOWN_MACHINE, index=index),
+                                {"type": RoofCardID.DROPDOWN_MACHINE, "roof_id": roof.id},
                                 options["machine"] if options else MACHINE_OPTIONS,
                                 roof.machine,
                                 placeholder=ph_machine,
@@ -577,7 +568,7 @@ def build_roof_card(
                             _field_row(
                                 "ISA",
                                 dcc_dropdown(
-                                    _make_id(RoofCardID.DROPDOWN_ISA, index=index),
+                                    {"type": RoofCardID.DROPDOWN_ISA, "roof_id": roof.id},
                                     options["isa"] if options else ISA_OPTIONS,
                                     roof.isa,
                                     placeholder=ph_isa,
@@ -586,7 +577,7 @@ def build_roof_card(
                             _field_row(
                                 "Threads",
                                 dcc_dropdown(
-                                    _make_id(RoofCardID.DROPDOWN_THREADS, index=index),
+                                    {"type": RoofCardID.DROPDOWN_THREADS, "roof_id": roof.id},
                                     [str(t) for t in options["num_threads"]] if options else THREADS_OPTIONS,
                                     str(roof.num_threads) if roof.num_threads is not None else None,
                                     placeholder=ph_threads,
@@ -596,7 +587,7 @@ def build_roof_card(
                         _field_row(
                             "Data Type",
                             dcc_dropdown(
-                                _make_id(RoofCardID.DROPDOWN_DATA_TYPE, index=index),
+                                {"type": RoofCardID.DROPDOWN_DATA_TYPE, "roof_id": roof.id},
                                 options["data_type"] if options else DATA_TYPE_OPTIONS,
                                 roof.data_type,
                                 placeholder=ph_data_type,
@@ -605,7 +596,7 @@ def build_roof_card(
                         _field_row(
                             "Compute Inst",
                             _multi_dropdown(
-                                _make_id(RoofCardID.DROPDOWN_COMPUTE, index=index),
+                                {"type": RoofCardID.DROPDOWN_COMPUTE, "roof_id": roof.id},
                                 [{"label": o, "value": o} for o in COMPUTE_INST_OPTIONS],
                                 roof.compute_insts,
                             ),
@@ -620,7 +611,7 @@ def build_roof_card(
                                         html.Span("Advanced", className="advanced-section-title"),
                                         html.Button(
                                             "\u25b6" if roof.advanced_collapsed else "\u25bc",
-                                            id=_make_id(RoofCardID.BTN_ADVANCED_COLLAPSE, index=index),
+                                            id={"type": RoofCardID.BTN_ADVANCED_COLLAPSE, "roof_id": roof.id},
                                             className="btn-advanced-collapse",
                                             n_clicks=0,
                                         ),
@@ -632,7 +623,7 @@ def build_roof_card(
                                         _field_row(
                                             "Frequency",
                                             dcc_dropdown(
-                                                _make_id(RoofCardID.DROPDOWN_FREQUENCY, index=index),
+                                                {"type": RoofCardID.DROPDOWN_FREQUENCY, "roof_id": roof.id},
                                                 [(str(Frequency(hz)), str(hz)) for hz in options["actual_frequency_hz"]]
                                                 if options
                                                 else FREQUENCY_OPTIONS,
@@ -645,7 +636,7 @@ def build_roof_card(
                                         _field_row(
                                             "Load-Store Ratio",
                                             dcc_dropdown(
-                                                _make_id(RoofCardID.DROPDOWN_LS_RATIO, index=index),
+                                                {"type": RoofCardID.DROPDOWN_LS_RATIO, "roof_id": roof.id},
                                                 options["load_store_ratio"] if options else LOAD_STORE_RATIO_OPTIONS,
                                                 roof.load_store_ratio,
                                                 placeholder=ph_ls_ratio,
@@ -656,7 +647,7 @@ def build_roof_card(
                             ],
                         ),
                         # Apps subsection
-                        *_build_apps_section(index, roof.app_ids, app_options, include_apps_section),
+                        *_build_apps_section(roof.id, roof.app_ids, app_options, include_apps_section),
                     ],
                 ),
             ),

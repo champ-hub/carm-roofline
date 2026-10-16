@@ -61,21 +61,15 @@ class RoofCardID(ID):
 
 ### Pattern-matching IDs
 
-Pattern-matching IDs (``{"type": ..., "index": ...}``) use the same enum
-members as the ``"type"`` value.  ``_make_id()`` in ``components.py``
-builds the dict:
+Roof card pattern IDs use the ``RoofCardID`` enum for ``"type"`` and the
+roof's stable string ID for ``"roof_id"``:
 
 ```python
-def _make_id(type_: str, **parts: int) -> dict[str, str | int]:
-    return {"type": type_, **parts}
-
-# Usage:
-_make_id(RoofCardID.DROPDOWN_MACHINE, index=roof_idx)
+{"type": RoofCardID.DROPDOWN_MACHINE, "roof_id": roof.id}
 ```
 
-Because the enum member is a ``str`` subclass, ``json.dumps`` serialises it
-to the bare string.  The resulting JSON dicts match the patterns in callback
-decorators.
+The enum member is a ``str`` subclass, so ``json.dumps`` serializes it to the
+bare string. These IDs match the patterns in callback decorators.
 
 ### Import style
 

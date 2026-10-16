@@ -118,6 +118,7 @@ class RoofConfig:
     machine: str | None = "Machine A"
     isa: str | None = None
     num_threads: int | None = None
+    data_type: str | None = None
     actual_frequency_hz: int | None = None
     compute_insts: list[str] = field(default_factory=lambda: ["fma", "add"])
     load_store_ratio: str | None = None

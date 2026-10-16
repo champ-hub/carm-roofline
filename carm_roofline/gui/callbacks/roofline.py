@@ -10,7 +10,11 @@ import plotly.graph_objects as go
 from dash import ALL, Input, Output, Patch, State, callback_context
 
 from carm_roofline.core.units import Performance
-from carm_roofline.gui.callbacks.helpers import filter_app_options_for_roofs, selection_payload
+from carm_roofline.gui.callbacks.helpers import (
+    decode_roof_control_patches,
+    filter_app_options_for_roofs,
+    selection_payload,
+)
 from carm_roofline.gui.callbacks.resolution import resolve_roofs
 from carm_roofline.gui.callbacks.state import CallbackState
 from carm_roofline.gui.components import (
@@ -274,14 +278,14 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
     # Plot switches should not rebuild the figure.
     plot_inputs: list[Any] = [
         Input(StoreID.ROOF_STORE, "data"),
-        Input({"type": RoofCardID.DROPDOWN_MACHINE, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_ISA, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_THREADS, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_COMPUTE, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_DATA_TYPE, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_LS_RATIO, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_FREQUENCY, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_APPS, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_MACHINE, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_ISA, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_THREADS, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_COMPUTE, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_DATA_TYPE, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_LS_RATIO, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_FREQUENCY, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_APPS, "roof_id": ALL}, "value"),
     ]
     plot_inputs.append(Input(BenchmarkPanelID.JOB, "data"))
     plot_inputs.append(Input(ProfilePanelID.JOB, "data"))
@@ -379,16 +383,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
             state.options = discover_filter_options(records) if records else None
             last_refreshed_job = job_data.copy()
         store, resolved_roofs, _per_roof_opts = resolve_roofs(
-            state,
-            store_data,
-            machine_vals,
-            isa_vals,
-            threads_vals,
-            compute_vals,
-            data_type_vals,
-            ls_ratio_vals,
-            freq_vals,
-            app_ids_vals,
+            state, store_data, decode_roof_control_patches(callback_context.inputs_list)
         )
         plot_records = records or []
         plot_apps = app_by_id or {}
@@ -439,14 +434,14 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
         Output(SidebarID.SIDEBAR_CONTENT, "children"),
         Input(StoreID.ROOF_STORE, "data"),
         Input(StoreID.ACTIVE_PANEL, "data"),
-        Input({"type": RoofCardID.DROPDOWN_MACHINE, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_ISA, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_THREADS, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_COMPUTE, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_DATA_TYPE, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_LS_RATIO, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_FREQUENCY, "index": ALL}, "value"),
-        Input({"type": RoofCardID.DROPDOWN_APPS, "index": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_MACHINE, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_ISA, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_THREADS, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_COMPUTE, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_DATA_TYPE, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_LS_RATIO, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_FREQUENCY, "roof_id": ALL}, "value"),
+        Input({"type": RoofCardID.DROPDOWN_APPS, "roof_id": ALL}, "value"),
         Input(ProfilePanelID.JOB, "data"),
     )
     def _update_sidebar(
@@ -466,14 +461,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
         store, resolved_roofs, per_roof_opts = resolve_roofs(
             state,
             store_data,
-            machine_vals,
-            isa_vals,
-            threads_vals,
-            compute_vals,
-            data_type_vals,
-            ls_ratio_vals,
-            freq_vals,
-            app_ids_vals,
+            decode_roof_control_patches(callback_context.inputs_list),
             active_panel=active_panel,
         )
         carm_view_panel = build_carm_view_panel(
