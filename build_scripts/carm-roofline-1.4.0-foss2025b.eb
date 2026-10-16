@@ -2,7 +2,6 @@ easyblock = "PythonBundle"
 
 name = "carm-roofline"
 version = "1.4.0"
-versionsuffix = "-mn5"
 
 homepage = "https://github.com/champ-hub/carm-roofline"
 
@@ -11,30 +10,21 @@ The CARM Tool - benchmark, visualize and profile Intel, AMD, ARM, RISC-V CPUs
 with the Cache-Aware Roofline Model
 """
 
-toolchain = SYSTEM
+toolchain = {'name': 'foss', 'version': '2025b'}
+
 dependencies = [
-    ("EB/apps", EXTERNAL_MODULE),
-    ("foss/2025b", EXTERNAL_MODULE),
-    ("Python/3.13.5-GCCcore-14.3.0", EXTERNAL_MODULE),
+    ('Python', '3.13.5'),
+    ('SciPy-bundle', '2025.07'),
+    ('matplotlib', '3.10.5'),
+    ('Python-bundle-PyPI', '2025.07'),
+    ('Flask', '3.1.1'),
+    ('pydantic', '2.11.9'),
 ]
 
 use_pip = True
 sanity_pip_check = True
 
-exts_default_options = {
-    "use_pip_for_deps": True,
-    "download_dep_fail": True,
-}
-
 exts_list = [
-    (
-        "matplotlib",
-        "3.10.5",
-        {
-            "source_tmpl": "matplotlib-%(version)s-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-            "checksums": ["d52fd5b684d541b5a51fb276b2b97b010c75bee9aa392f96b4a07aeb491e33c7"],
-        },
-    ),
     (
         "platformdirs",
         "4.3.7",
@@ -81,6 +71,38 @@ exts_list = [
         {
             "source_tmpl": "argcomplete-%(version)s-py3-none-any.whl",
             "checksums": ["d8f0f22d2a8a7caa383be1e22b6caf1ecaf0ebd10d8f83cc125e36540c95830c"],
+        },
+    ),
+    (
+        "janus",
+        "2.0.0",
+        {
+            "source_tmpl": "janus-%(version)s-py3-none-any.whl",
+            "checksums": ["7e6449d34eab04cd016befbd7d8c0d8acaaaab67cb59e076a69149f9031745f9"],
+        },
+    ),
+    (
+        "comm",
+        "0.2.3",
+        {
+            "source_tmpl": "comm-%(version)s-py3-none-any.whl",
+            "checksums": ["c615d91d75f7f04f095b30d1c1711babd43bdc6419c1be9886a85f2f4e489417"],
+        },
+    ),
+    (
+        "nest_asyncio",
+        "1.6.0",
+        {
+            "source_tmpl": "nest_asyncio-%(version)s-py3-none-any.whl",
+            "checksums": ["87af6efd6b5e897c81050477ef65c62e2b2f35d51703cae01aff2905b1852e1c"],
+        },
+    ),
+    (
+        "retrying",
+        "1.4.2",
+        {
+            "source_tmpl": "retrying-%(version)s-py3-none-any.whl",
+            "checksums": ["bbc004aeb542a74f3569aeddf42a2516efefcdaff90df0eb38fbfbf19f179f59"],
         },
     ),
     (
