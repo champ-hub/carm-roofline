@@ -242,7 +242,7 @@
             label.style.top = y + "px";
             label.style.transform = "translate(-50%,-50%) rotate(" + angle + "deg)";
         });
-        Array.prototype.forEach.call(overlay.children, function (label) {
+        Array.prototype.slice.call(overlay.children).forEach(function (label) {
             if (!liveLabels[label.dataset.labelId]) {
                 label.remove();
             }
