@@ -376,6 +376,31 @@ def test_proximity_export() -> None:
     assert {f.name for f in without_l1} == {"carm_rel_l2.csv", "carm_rel_l3.csv", "carm_rel_dram.csv"}
 
 
+def test_semantic_window_zeroes_values_in_all_exports_without_dropping_rows() -> None:
+    """All six export modes preserve rows while zeroing computed value for state 0."""
+    trace = _metric_trace()
+    trace["perf"] = [32e9, 16e9]
+    trace["state_code"] = [0.0, 1.0]
+    paraver = _paraver_data(trace)
+    model = _assembled_roofline()
+    files = (
+        *export_performance(trace, paraver, use_semantic_window=True),
+        *export_ai(trace, paraver, use_semantic_window=True),
+        *export_ldst_percent(trace, paraver, use_semantic_window=True),
+        *export_roof_labels(trace, paraver, model, 1, use_semantic_window=True),
+        *export_region(trace, paraver, model, 1, use_semantic_window=True),
+        *export_proximity(trace, paraver, model, 1, use_semantic_window=True),
+    )
+
+    csv_files = [file for file in files if file.name.endswith(".csv") and ".legend." not in file.name]
+    assert len(csv_files) == 9
+    for file in csv_files:
+        rows = [line.split("\t") for line in file.content.splitlines()[1:]]
+        assert len(rows) == 2
+        assert rows[0][0] == "2.1" and float(rows[0][3]) > 0
+        assert rows[1][0] == "10.0" and float(rows[1][3]) == 0
+
+
 # ── Disk write-back ───────────────────────────────────────────────────────────
 
 

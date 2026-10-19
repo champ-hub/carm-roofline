@@ -309,14 +309,15 @@ def filter_trace(
     window: tuple[float, float] | None,
     ai_threshold: float | None,
     duration_threshold: float | None,
+    use_semantic_window: bool = False,
 ) -> pd.DataFrame:
-    """Filter *trace* by time window, ai and duration through a single boolean mask.
+    """Filter *trace* by time window, ai, duration and optionally semantic value.
 
     Applies the same boundary rules as the individual helpers: the window is
     inclusive [lo, hi]; ai/duration keep rows with metric >= threshold; a threshold
     of None or <= its OFF constant disables that term; a None window disables the
-    time term. The frame is indexed exactly once; when no term is active, *trace*
-    is returned unchanged (same object).
+    time term. When enabled, semantic value zero is excluded. The frame is indexed
+    exactly once; when no term is active, *trace* is returned unchanged.
     """
     terms: list[pd.Series[bool]] = []
     if window is not None:
@@ -327,6 +328,8 @@ def filter_trace(
         terms.append(trace_metric(trace, "ai") >= ai_threshold)
     if duration_threshold is not None and duration_threshold > DURATION_FILTER_OFF_S:
         terms.append(trace_metric(trace, "duration_s") >= duration_threshold)
+    if use_semantic_window:
+        terms.append(trace_state_code(trace) != 0)
     if not terms:
         return trace
     mask = terms[0]

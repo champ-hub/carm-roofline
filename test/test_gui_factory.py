@@ -73,6 +73,21 @@ def test_paraver_time_slider_marks_are_readable() -> None:
     assert "0.066146038" not in marks.values()
 
 
+def test_paraver_semantic_window_switch_defaults_off_with_explanation() -> None:
+    """Paraver's filtering menu exposes the opt-in switch and a clear tooltip."""
+    from carm_roofline.gui.components import build_export_panel
+    from carm_roofline.gui.data import RoofStore
+    from carm_roofline.gui.ids import ExportPanelID
+
+    panel = build_export_panel(RoofStore())
+    switch = _find_component(panel, ExportPanelID.SWITCH_SEMANTIC_WINDOW)
+    tooltip = _find_component(panel, ExportPanelID.TOOLTIP_SEMANTIC_WINDOW)
+
+    assert switch is not None and switch.value is False
+    assert tooltip is not None
+    assert tooltip.target == ExportPanelID.SWITCH_SEMANTIC_WINDOW
+
+
 def test_selection_payload_parses_application_identity_and_clears_background() -> None:
     """Application clicks preserve identity without requiring residency data."""
     customdata = ["<b>tooltip</b>", {}, "r1", "app-1", 0]

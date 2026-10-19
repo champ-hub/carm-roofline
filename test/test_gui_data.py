@@ -30,7 +30,7 @@ from carm_roofline.gui.data import (
     build_paraver_figure,
     build_roofline_figure,
 )
-from carm_roofline.gui.providers import ParaverData
+from carm_roofline.gui.providers import ParaverData, filter_trace
 from carm_roofline.paraver import ParaverWindowMode
 from carm_roofline.roofline_assembly import ApplicationPoint, ApplicationRecord, BenchmarkRecord
 
@@ -142,11 +142,13 @@ def test_roofstore_round_trip_preserves_paraver_state() -> None:
     store.paraver_state.ai_threshold = 1e-3
     store.paraver_state.duration_threshold = 1e-3
     store.paraver_state.color_mode = "isa"
+    store.paraver_state.use_semantic_window = True
     restored = RoofStore.from_dict(store.to_dict())
     assert restored.paraver_state.time_window == (1.0, 5.5)
     assert restored.paraver_state.ai_threshold == pytest.approx(1e-3)
     assert restored.paraver_state.duration_threshold == pytest.approx(1e-3)
     assert restored.paraver_state.color_mode == "isa"
+    assert restored.paraver_state.use_semantic_window is True
 
     # An explicit None (filter off) round-trips as None, not the default.
     store.paraver_state.ai_threshold = None
@@ -165,6 +167,7 @@ def test_roofstore_round_trip_preserves_paraver_state() -> None:
     assert restored_default.paraver_state.ai_threshold == pytest.approx(1e-5)
     assert restored_default.paraver_state.duration_threshold == pytest.approx(1e-4)
     assert restored_default.paraver_state.color_mode == "paraver"
+    assert default_store.paraver_state.use_semantic_window is False
 
     # An empty dict (e.g. the `store_data or {}` guard) falls back to field defaults.
     empty = RoofStore.from_dict({})
@@ -172,6 +175,7 @@ def test_roofstore_round_trip_preserves_paraver_state() -> None:
     assert empty.paraver_state.ai_threshold == pytest.approx(1e-5)
     assert empty.paraver_state.duration_threshold == pytest.approx(1e-4)
     assert empty.paraver_state.color_mode == "paraver"
+    assert empty.paraver_state.use_semantic_window is False
 
 
 
@@ -763,6 +767,33 @@ def test_build_paraver_figure_code_mode_groups_by_legend() -> None:
     # Tooltip row: raw paraver value (1.0 renders as 1) with the semantic state label in parens.
     assert "<b>Paraver Value</b><br>  1 (Running)" in markers[0].customdata[0]
 
+
+
+@pytest.mark.parametrize("window_mode", [ParaverWindowMode.CODE, ParaverWindowMode.GRADIENT])
+def test_semantic_window_hides_zero_value_bursts_in_all_plot_color_modes(
+    window_mode: ParaverWindowMode,
+) -> None:
+    """Semantic-zero rows are absent from CODE/GRADIENT plots and alternate colors."""
+    trace = _paraver_trace()
+    trace["state_code"] = [0.0, 1.0, 8.0]
+    trace["legend_label"] = ["Outside", "Running", "Wait/WaitAll"]
+    trace["legend_color"] = ["rgb(0,0,0)", "rgb(0,0,255)", "rgb(235,0,0)"]
+    paraver = ParaverData(
+        trace=trace,
+        label="t",
+        window_mode=window_mode,
+        time_unit="Microseconds",
+        prv_path="/p/t.prv",
+        legend=None,
+    )
+    visible = filter_trace(trace, None, None, None, use_semantic_window=True)
+    assert visible["state_code"].tolist() == [1.0, 8.0]
+
+    for color_mode in ("paraver", "age"):
+        figure = build_paraver_figure([], [], paraver, visible, color_mode=color_mode)
+        markers = [series for series in figure.data if series.mode == "markers"]
+        assert sum(len(series.x) for series in markers) == 2
+        assert all("Outside" not in (series.name or "") for series in markers)
 
 def test_paraver_marker_sizes_use_base_and_duration_scale() -> None:
     """Paraver markers use the configured base and retain the duration spread."""

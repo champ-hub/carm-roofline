@@ -187,6 +187,15 @@ def test_filter_trace_combined_keeps_rows_passing_all_terms() -> None:
     assert result["duration_s"].tolist() == [1e-2]
 
 
+def test_filter_trace_semantic_window_excludes_zero_values() -> None:
+    """Semantic filtering removes state_code == 0 while retaining nonzero rows."""
+    trace = _trace_frame()
+    trace["state_code"] = [0.0, 1.0, 2.0]
+    filtered = filter_trace(trace, None, None, None, use_semantic_window=True)
+
+    assert filtered["state_code"].tolist() == [1.0, 2.0]
+
+
 def test_filter_trace_off_boundary_threshold_disables_term() -> None:
     """A threshold <= its OFF constant disables that term, like a None threshold."""
     trace = _trace_frame()

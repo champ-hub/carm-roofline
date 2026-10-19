@@ -83,6 +83,17 @@ def register_paraver_callbacks(app: dash.Dash, state: CallbackState) -> None:
             ExportPanelID.SLIDER_DURATION_THRESHOLD, "duration_threshold", DURATION_FILTER_LOG_MIN
         )
 
+        @app.callback(
+            Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
+            Input(ExportPanelID.SWITCH_SEMANTIC_WINDOW, "value"),
+            State(StoreID.ROOF_STORE, "data"),
+            prevent_initial_call=True,
+        )
+        def _update_semantic_window(value: bool | None, store_data: dict[str, Any] | None) -> dict[str, Any]:
+            store = RoofStore.from_dict(store_data or {})
+            store.paraver_state.use_semantic_window = bool(value)
+            return store.to_dict()
+
         # The color radio updates per-session state.
         @app.callback(
             Output(StoreID.ROOF_STORE, "data", allow_duplicate=True),
@@ -150,7 +161,7 @@ def register_paraver_callbacks(app: dash.Dash, state: CallbackState) -> None:
                         return "No roof configured."
                     divisor = roof_divisor(store.roofs[0], store.settings)
                     model = assemble_roofline(records or [], roof_to_filter(store.roofs[0]))
-                files = _spec.exporter(trace, paraver_data, model, divisor)
+                files = _spec.exporter(trace, paraver_data, model, divisor, store.paraver_state.use_semantic_window)
                 if not files:
                     return "Nothing to export (no roof data for this mode)."
                 try:

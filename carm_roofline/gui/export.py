@@ -25,6 +25,7 @@ from carm_roofline.paraver import (
     GRADIENT_WINDOW_MODE,
     time_unit_to_seconds,
     trace_metric,
+    trace_state_code,
 )
 from carm_roofline.roofline_assembly import AssembledRoofline
 
@@ -230,22 +231,33 @@ def proximity_ratio(
     )
 
 
+def _zero_semantic_values(trace: pd.DataFrame, values: pd.Series[Any], use_semantic_window: bool) -> pd.Series[Any]:
+    """Set exported values to zero for bursts outside the semantic window."""
+    return values.where(~(trace_state_code(trace) == 0), 0) if use_semantic_window else values
+
+
 # Per-mode facades — uniform signature and return, so the factory callback is one
 # generic body. Each returns tuple[ExportFile, ...] (the mode's complete file set);
 # () when the mode cannot export (no trace rows, or roof data missing).
 
 #: Common signature of the per-mode exporters, as consumed by the GUI factory.
 #: ``Optional`` because this alias is evaluated at import time on Python 3.9.
-ExportModeExporter = Callable[[pd.DataFrame, ParaverData, Optional[AssembledRoofline], int], tuple[ExportFile, ...]]
+ExportModeExporter = Callable[
+    [pd.DataFrame, ParaverData, Optional[AssembledRoofline], int, bool], tuple[ExportFile, ...]
+]
 
 
 def export_performance(
-    trace: pd.DataFrame, paraver: ParaverData, model: AssembledRoofline | None = None, divisor: int = 1
+    trace: pd.DataFrame,
+    paraver: ParaverData,
+    model: AssembledRoofline | None = None,
+    divisor: int = 1,
+    use_semantic_window: bool = False,
 ) -> tuple[ExportFile, ...]:
     """GFLOPS per row (perf in FLOP/s / 1e9), GRADIENT window, vmin:vmax from the values."""
     if trace.empty:
         return ()
-    values = trace_metric(trace, "perf") * 1e-9
+    values = _zero_semantic_values(trace, trace_metric(trace, "perf") * 1e-9, use_semantic_window)
     return (
         _csv_export(
             PERFORMANCE_FILENAME, trace, paraver, values, GRADIENT_WINDOW_MODE, float(values.min()), float(values.max())
@@ -254,12 +266,16 @@ def export_performance(
 
 
 def export_ai(
-    trace: pd.DataFrame, paraver: ParaverData, model: AssembledRoofline | None = None, divisor: int = 1
+    trace: pd.DataFrame,
+    paraver: ParaverData,
+    model: AssembledRoofline | None = None,
+    divisor: int = 1,
+    use_semantic_window: bool = False,
 ) -> tuple[ExportFile, ...]:
     """Arithmetic intensity per row, GRADIENT window, vmin:vmax from the values."""
     if trace.empty:
         return ()
-    values = trace_metric(trace, "ai")
+    values = _zero_semantic_values(trace, trace_metric(trace, "ai"), use_semantic_window)
     return (
         _csv_export(
             AI_FILENAME, trace, paraver, values, GRADIENT_WINDOW_MODE, float(values.min()), float(values.max())
@@ -268,7 +284,11 @@ def export_ai(
 
 
 def export_ldst_percent(
-    trace: pd.DataFrame, paraver: ParaverData, model: AssembledRoofline | None = None, divisor: int = 1
+    trace: pd.DataFrame,
+    paraver: ParaverData,
+    model: AssembledRoofline | None = None,
+    divisor: int = 1,
+    use_semantic_window: bool = False,
 ) -> tuple[ExportFile, ...]:
     """Load percentage per row (legacy carm_ldst_percent.csv): (loads/(loads+stores))*100,
     rounded to 1 dp, floored at 0.01; exactly 0 when the burst has no memory ops or no
@@ -278,6 +298,7 @@ def export_ldst_percent(
     share = trace_metric(trace, "load_share")
     pct = (share * 100.0).round(1).clip(lower=0.01).fillna(0.0)
     pct = pct.where(trace_metric(trace, "flops") != 0, 0.0)
+    pct = _zero_semantic_values(trace, pct, use_semantic_window)
     return (
         _csv_export(
             LDST_PERCENT_FILENAME, trace, paraver, pct, GRADIENT_WINDOW_MODE, float(pct.min()), float(pct.max())
@@ -286,7 +307,11 @@ def export_ldst_percent(
 
 
 def export_roof_labels(
-    trace: pd.DataFrame, paraver: ParaverData, model: AssembledRoofline | None, divisor: int
+    trace: pd.DataFrame,
+    paraver: ParaverData,
+    model: AssembledRoofline | None,
+    divisor: int,
+    use_semantic_window: bool = False,
 ) -> tuple[ExportFile, ...]:
     """Roof-label codes (CODE window, 1:6) plus the six-row legend."""
     if trace.empty:
@@ -294,6 +319,7 @@ def export_roof_labels(
     if model is None or not model.bandwidth_by_level or not model.peak_performance_by_op:
         return ()
     codes = roof_label_codes(trace_metric(trace, "ai"), trace_metric(trace, "perf"), model, divisor)
+    codes = _zero_semantic_values(trace, codes, use_semantic_window)
     return (
         _csv_export(ROOF_LABELS_FILENAME, trace, paraver, codes, CODE_WINDOW_MODE, 1, 6),
         ExportFile(name=ROOF_LABELS_LEGEND_FILENAME, content=serialize_legend(ROOF_LABEL_LEGEND)),
@@ -301,7 +327,11 @@ def export_roof_labels(
 
 
 def export_region(
-    trace: pd.DataFrame, paraver: ParaverData, model: AssembledRoofline | None, divisor: int
+    trace: pd.DataFrame,
+    paraver: ParaverData,
+    model: AssembledRoofline | None,
+    divisor: int,
+    use_semantic_window: bool = False,
 ) -> tuple[ExportFile, ...]:
     """Roofline-region codes (CODE window, 1:3) plus the three-row legend.
     Ridge points are divisor-independent since ridge_x = peak/bw.
@@ -314,6 +344,7 @@ def export_region(
     if "L1" not in ridge or "DRAM" not in ridge:
         return ()
     codes = region_label_codes(trace_metric(trace, "ai"), float(ridge["L1"].value), float(ridge["DRAM"].value))
+    codes = _zero_semantic_values(trace, codes, use_semantic_window)
     return (
         _csv_export(REGION_FILENAME, trace, paraver, codes, CODE_WINDOW_MODE, 1, 3),
         ExportFile(name=REGION_LEGEND_FILENAME, content=serialize_legend(REGION_LEGEND)),
@@ -321,7 +352,11 @@ def export_region(
 
 
 def export_proximity(
-    trace: pd.DataFrame, paraver: ParaverData, model: AssembledRoofline | None, divisor: int
+    trace: pd.DataFrame,
+    paraver: ParaverData,
+    model: AssembledRoofline | None,
+    divisor: int,
+    use_semantic_window: bool = False,
 ) -> tuple[ExportFile, ...]:
     """One GRADIENT CSV per roof level present in the model (absent levels silently
     skipped); ratio clamped to 1.0, 0.0 on non-positive operands, vmin:vmax 0.0:1.0.
@@ -337,6 +372,7 @@ def export_proximity(
         if level not in model.bandwidth_by_level:
             continue
         values = proximity_ratio(ai, perf, level, model, divisor)
+        values = _zero_semantic_values(trace, values, use_semantic_window)
         files.append(
             _csv_export(
                 f"carm_rel_{PROXIMITY_SUFFIXES[level]}.csv",

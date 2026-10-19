@@ -201,8 +201,9 @@ class ParaverState:
     ai_threshold: float | None = (
         AI_FILTER_DEFAULT_AI  # FLOPS/Byte; 1e-5 default; None = filter off (slider at leftmost)
     )
-    duration_threshold: float | None = DURATION_FILTER_DEFAULT_S  # s; 100 us default; None = off (slider at leftmost)
+    duration_threshold: float | None = DURATION_FILTER_DEFAULT_S  # s; None = off (slider at leftmost)
     color_mode: str = COLOR_MODE_PARAVER
+    use_semantic_window: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -210,6 +211,7 @@ class ParaverState:
             "ai_threshold": self.ai_threshold,
             "duration_threshold": self.duration_threshold,
             "color_mode": self.color_mode,
+            "use_semantic_window": self.use_semantic_window,
         }
 
     @classmethod
@@ -224,6 +226,7 @@ class ParaverState:
             ai_threshold=float(ai) if ai is not None else None,
             duration_threshold=float(dur) if dur is not None else None,
             color_mode=data.get("color_mode", COLOR_MODE_PARAVER),
+            use_semantic_window=bool(data.get("use_semantic_window", False)),
         )
 
 

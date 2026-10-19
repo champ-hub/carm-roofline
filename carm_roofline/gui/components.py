@@ -785,6 +785,24 @@ def build_export_panel(store: RoofStore) -> html.Div:
                         title="Filtering",
                         item_id="filtering",
                         children=[
+                            html.Div(
+                                className="settings-toggle-row",
+                                children=[
+                                    html.Span("Use semantic window", className="settings-toggle-label"),
+                                    dbc.Switch(
+                                        id=ExportPanelID.SWITCH_SEMANTIC_WINDOW,
+                                        value=store.paraver_state.use_semantic_window,
+                                        className="normalize-toggle",
+                                    ),
+                                    dbc.Tooltip(
+                                        "When enabled, shows only points visible in Parever (within the semantic"
+                                        " window). When disabled, shows all points. Also affects exports.",
+                                        id=ExportPanelID.TOOLTIP_SEMANTIC_WINDOW,
+                                        target=ExportPanelID.SWITCH_SEMANTIC_WINDOW,
+                                        trigger="hover focus",
+                                    ),
+                                ],
+                            ),
                             _build_threshold_filter_slider(
                                 "Minimum arithmetic intensity",
                                 ExportPanelID.SLIDER_AI_THRESHOLD,

@@ -216,3 +216,5 @@ class ExportPanelID(ID):
     SLIDER_AI_THRESHOLD = "slider-ai-threshold"
     SLIDER_DURATION_THRESHOLD = "slider-duration-threshold"
     RADIO_COLOR_MODE = "radio-color-mode"
+    SWITCH_SEMANTIC_WINDOW = "switch-semantic-window"
+    TOOLTIP_SEMANTIC_WINDOW = "tooltip-semantic-window"

@@ -432,4 +432,28 @@ def test_paraver_trace_to_gui_and_all_exports(
     assert '"Memory Bound"' in (tmp_path / "carm_roofline_region.legend.csv").read_text(encoding="utf-8")
     for level in ("l1", "l2", "l3", "dram"):
         assert (tmp_path / f"carm_rel_{level}.csv").is_file()
+    semantic_store = _dash_callback(
+        client,
+        app,
+        layout,
+        StoreID.ROOF_STORE.value,
+        {
+            (ExportPanelID.SWITCH_SEMANTIC_WINDOW.value, "value"): True,
+            (StoreID.ROOF_STORE.value, "data"): store,
+        },
+        ExportPanelID.SWITCH_SEMANTIC_WINDOW.value,
+    )
+    assert semantic_store["paraver"]["use_semantic_window"] is True
+    default_store = _dash_callback(
+        client,
+        app,
+        layout,
+        StoreID.ROOF_STORE.value,
+        {
+            (ExportPanelID.SWITCH_SEMANTIC_WINDOW.value, "value"): False,
+            (StoreID.ROOF_STORE.value, "data"): semantic_store,
+        },
+        ExportPanelID.SWITCH_SEMANTIC_WINDOW.value,
+    )
+    assert default_store["paraver"]["use_semantic_window"] is False
     assert capsys.readouterr().out.count("PARAVER_PROTOCOL open_csv") == 9

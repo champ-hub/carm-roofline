@@ -16,8 +16,9 @@ A range slider above the plot, in seconds, covering the trace extent. Drag the h
 
 - **Minimum arithmetic intensity** — slider; default threshold `1e-5` OPS/Byte; the leftmost position switches filtering off.
 - **Minimum duration** — slider over seconds; default `100 µs`; the leftmost position switches filtering off.
+- **Use semantic window** — switch; when on, only points within Paraver's semantic window (i.e. visible in the Paraver timeline) are displayed and exported. When off, all points from the trace are displayed and exported.
 
-Filters affect only the displayed view; exports always cover the whole trace.
+Time, arithmetic-intensity, and duration filters affect only the displayed view, not the exported files.
 
 ## Coloring
 

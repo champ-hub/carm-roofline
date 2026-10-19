@@ -416,6 +416,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
                     window,
                     store.paraver_state.ai_threshold,
                     store.paraver_state.duration_threshold,
+                    store.paraver_state.use_semantic_window,
                 )
                 if paraver_data is not None
                 else None
