@@ -736,18 +736,112 @@ def _export_row(label: str, btn_id: str, status_id: str) -> html.Div:
     )
 
 
-def build_export_panel(store: RoofStore) -> html.Div:
-    """Paraver panel: export, filtering, and color controls grouped into accordion sections."""
+def _build_export_section() -> dbc.AccordionItem:
+    return dbc.AccordionItem(
+        title="Export",
+        item_id="export",
+        children=[
+            _export_row(
+                "Performance (GFLOPS/s)",
+                ExportPanelID.BTN_EXPORT_PERFORMANCE,
+                ExportPanelID.STATUS_PERFORMANCE,
+            ),
+            _export_row("Arithmetic intensity", ExportPanelID.BTN_EXPORT_AI, ExportPanelID.STATUS_AI),
+            _export_row(
+                "Load percentage",
+                ExportPanelID.BTN_EXPORT_LDST_PERCENT,
+                ExportPanelID.STATUS_LDST_PERCENT,
+            ),
+            _export_row("Roof labels", ExportPanelID.BTN_EXPORT_ROOF_LABELS, ExportPanelID.STATUS_ROOF_LABELS),
+            _export_row("Roofline region", ExportPanelID.BTN_EXPORT_REGION, ExportPanelID.STATUS_REGION),
+            _export_row("Roof proximity", ExportPanelID.BTN_EXPORT_PROXIMITY, ExportPanelID.STATUS_PROXIMITY),
+        ],
+    )
+
+
+def _build_semantic_window_switch(store: RoofStore) -> html.Div:
+    return html.Div(
+        className="settings-toggle-row",
+        children=[
+            html.Span("Use semantic window", className="settings-toggle-label"),
+            dbc.Switch(
+                id=ExportPanelID.SWITCH_SEMANTIC_WINDOW,
+                value=store.paraver_state.use_semantic_window,
+                className="normalize-toggle",
+            ),
+            dbc.Tooltip(
+                "When enabled, shows only points visible in Parever (within the semantic"
+                " window). When disabled, shows all points. Also affects exports.",
+                id=ExportPanelID.TOOLTIP_SEMANTIC_WINDOW,
+                target=ExportPanelID.SWITCH_SEMANTIC_WINDOW,
+                trigger="hover focus",
+            ),
+        ],
+    )
+
+
+def _build_export_filter_section(store: RoofStore) -> dbc.AccordionItem:
     ai_log = (
         round(math.log10(store.paraver_state.ai_threshold), 2)
         if store.paraver_state.ai_threshold is not None
         else AI_FILTER_LOG_MIN
     )
-    dur_log = (
+    duration_log = (
         round(math.log10(store.paraver_state.duration_threshold), 2)
         if store.paraver_state.duration_threshold is not None
         else DURATION_FILTER_LOG_MIN
     )
+    return dbc.AccordionItem(
+        title="Filtering",
+        item_id="filtering",
+        children=[
+            _build_semantic_window_switch(store),
+            _build_threshold_filter_slider(
+                "Minimum arithmetic intensity",
+                ExportPanelID.SLIDER_AI_THRESHOLD,
+                ai_log,
+                AI_FILTER_LOG_MIN,
+                AI_FILTER_LOG_MAX,
+                AI_FILTER_LOG_STEP,
+                AI_FILTER_MARKS,
+                "aiThreshold",
+            ),
+            _build_threshold_filter_slider(
+                "Minimum duration",
+                ExportPanelID.SLIDER_DURATION_THRESHOLD,
+                duration_log,
+                DURATION_FILTER_LOG_MIN,
+                DURATION_FILTER_LOG_MAX,
+                DURATION_FILTER_LOG_STEP,
+                DURATION_FILTER_MARKS,
+                "paraverDuration",
+            ),
+        ],
+    )
+
+
+def _build_export_color_section(store: RoofStore) -> dbc.AccordionItem:
+    return dbc.AccordionItem(
+        title="Color",
+        item_id="color",
+        children=[
+            html.Div(
+                className="settings-slider-row",
+                children=[
+                    html.Span("Color points based on", className="settings-toggle-label"),
+                    dbc.RadioItems(
+                        id=ExportPanelID.RADIO_COLOR_MODE,
+                        options=[{"label": label, "value": value} for label, value in COLOR_MODE_OPTIONS],
+                        value=store.paraver_state.color_mode,
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+def build_export_panel(store: RoofStore) -> html.Div:
+    """Paraver panel: export, filtering, and color controls grouped into accordion sections."""
     return html.Div(
         className="export-panel",
         style={"display": "block"} if store.active_panel == ActivePanel.EXPORT else {"display": "none"},
@@ -755,95 +849,9 @@ def build_export_panel(store: RoofStore) -> html.Div:
             html.H5("Paraver", className="panel-header"),
             dbc.Accordion(
                 children=[
-                    dbc.AccordionItem(
-                        title="Export",
-                        item_id="export",
-                        children=[
-                            _export_row(
-                                "Performance (GFLOPS/s)",
-                                ExportPanelID.BTN_EXPORT_PERFORMANCE,
-                                ExportPanelID.STATUS_PERFORMANCE,
-                            ),
-                            _export_row("Arithmetic intensity", ExportPanelID.BTN_EXPORT_AI, ExportPanelID.STATUS_AI),
-                            _export_row(
-                                "Load percentage",
-                                ExportPanelID.BTN_EXPORT_LDST_PERCENT,
-                                ExportPanelID.STATUS_LDST_PERCENT,
-                            ),
-                            _export_row(
-                                "Roof labels", ExportPanelID.BTN_EXPORT_ROOF_LABELS, ExportPanelID.STATUS_ROOF_LABELS
-                            ),
-                            _export_row(
-                                "Roofline region", ExportPanelID.BTN_EXPORT_REGION, ExportPanelID.STATUS_REGION
-                            ),
-                            _export_row(
-                                "Roof proximity", ExportPanelID.BTN_EXPORT_PROXIMITY, ExportPanelID.STATUS_PROXIMITY
-                            ),
-                        ],
-                    ),
-                    dbc.AccordionItem(
-                        title="Filtering",
-                        item_id="filtering",
-                        children=[
-                            html.Div(
-                                className="settings-toggle-row",
-                                children=[
-                                    html.Span("Use semantic window", className="settings-toggle-label"),
-                                    dbc.Switch(
-                                        id=ExportPanelID.SWITCH_SEMANTIC_WINDOW,
-                                        value=store.paraver_state.use_semantic_window,
-                                        className="normalize-toggle",
-                                    ),
-                                    dbc.Tooltip(
-                                        "When enabled, shows only points visible in Parever (within the semantic"
-                                        " window). When disabled, shows all points. Also affects exports.",
-                                        id=ExportPanelID.TOOLTIP_SEMANTIC_WINDOW,
-                                        target=ExportPanelID.SWITCH_SEMANTIC_WINDOW,
-                                        trigger="hover focus",
-                                    ),
-                                ],
-                            ),
-                            _build_threshold_filter_slider(
-                                "Minimum arithmetic intensity",
-                                ExportPanelID.SLIDER_AI_THRESHOLD,
-                                ai_log,
-                                AI_FILTER_LOG_MIN,
-                                AI_FILTER_LOG_MAX,
-                                AI_FILTER_LOG_STEP,
-                                AI_FILTER_MARKS,
-                                "aiThreshold",
-                            ),
-                            _build_threshold_filter_slider(
-                                "Minimum duration",
-                                ExportPanelID.SLIDER_DURATION_THRESHOLD,
-                                dur_log,
-                                DURATION_FILTER_LOG_MIN,
-                                DURATION_FILTER_LOG_MAX,
-                                DURATION_FILTER_LOG_STEP,
-                                DURATION_FILTER_MARKS,
-                                "paraverDuration",
-                            ),
-                        ],
-                    ),
-                    dbc.AccordionItem(
-                        title="Color",
-                        item_id="color",
-                        children=[
-                            html.Div(
-                                className="settings-slider-row",
-                                children=[
-                                    html.Span("Color points based on", className="settings-toggle-label"),
-                                    dbc.RadioItems(
-                                        id=ExportPanelID.RADIO_COLOR_MODE,
-                                        options=[
-                                            {"label": label, "value": value} for label, value in COLOR_MODE_OPTIONS
-                                        ],
-                                        value=store.paraver_state.color_mode,
-                                    ),
-                                ],
-                            ),
-                        ],
-                    ),
+                    _build_export_section(),
+                    _build_export_filter_section(store),
+                    _build_export_color_section(store),
                 ],
                 always_open=True,
                 active_item=["export", "filtering", "color"],
