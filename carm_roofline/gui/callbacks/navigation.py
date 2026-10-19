@@ -61,9 +61,7 @@ def register_navigation_callbacks(app: dash.Dash, state: CallbackState) -> None:
         benchmark_style = {"display": "block"} if active_panel == ActivePanel.BENCHMARK else {"display": "none"}
         profile_style = {"display": "block"} if active_panel == ActivePanel.PROFILE else {"display": "none"}
         plot_style = (
-            {"display": "none"}
-            if active_panel in (ActivePanel.BENCHMARK, ActivePanel.PROFILE)
-            else {"display": "block"}
+            {"display": "none"} if active_panel in (ActivePanel.BENCHMARK, ActivePanel.PROFILE) else {"display": "flex"}
         )
         return (
             carm_view_class,

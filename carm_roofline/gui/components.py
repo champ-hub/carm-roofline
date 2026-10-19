@@ -1386,7 +1386,7 @@ def build_plot_area(
     return html.Div(
         id=PlotAreaID.CONTAINER,
         className="plot-area",
-        style={"display": "block"} if visible else {"display": "none"},
+        style={"display": "flex"} if visible else {"display": "none"},
         children=children,
     )
 
