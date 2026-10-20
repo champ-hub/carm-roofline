@@ -1350,7 +1350,7 @@ def build_plot_area(
             PlotAreaID.ROOFLINE_PLOT,
             figure=build_roofline_figure([], []),
             config={"responsive": True, "toImageButtonOptions": {"format": "svg", "filename": "roofline"}},
-            clear_on_unhover=mode.show_app_dropdown,
+            clear_on_unhover=True,
         ),
     ]
     if not mode.show_time_slider:

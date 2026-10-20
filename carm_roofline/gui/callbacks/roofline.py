@@ -13,6 +13,7 @@ from carm_roofline.core.units import Performance
 from carm_roofline.gui.callbacks.helpers import (
     decode_roof_control_patches,
     filter_app_options_for_roofs,
+    paraver_selection_payload,
     selection_payload,
 )
 from carm_roofline.gui.callbacks.resolution import resolve_roofs
@@ -23,7 +24,7 @@ from carm_roofline.gui.components import (
     build_export_panel,
     build_settings_panel,
 )
-from carm_roofline.gui.data import build_paraver_figure, build_roofline_figure
+from carm_roofline.gui.data import PARAVER_POINT_ROLE, build_paraver_figure, build_roofline_figure
 from carm_roofline.gui.ids import BenchmarkPanelID, PlotAreaID, ProfilePanelID, RoofCardID, SidebarID, StoreID
 from carm_roofline.gui.providers import BenchmarkAppsProvider, filter_trace
 from carm_roofline.roofline_assembly import discover_filter_options, load_all_benchmarks
@@ -110,12 +111,25 @@ def _roof_intersections(figure: dict[str, Any], intensity: float) -> list[tuple[
     return [(performance, sorted(labels)) for performance, labels in ordered]
 
 
-def _point_guide_traces(figure: dict[str, Any], hover_data: dict[str, Any] | None) -> list[go.Scatter]:
+def _point_guide_traces(
+    figure: dict[str, Any],
+    hover_data: dict[str, Any] | None,
+    selection_data: dict[str, Any] | None = None,
+) -> list[go.Scatter]:
     """Build fixed hover and selection overlay traces from the current figure."""
     layout = figure.get("layout", {})
     meta = layout.get("meta")
     selected_identity = meta.get("carm_selected_point") if isinstance(meta, dict) else None
-    hover_identity = None
+    selected_paraver_point: tuple[float, float] | None = None
+    if selection_data and selection_data.get("role") == PARAVER_POINT_ROLE:
+        try:
+            selected_paraver_point = (float(selection_data["x"]), float(selection_data["y"]))
+        except (KeyError, TypeError, ValueError):
+            pass
+        else:
+            if not all(math.isfinite(value) and value > 0 for value in selected_paraver_point):
+                selected_paraver_point = None
+    hover_identity: dict[str, Any] | None = None
     points = hover_data.get("points", []) if hover_data else []
     if points:
         customdata = points[0].get("customdata")
@@ -184,7 +198,31 @@ def _point_guide_traces(figure: dict[str, Any], hover_data: dict[str, Any] | Non
         ("hover", hover_identity),
         ("selected", selected_identity),
     ]
+    hover_point: tuple[float, float] | None = None
+    if hover_identity is None and points:
+        point = points[0]
+        curve_number = point.get("curveNumber")
+        figure_data = figure.get("data", [])
+        if (
+            isinstance(curve_number, int)
+            and not isinstance(curve_number, bool)
+            and 0 <= curve_number < len(figure_data)
+        ):
+            point_trace = figure_data[curve_number]
+            point_meta = point_trace.get("meta") if isinstance(point_trace, dict) else None
+            if isinstance(point_meta, dict) and point_meta.get("carm_role") == PARAVER_POINT_ROLE:
+                try:
+                    hover_point = (float(point["x"]), float(point["y"]))
+                except (KeyError, TypeError, ValueError):
+                    pass
+                else:
+                    if not all(math.isfinite(value) and value > 0 for value in hover_point):
+                        hover_point = None
     resolved = [(guide, _guide_point(figure, identity)) for guide, identity in guides]
+    if selected_paraver_point is not None:
+        resolved[1] = ("selected", selected_paraver_point)
+    if hover_point is not None:
+        resolved[0] = ("hover", hover_point)
     if resolved[0][1] and resolved[1][1] and resolved[0][1][0] == resolved[1][1][0]:
         resolved[0] = ("hover", None)
     for guide, point in resolved:
@@ -296,6 +334,24 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
             prop_id = ctx.triggered[0]["prop_id"] if ctx.triggered else ""
             return selection_payload(click_data, prop_id, current_selection), None
 
+    elif mode.show_time_slider:
+
+        @app.callback(
+            Output(StoreID.SELECTED_POINT, "data"),
+            Output(PlotAreaID.ROOFLINE_PLOT, "clickData"),
+            Input(PlotAreaID.ROOFLINE_PLOT, "clickData"),
+            State(StoreID.SELECTED_POINT, "data"),
+            State(PlotAreaID.ROOFLINE_PLOT, "figure"),
+            prevent_initial_call=True,
+        )
+        def _update_paraver_selected_point(
+            click_data: dict[str, Any] | None,
+            current_selection: dict[str, Any] | None,
+            figure: dict[str, Any] | None,
+        ) -> tuple[dict[str, Any] | None, None]:
+            state.trace("_update_paraver_selected_point enter")
+            return paraver_selection_payload(click_data, current_selection, figure), None
+
     # Plot switches should not rebuild the figure.
     plot_inputs: list[Any] = [
         Input(StoreID.ROOF_STORE, "data"),
@@ -311,16 +367,16 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
     plot_inputs.append(Input(BenchmarkPanelID.JOB, "data"))
     plot_inputs.append(Input(ProfilePanelID.JOB, "data"))
     plot_states: list[Any] = []
-    if mode.show_app_dropdown:  # CARM mode only; paraver has no application points
-        plot_inputs.extend(
-            [
-                Input(StoreID.SELECTED_POINT, "data"),
-                Input(PlotAreaID.ROOFLINE_PLOT, "hoverData"),
-                Input(PlotAreaID.ROOFLINE_PLOT, "relayoutData"),
-                Input(PlotAreaID.ROOFLINE_PLOT, "restyleData"),
-            ]
-        )
-        plot_states.append(State(PlotAreaID.ROOFLINE_PLOT, "figure"))
+    plot_inputs.extend(
+        [
+            Input(StoreID.SELECTED_POINT, "data"),
+            Input(PlotAreaID.ROOFLINE_PLOT, "hoverData"),
+            Input(PlotAreaID.ROOFLINE_PLOT, "relayoutData"),
+            Input(PlotAreaID.ROOFLINE_PLOT, "restyleData"),
+        ]
+    )
+    plot_states.append(State(PlotAreaID.ROOFLINE_PLOT, "figure"))
+
     last_refreshed_job: dict[str, Any] | None = None
 
     @app.callback(Output(PlotAreaID.ROOFLINE_PLOT, "figure"), *plot_inputs, *plot_states)
@@ -343,7 +399,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
         current_figure: dict[str, Any] | None = None,
     ) -> dict[str, Any] | Patch:
         nonlocal last_refreshed_job
-        if mode.show_app_dropdown:
+        if current_figure is not None:
             interactions = {
                 f"{PlotAreaID.ROOFLINE_PLOT}.hoverData",
                 f"{PlotAreaID.ROOFLINE_PLOT}.relayoutData",
@@ -363,7 +419,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
                 )
                 if slots_ready:
                     patch = Patch()
-                    guide_traces = _point_guide_traces(figure_state, hover_data)
+                    guide_traces = _point_guide_traces(figure_state, hover_data, selection_data)
                     first_guide_index = len(figure_data) - len(_GUIDE_TRACE_KEYS)
                     for index, trace in enumerate(guide_traces, start=first_guide_index):
                         patch["data"][index] = trace.to_plotly_json()
@@ -440,14 +496,11 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
                 selected_residency=selected.get("fractions"),
                 selected_point=selected,
             )
-        if mode.show_app_dropdown:
-            _preserve_guide_view(figure, current_figure)
-            figure_state = cast("dict[str, Any]", figure.to_dict())
-            for trace in _point_guide_traces(figure_state, hover_data):
-                figure.add_trace(trace)
-            figure_dict = cast("dict[str, Any]", figure.to_dict())
-        else:
-            figure_dict = cast("dict[str, Any]", figure.to_dict())
+        _preserve_guide_view(figure, current_figure)
+        figure_state = cast("dict[str, Any]", figure.to_dict())
+        for trace in _point_guide_traces(figure_state, hover_data, selection_data):
+            figure.add_trace(trace)
+        figure_dict = cast("dict[str, Any]", figure.to_dict())
         state.trace(f"_update_plot exit traces={len(figure_dict.get('data', []))}")
         return figure_dict
 

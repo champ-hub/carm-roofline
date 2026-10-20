@@ -33,6 +33,8 @@ from carm_roofline.roofline_assembly import (
     matching_mixed_records,
 )
 
+PARAVER_POINT_ROLE = "paraver-point"
+
 
 class DropdownOption(TypedDict):
     """A label-value pair for application dropdown options."""
@@ -1356,6 +1358,7 @@ def _add_paraver_code_mode_traces(
                     "sizemode": "area",
                     "opacity": 0.6,
                 },
+                meta={"carm_role": PARAVER_POINT_ROLE},
                 customdata=customdata,
                 hovertemplate="%{customdata}<extra></extra>",
             )
@@ -1413,6 +1416,7 @@ def _add_paraver_single_marker_trace(
             name=paraver.label,
             showlegend=True,
             marker={"size": sizes, "sizemode": "area", "opacity": 0.6, **marker},
+            meta={"carm_role": PARAVER_POINT_ROLE},
             customdata=customdata,
             hovertemplate="%{customdata}<extra></extra>",
         )

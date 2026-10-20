@@ -1,11 +1,53 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from typing import Any, TypedDict, cast
 
-from carm_roofline.gui.data import DropdownOption, RoofConfig, RoofStore, format_roof_label
+from carm_roofline.gui.data import PARAVER_POINT_ROLE, DropdownOption, RoofConfig, RoofStore, format_roof_label
 from carm_roofline.gui.ids import PlotAreaID, RoofCardID
 from carm_roofline.roofline_assembly import ApplicationRecord
+
+
+def paraver_selection_payload(
+    click_data: dict[str, Any] | None,
+    current_selection: dict[str, Any] | None,
+    figure: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Toggle a clicked Paraver point while ignoring clicks on guide overlays."""
+    points = click_data.get("points") if click_data else None
+    if not isinstance(points, list) or not points or not isinstance(points[0], dict):
+        return current_selection
+    point = points[0]
+    curve_number = point.get("curveNumber")
+    traces = figure.get("data", []) if figure else []
+    if (
+        not isinstance(curve_number, int)
+        or isinstance(curve_number, bool)
+        or not isinstance(traces, list)
+        or not 0 <= curve_number < len(traces)
+    ):
+        return current_selection
+    trace = traces[curve_number]
+    meta = trace.get("meta") if isinstance(trace, dict) else None
+    if not isinstance(meta, dict) or meta.get("carm_role") != PARAVER_POINT_ROLE:
+        return current_selection
+    try:
+        x, y = float(point["x"]), float(point["y"])
+    except (KeyError, TypeError, ValueError):
+        return current_selection
+    if not all(math.isfinite(value) and value > 0 for value in (x, y)):
+        return current_selection
+    if current_selection and current_selection.get("role") == PARAVER_POINT_ROLE:
+        try:
+            selected_x = float(current_selection["x"])
+            selected_y = float(current_selection["y"])
+        except (KeyError, TypeError, ValueError):
+            pass
+        else:
+            if (x, y) == (selected_x, selected_y):
+                return None
+    return {"role": PARAVER_POINT_ROLE, "x": x, "y": y}
 
 
 def selection_payload(

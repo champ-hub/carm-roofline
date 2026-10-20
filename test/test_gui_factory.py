@@ -4,8 +4,9 @@ from typing import Any
 import pytest
 
 from carm_roofline.core.units import Performance
-from carm_roofline.gui.callbacks.helpers import selection_payload
+from carm_roofline.gui.callbacks.helpers import paraver_selection_payload, selection_payload
 from carm_roofline.gui.callbacks.roofline import _point_guide_traces
+from carm_roofline.gui.data import PARAVER_POINT_ROLE
 
 
 pytestmark = pytest.mark.unit
@@ -105,6 +106,51 @@ def test_selection_payload_parses_application_identity_and_clears_background() -
     assert selection_payload({"points": [{"customdata": ["t", {}, "r1", "app-1", -1]}]}, "plot.clickData", None) is None
     assert selection_payload({"points": [{"customdata": ["t", {}, "r1"]}]}, "plot.clickData", None) is None
 
+def test_paraver_selection_toggles_points_and_ignores_non_point_clicks() -> None:
+    figure = {
+        "data": [
+            {"meta": {"carm_role": PARAVER_POINT_ROLE}},
+            {"meta": {"carm_role": "point-guide"}},
+        ]
+    }
+    click = {"points": [{"curveNumber": 0, "x": 2.0, "y": 4.0}]}
+    selected = paraver_selection_payload(click, None, figure)
+    assert selected == {"role": PARAVER_POINT_ROLE, "x": 2.0, "y": 4.0}
+    assert paraver_selection_payload(click, selected, figure) is None
+    second_click = {"points": [{"curveNumber": 0, "x": 3.0, "y": 5.0}]}
+    assert paraver_selection_payload(second_click, selected, figure) == {
+        "role": PARAVER_POINT_ROLE,
+        "x": 3.0,
+        "y": 5.0,
+    }
+    intersection_click = {"points": [{"curveNumber": 1, "x": 2.0, "y": 10.0}]}
+    assert paraver_selection_payload(intersection_click, selected, figure) is selected
+
+
+def test_paraver_selection_pins_guide_independently_of_hover() -> None:
+    figure = {
+        "data": [
+            {"meta": {"carm_role": PARAVER_POINT_ROLE}},
+            {
+                "meta": {"carm_role": "roof-ceiling", "carm_roof_label": "DRAM"},
+                "name": "DRAM",
+                "x": [1.0, 8.0],
+                "y": [10.0, 10.0],
+            },
+            {"meta": {"carm_role": "point-guide", "guide": "selected", "kind": "intersections"}},
+        ],
+        "layout": {"xaxis": {"range": [0.0, 1.0]}, "yaxis": {"range": [0.0, 3.0]}},
+    }
+    selection = {"role": PARAVER_POINT_ROLE, "x": 3.0, "y": 4.0}
+    hover = {"points": [{"curveNumber": 0, "pointNumber": 0, "x": 2.0, "y": 4.0}]}
+    traces = _point_guide_traces(figure, hover, selection)
+    assert list(traces[0].x) == [2.0, 2.0]
+    assert list(traces[2].x) == [3.0, 3.0]
+    intersection_hover = {"points": [{"curveNumber": 2, "pointNumber": 0, "x": 3.0, "y": 10.0}]}
+    traces_after_intersection_hover = _point_guide_traces(figure, intersection_hover, selection)
+    assert list(traces_after_intersection_hover[0].x) == []
+    assert list(traces_after_intersection_hover[2].x) == [3.0, 3.0]
+
 
 def test_point_guide_traces_show_unique_visible_roof_intersections_and_labels() -> None:
     figure = {
@@ -189,6 +235,40 @@ def test_point_guide_traces_show_unique_visible_roof_intersections_and_labels() 
     assert hover_markers.opacity is selected_markers.opacity is None
     assert all(trace.showlegend is False for trace in traces)
     assert hover_line.hoverinfo == selected_line.hoverinfo == "skip"
+
+
+
+def test_point_guide_traces_use_paraver_coordinates_only_for_paraver_markers() -> None:
+    figure = {
+        "data": [
+            {
+                "meta": {"carm_role": PARAVER_POINT_ROLE},
+                "x": [2.0],
+                "y": [4.0],
+            },
+            {
+                "meta": {"carm_role": "roof-ceiling", "carm_roof_label": "DRAM"},
+                "name": "DRAM",
+                "x": [1.0, 8.0],
+                "y": [10.0, 10.0],
+            },
+        ],
+        "layout": {"xaxis": {"range": [0.0, 1.0]}, "yaxis": {"range": [0.0, 3.0]}},
+    }
+    marker_hover = {"points": [{"curveNumber": 0, "pointNumber": 0, "x": 2.0, "y": 4.0}]}
+    traces = _point_guide_traces(figure, marker_hover)
+    hover_line, hover_intersections = traces[:2]
+
+    assert list(hover_line.x) == [2.0, 2.0]
+    assert list(hover_line.y) == [1.0, 10.0]
+    assert list(hover_intersections.x) == [2.0]
+    assert list(hover_intersections.y) == [10.0]
+    assert list(hover_intersections.hovertext) == [f"{Performance(10e9)} · 2.50x @DRAM"]
+
+    roof_hover = {"points": [{"curveNumber": 1, "pointNumber": 0, "x": 2.0, "y": 10.0}]}
+    traces_without_point = _point_guide_traces(figure, roof_hover)
+    assert list(traces_without_point[0].x) == []
+    assert list(traces_without_point[1].hovertext) == []
 
 
 def test_point_guide_traces_clear_hover_and_selection_without_touching_layout() -> None:

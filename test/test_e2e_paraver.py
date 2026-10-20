@@ -13,9 +13,9 @@ import pytest
 
 from carm_roofline.gui.config import GUIConfig
 from carm_roofline.gui.factory import create_app
+from carm_roofline.gui.data import PARAVER_POINT_ROLE, RoofConfig, RoofStore
 from carm_roofline.gui.ids import ExportPanelID, ParaverID, PlotAreaID, StoreID
 from carm_roofline.gui.providers import ParaverProvider
-from carm_roofline.gui.data import RoofConfig, RoofStore
 from carm_roofline.paraver import shim
 from carm_roofline.paraver.counters import INTEL_COUNTERS
 from carm_roofline.paraver.pipeline import write_counter_configs
@@ -65,10 +65,14 @@ def _write_roof_records(results: Path) -> None:
     )
 
 
-def _replay_real_paramedir_outputs(counter_dir: Path) -> Callable[[str | Path, str | Path, str], None]:
+def _replay_real_paramedir_outputs(
+    counter_dir: Path,
+) -> Callable[[str | Path, str | Path, str, bool], None]:
     """Render real Paramedir configs, then replay CSVs extracted from the real fixture trace."""
 
-    def replay(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+    def replay(
+        trace_path: str | Path, output_dir: str | Path, time_unit: str, protocol_mode: bool = False
+    ) -> None:
         assert Path(trace_path).is_file()
         output = Path(output_dir)
         configs = write_counter_configs(output, time_unit)
@@ -119,6 +123,7 @@ def _dash_callback(
     output_id: str,
     overrides: dict[tuple[str, str], Any],
     trigger_id: str,
+    trigger_property: str | None = None,
 ) -> Any:
     values = _component_values(layout)
     values.update(overrides)
@@ -129,7 +134,10 @@ def _dash_callback(
             output.component_id == output_id
             for output in (metadata["output"] if isinstance(metadata["output"], list) else [metadata["output"]])
         )
-        and any(item["id"] == trigger_id for item in metadata["inputs"])
+        and any(
+            item["id"] == trigger_id and (trigger_property is None or item["property"] == trigger_property)
+            for item in metadata["inputs"]
+        )
     ]
     assert len(candidates) == 1, f"Expected one callback for {output_id} triggered by {trigger_id}, got {len(candidates)}"
     key, metadata = candidates[0]
@@ -300,6 +308,95 @@ def test_paraver_trace_to_gui_and_all_exports(
         if series.get("mode") == "markers" and series.get("name") == "End"
     ]
     plotted_ai = [float(value) for series in point_series for value in series["x"]]
+
+    point_trace_index = next(
+        index
+        for index, series in enumerate(figure["data"])
+        if isinstance(series.get("meta"), dict) and series["meta"].get("carm_role") == PARAVER_POINT_ROLE
+    )
+    point_trace = figure["data"][point_trace_index]
+    point_ai = float(point_trace["x"][0])
+    point_performance = float(point_trace["y"][0])
+    selected = _dash_callback(
+        client,
+        app,
+        layout,
+        StoreID.SELECTED_POINT.value,
+        {
+            (PlotAreaID.ROOFLINE_PLOT.value, "clickData"): {
+                "points": [{"curveNumber": point_trace_index, "x": point_ai, "y": point_performance}]
+            },
+            (PlotAreaID.ROOFLINE_PLOT.value, "figure"): figure,
+            (StoreID.SELECTED_POINT.value, "data"): None,
+        },
+        PlotAreaID.ROOFLINE_PLOT.value,
+    )
+    assert selected == {"role": PARAVER_POINT_ROLE, "x": point_ai, "y": point_performance}
+    figure = _dash_callback(
+        client,
+        app,
+        layout,
+        PlotAreaID.ROOFLINE_PLOT.value,
+        {
+            (StoreID.SELECTED_POINT.value, "data"): selected,
+            (PlotAreaID.ROOFLINE_PLOT.value, "figure"): figure,
+        },
+        StoreID.SELECTED_POINT.value,
+    )
+    hover_ai = float(point_trace["x"][1])
+    hover_performance = float(point_trace["y"][1])
+    hover_update = _dash_callback(
+        client,
+        app,
+        layout,
+        PlotAreaID.ROOFLINE_PLOT.value,
+        {
+            (PlotAreaID.ROOFLINE_PLOT.value, "figure"): figure,
+            (PlotAreaID.ROOFLINE_PLOT.value, "hoverData"): {
+                "points": [
+                    {
+                        "curveNumber": point_trace_index,
+                        "pointNumber": 1,
+                        "x": hover_ai,
+                        "y": hover_performance,
+                    }
+                ]
+            },
+            (StoreID.SELECTED_POINT.value, "data"): selected,
+        },
+        PlotAreaID.ROOFLINE_PLOT.value,
+        "hoverData",
+    )
+    assert hover_update.get("__dash_patch_update")
+    hover_guides = [
+        operation["params"]["value"]
+        for operation in hover_update["operations"]
+        if operation["operation"] == "Assign"
+        and operation["location"][0] == "data"
+        and operation["params"]["value"].get("meta", {}).get("guide") == "hover"
+    ]
+    selected_guides = [
+        operation["params"]["value"]
+        for operation in hover_update["operations"]
+        if operation["operation"] == "Assign"
+        and operation["location"][0] == "data"
+        and operation["params"]["value"].get("meta", {}).get("guide") == "selected"
+    ]
+    selected_line = next(trace for trace in selected_guides if trace["meta"]["kind"] == "line")
+    assert selected_line["x"] == pytest.approx([point_ai, point_ai])
+    hover_line = next(trace for trace in hover_guides if trace["meta"]["kind"] == "line")
+    hover_markers = next(trace for trace in hover_guides if trace["meta"]["kind"] == "intersections")
+    expected_intersections = [
+        (level, bandwidth * hover_ai)
+        for level, bandwidth in (("L1", 100.0), ("L2", 50.0), ("L3", 25.0), ("DRAM", 12.5))
+        if bandwidth * hover_ai > hover_performance
+    ]
+    assert hover_line["y"][0] < hover_performance < hover_line["y"][1]
+    assert hover_markers["x"] == pytest.approx([hover_ai] * len(expected_intersections))
+    assert hover_markers["y"] == pytest.approx([performance for _level, performance in expected_intersections])
+    assert [label.rsplit("@", maxsplit=1)[-1] for label in hover_markers["hovertext"]] == [
+        level for level, _performance in expected_intersections
+    ]
     assert len(plotted_ai) == len(filtered_trace)
     assert sorted(plotted_ai) == pytest.approx(sorted(filtered_trace["ai"].tolist()))
     assert len(plotted_ai) < len(data.trace), "filters affect the plot, not the full trace"
