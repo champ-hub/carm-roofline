@@ -49,6 +49,7 @@ def _carm_namespace(**overrides: object) -> argparse.Namespace:
         paraver_trace=None,
         paraver_window_csv=None,
         paraver_use_semantic_window=False,
+        paraver_protocol=False,
     )
     for k, v in overrides.items():
         setattr(ns, k, v)
@@ -66,6 +67,7 @@ def test_guiconfig_paraver_args_default_to_none() -> None:
     """New Paraver args default to None/False."""
     config = GUIConfig(_carm_namespace())
     assert config.paraver_window_csv is None
+    assert config.paraver_protocol is False
     assert config.paraver_use_semantic_window is False
 
 

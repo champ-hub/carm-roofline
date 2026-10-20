@@ -52,7 +52,9 @@ def create_app(config: GUIConfig) -> dash.Dash:
     paraver_data: ParaverData | None = None
 
     if mode.show_time_slider and config.paraver_trace is not None:
-        provider = ParaverProvider(config.paraver_trace, config.paraver_window_csv)
+        provider = ParaverProvider(
+            config.paraver_trace, config.paraver_window_csv, protocol_mode=config.paraver_protocol
+        )
         try:
             paraver_data = provider.load()
         except UserError as exc:

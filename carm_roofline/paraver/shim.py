@@ -40,7 +40,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def translate_args(args: argparse.Namespace) -> list[str]:
     """Translate legacy Paraver argv into ``carm gui`` argv."""
-    translated = ["gui", "--paraver-trace", args.trace_path]
+    translated = ["gui", "--paraver-trace", args.trace_path, "--_paraver-protocol"]
     if args.csv:
         translated += ["--paraver-window-csv", args.csv]
     if args.mask_csv:

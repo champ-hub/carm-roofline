@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -103,30 +104,39 @@ def write_counter_configs(output_dir: str | Path, time_unit: str) -> list[Path]:
     return written
 
 
-def run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
-    """Run paramedir over the .prv trace with the rendered counter configs.
+def run_paramedir(
+    trace_path: str | Path,
+    output_dir: str | Path,
+    time_unit: str,
+    protocol_mode: bool = False,
+) -> None:
+    """Run paramedir, or request equivalent CSVs from the Paraver protocol host.
+    Writes one '<name>.cfg' per registered counter into output_dir. In normal
+    mode, invokes paramedir and writes '<name>.csv' files there. In protocol
+    mode, emits one ``PARAVER_PROTOCOL generate_csv`` command per config and
+    waits for its requested output file to appear.
 
-    Writes one '<name>.cfg' per registered counter into output_dir (via
-    write_counter_configs), then invokes
-    ``paramedir <prv> <cfg> <out.csv> ...`` with cwd=output_dir so each
-    '<name>.csv' lands there (the explicit output file per cfg is required:
-    paramedir's default output name is '<cfg>.mcr', not '<name>.csv').
-    paramedir writes times in time_unit (the cfg window_units). Raises
-    FileNotFoundError when the trace is missing or paramedir is not on PATH;
-    RuntimeError when paramedir exits non-zero, with stderr included in the
-    message. Returns None; missing per-counter outputs are legitimate (a
-    counter absent from the trace yields no file) and are handled by
-    load_counter_data / build_trace_table.
+    Raises FileNotFoundError when the trace is missing or paramedir is not on
+    PATH in normal mode; RuntimeError when paramedir exits non-zero, with
+    stderr included in the message. Returns None.
     """
     trace = Path(trace_path)
     if not trace.is_file():
         raise FileNotFoundError(f"trace file not found: {trace}")
-    if shutil.which("paramedir") is None:
+    if not protocol_mode and shutil.which("paramedir") is None:
         raise FileNotFoundError(
             "paramedir not found on PATH; add Paraver's bin/ directory (e.g. export PATH=/path/to/paraver/bin:$PATH)"
         )
     directory = Path(output_dir).resolve()
     cfgs = write_counter_configs(directory, time_unit)
+    if protocol_mode:
+        for cfg in cfgs:
+            output = cfg.with_suffix(".csv")
+            print(f"PARAVER_PROTOCOL generate_csv {cfg} {output}", flush=True)  # noqa: T201 ; protocol stdout
+            while not output.is_file():
+                time.sleep(0.1)
+        return
+
     argv = ["paramedir", str(trace)]
     for cfg in cfgs:
         argv.extend([str(cfg), cfg.with_suffix(".csv").name])

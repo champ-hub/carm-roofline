@@ -171,6 +171,7 @@ def _config(results_dir: Path) -> GUIConfig:
             paraver_trace=None,
             paraver_window_csv=None,
             paraver_use_semantic_window=False,
+            paraver_protocol=False,
         )
     )
 

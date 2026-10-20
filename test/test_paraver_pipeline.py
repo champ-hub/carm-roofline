@@ -618,6 +618,42 @@ def test_run_paramedir_writes_cfgs_and_invokes(tmp_path: Path, monkeypatch: pyte
         assert "window_units Nanoseconds" in path.read_text(encoding="utf-8")
 
 
+def test_run_paramedir_protocol_requests_and_waits_for_each_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trace = _write(tmp_path, "trace.prv", "#Paraver trace\n")
+    out = tmp_path / "out"
+    commands: list[str] = []
+
+    requested_outputs: list[Path] = []
+
+    def emit(command: str, *, flush: bool) -> None:
+        assert flush is True
+        commands.append(command)
+        _, _, cfg_path, output_path = command.split()
+        assert Path(cfg_path).is_file()
+        requested_outputs.append(Path(output_path))
+
+    def atomically_create_output(delay: float) -> None:
+        assert delay == 0.1
+        output = requested_outputs[-1]
+        temporary = Path(f"{output}.tmp")
+        temporary.write_text("complete\n", encoding="utf-8")
+        temporary.replace(output)
+
+    monkeypatch.setattr(pipeline.shutil, "which", lambda _: None)
+    monkeypatch.setattr(pipeline, "print", emit, raising=False)
+    monkeypatch.setattr(pipeline.time, "sleep", atomically_create_output)
+    run_paramedir(trace, out, "Microseconds", protocol_mode=True)
+
+    assert commands == [
+        f"PARAVER_PROTOCOL generate_csv {out.resolve() / f'{name}.cfg'} {out.resolve() / f'{name}.csv'}"
+        for name in EXPECTED_NAMES
+    ]
+    assert all(output.read_text(encoding="utf-8") == "complete\n" for output in requested_outputs)
+
+
+
 def test_run_paramedir_missing_trace_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="trace file not found"):
         run_paramedir(tmp_path / "nope.prv", tmp_path / "out", "Microseconds")

@@ -99,10 +99,12 @@ class ParaverProvider:
         trace_path: Path,
         window_csv_path: Path | None,
         legend_csv_path: Path | None = None,
+        protocol_mode: bool = False,
     ) -> None:
         self._trace_path = trace_path.resolve()
         self._window_csv_path = window_csv_path.resolve() if window_csv_path else None
         self._legend_csv_path = legend_csv_path.resolve() if legend_csv_path else None
+        self._protocol_mode = protocol_mode
         self._window_extent: tuple[float, float] | None = None
 
     @property
@@ -199,14 +201,14 @@ class ParaverProvider:
         """Run paramedir and build the trace table in a temp dir; UserError on failure."""
         work_dir = Path(tempfile.mkdtemp(prefix="carm-paraver-"))
         try:
-            if not shutil.which("paramedir"):
+            if not self._protocol_mode and not shutil.which("paramedir"):
                 raise UserError("paramedir not found on PATH; install it to load Paraver traces")
 
             # Progress popup: open at 0% before the paramedir run; build_trace_table then updates and closes it at 100%.
             progress = ProgressBar(total=1)
             progress.update(0)
 
-            run_paramedir(self._trace_path, work_dir, time_unit)
+            run_paramedir(self._trace_path, work_dir, time_unit, protocol_mode=self._protocol_mode)
 
             trace = build_trace_table(self._window_csv_path, work_dir, time_unit, progress=progress)
         except (ValueError, RuntimeError) as exc:

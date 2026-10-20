@@ -30,6 +30,7 @@ class GUIConfig(InsertsArguments):
         # Paraver-mode arguments.
         self.paraver_window_csv: Path | None = args.paraver_window_csv
         self.paraver_use_semantic_window: bool = args.paraver_use_semantic_window
+        self.paraver_protocol: bool = args.paraver_protocol
 
         # Validate Paraver-only requirements.
         self._validate_paraver_args()
@@ -68,6 +69,7 @@ class GUIConfig(InsertsArguments):
             action="store_true",
             help="Initialize time slider to the window CSV's semantic extent",
         )
+        parser.add_argument("--_paraver-protocol", dest="paraver_protocol", action="store_true", help=argparse.SUPPRESS)
 
     def _validate_paraver_args(self) -> None:
         """Validate Paraver-only CLI requirements, raising UserError for invalid combos."""

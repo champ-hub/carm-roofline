@@ -30,6 +30,7 @@ def test_translate_paraver_example() -> None:
         "gui",
         "--paraver-trace",
         "lulesh2.0_64p_carm_DP.chop2.prv",
+        "--_paraver-protocol",
         "--paraver-window-csv",
         "New_window_#1_lulesh2.0_64p_carm_DP.chop2.csv",
         "--paraver-use-semantic-window",
@@ -42,6 +43,7 @@ def test_translate_minimal() -> None:
         "gui",
         "--paraver-trace",
         "t.prv",
+        "--_paraver-protocol",
         "--paraver-window-csv",
         "m.csv",
     ]
@@ -49,7 +51,7 @@ def test_translate_minimal() -> None:
 
 def test_translate_trace_only() -> None:
     """A trace alone (no --csv) maps to gui without --paraver-window-csv."""
-    assert _translate(["t.prv"]) == ["gui", "--paraver-trace", "t.prv"]
+    assert _translate(["t.prv"]) == ["gui", "--paraver-trace", "t.prv", "--_paraver-protocol"]
 
 
 @pytest.mark.parametrize("debug_flag", ["-d", "--debug"])
@@ -58,6 +60,7 @@ def test_translate_debug_appends_verbose(debug_flag: str) -> None:
     translated = _translate(["--csv", "m.csv", "t.prv", debug_flag])
     assert translated[-1] == "-v"
     assert "-v" not in translated[:-1]
+
 
 
 def test_translate_unsupported_flags_warn_and_drop(monkeypatch: pytest.MonkeyPatch) -> None:
