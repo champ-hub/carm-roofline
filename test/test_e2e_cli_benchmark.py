@@ -139,9 +139,10 @@ def test_cli_benchmark_runs_generated_matrix_and_roundtrips_results(
         )
         assert record["performance_gops"] == pytest.approx(expected_performance)
 
+    captured_stderr = capsys.readouterr().err
     progress_lines = [
         line.removeprefix("CARM_PROGRESS ")
-        for line in capsys.readouterr().err.splitlines()
+        for line in captured_stderr.splitlines()
         if line.startswith("CARM_PROGRESS ")
     ]
     progress_events = [json.loads(line) for line in progress_lines]

@@ -9,13 +9,14 @@ This module coordinates the entire benchmark pipeline:
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeRemainingColumn
 
-from carm_roofline.output_utils import Verbosity, debug, detail, get_console
+from carm_roofline.output_utils import Verbosity, debug, detail, get_console, warn
 from carm_roofline.test_bench.builder import (
     MicrobenchmarkFunctionSpec,
     compile_test_bench,
@@ -198,6 +199,9 @@ def run_full_benchmark(
                 progress_callback({"event": "stage", "stage": "writing"})
             detail(f"Dry run: wrote generated header to {generated_header}; skipping compilation and execution.")
             return isa_suites
+
+        if sys.platform == "darwin" and context.exec_interface.sim_cmd is None:
+            warn("CPU pinning is unavailable on macOS; benchmark threads run unpinned and may be rescheduled.")
 
         if progress_callback is not None:
             progress_callback({"event": "stage", "stage": "compiling"})

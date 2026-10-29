@@ -216,6 +216,10 @@ class BaseISA:
         "Registers written implicitly by benchmark instructions (e.g. idiv's dividend regs); must be declared clobbers"
         return []
 
+    def clobber_registers(self, registers: Iterable[str]) -> list[str]:
+        "Returns benchmark register names in the syntax accepted by the compiler's asm clobbers."
+        return list(registers)
+
     def format_iasm_input(self, var: InlineASM.Input) -> str:
         "Formats an inline asm input variable, may vary between ISAs"
         return f"%[{var.asm_name}]"
@@ -681,7 +685,7 @@ class BaseISA:
 
         # Clobbers: bench registers + implicit clobbers + helper registers used by the outer/inner loop
         clobbers = [
-            *bench_registers,
+            *self.clobber_registers(bench_registers),
             *self.implicit_clobbers(params.data_type),
             self.helper_registers.outer_iterator,
             self.helper_registers.inner_iterator,
@@ -852,7 +856,11 @@ class BaseISA:
             if params.num_st:
                 asm_inputs.append(var_write_ptr)
             helper_clobbers.append(self.helper_registers.write_pointer)
-        clobbers = [*bench_registers, *self.implicit_clobbers(params.data_type), *helper_clobbers]
+        clobbers = [
+            *self.clobber_registers(bench_registers),
+            *self.implicit_clobbers(params.data_type),
+            *helper_clobbers,
+        ]
         iasm = InlineASM(asm, asm_inputs, clobbers)
         bench_code = self.__generate_generic_benchmark(iasm, func_name=func_name)
 
@@ -976,7 +984,7 @@ class BaseISA:
         iasm = InlineASM(
             asm,
             asm_inputs,
-            [*bench_registers, *self.implicit_clobbers(params.data_type), *helper_clobbers],
+            [*self.clobber_registers(bench_registers), *self.implicit_clobbers(params.data_type), *helper_clobbers],
         )
         return MicrobenchmarkFunctionSpec(
             function_name=func_name,

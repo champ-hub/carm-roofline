@@ -7,10 +7,12 @@
 #include <assert.h>
 #include <errno.h>
 #include <microbenchmarks.h>
+#include <sched.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
+#include <time.h>
 
 #define CARM_BENCH_DATA_ALIGNMENT 4096UL
 static size_t g_thread_stride_gap = 16 * 1024;
@@ -124,8 +126,11 @@ static uint64_t median(int n, uint64_t x[])
 // Wrapper function type: thread entry point matching pthread signature
 typedef void *(*wrapper_fn_t)(void *arg);
 
-// Global synchronization primitives - definitions (declared in test_bench.h)
+#if defined(__linux__)
 pthread_barrier_t g_barrier;
+#else
+carm_bench_barrier_t g_barrier;
+#endif
 pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Global calibration state - definition (declared in test_bench.h)
@@ -162,7 +167,9 @@ measure_benchmark(const benchmark_metadata_t *metadata, wrapper_fn_t wrapper_fn,
         return;
     }
     pthread_attr_t attr;
+#if defined(__linux__)
     cpu_set_t cpus;
+#endif
     size_t aligned_read = 0;
     size_t aligned_write = 0;
 
@@ -191,9 +198,21 @@ measure_benchmark(const benchmark_metadata_t *metadata, wrapper_fn_t wrapper_fn,
     }
     size_t per_thread_stride = aligned_read + aligned_write + stride_gap;
 
-    /* Initialize global state */
     g_max_reps = 0;
-    pthread_barrier_init(&g_barrier, NULL, num_threads);
+#if defined(__linux__)
+    if (pthread_barrier_init(&g_barrier, NULL, (unsigned int) num_threads) != 0) {
+        fprintf(stderr, "ERROR: failed to initialize benchmark barrier\n");
+        exit(1);
+    }
+#else
+    g_barrier.threshold = (unsigned int) num_threads;
+    g_barrier.waiting = 0;
+    g_barrier.generation = 0;
+    if (pthread_mutex_init(&g_barrier.mutex, NULL) != 0 || pthread_cond_init(&g_barrier.cond, NULL) != 0) {
+        fprintf(stderr, "ERROR: failed to initialize benchmark barrier\n");
+        exit(1);
+    }
+#endif
 
     /* Allocate timing arrays for each thread */
     for (int i = 0; i < num_threads; i++) {
@@ -233,34 +252,37 @@ measure_benchmark(const benchmark_metadata_t *metadata, wrapper_fn_t wrapper_fn,
 
     pthread_attr_init(&attr);
 
-    /* Launch threads with CPU affinity */
+    /* Pin threads where the platform exposes the Linux affinity API. */
     for (int i = 0; i < num_threads; i++) {
+#if defined(__linux__)
         CPU_ZERO(&cpus);
-
         if (metadata->thread_affinity != NULL) {
-            // Pin this thread to its individual CPU
             CPU_SET(metadata->thread_affinity[i], &cpus);
-
             int affinity_rc = pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpus);
             if (affinity_rc != 0) {
                 fprintf(stderr, "ERROR: pthread_attr_setaffinity_np failed with code %d\n", affinity_rc);
                 exit(-1);
             }
         }
-
+#endif
         int rc = pthread_create(&threads[i], &attr, wrapper_fn, &tdata[i]);
         if (rc) {
             fprintf(stderr, "ERROR: pthread_create failed with code %d\n", rc);
             exit(-1);
         }
     }
+    pthread_attr_destroy(&attr);
 
     // Wait for all threads to complete
     for (int i = 0; i < num_threads; i++) {
         pthread_join(threads[i], NULL);
     }
-
+#if defined(__linux__)
     pthread_barrier_destroy(&g_barrier);
+#else
+    pthread_cond_destroy(&g_barrier.cond);
+    pthread_mutex_destroy(&g_barrier.mutex);
+#endif
 
     // Aggregate results across threads - find max elapsed time across threads per run.
     uint64_t *max_elapsed_ns = (uint64_t *) calloc(NUM_RUNS, sizeof(uint64_t));

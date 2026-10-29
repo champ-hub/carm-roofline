@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import platform
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -9,8 +10,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from carm_roofline.architecture.darwin import sysctl_int_or_none
 from carm_roofline.core import Bytes, UserError
-from carm_roofline.output_utils import debug, format_if_container
+from carm_roofline.output_utils import debug, format_if_container, warn
 
 _CPU_ROOT = Path("/sys/devices/system/cpu")
 
@@ -324,7 +326,9 @@ class MemoryTopology:
         self.cache_instances: dict[int, list[frozenset[int]]] = {}
         "hierarchy_level -> list of instances (each instance is a set of cpu_ids sharing that level)"
         self.level_sizes: dict[int, Bytes] = {}
-        "hierarchy_level -> size per instance for that level"
+        "hierarchy_level -> conservative minimum size per instance"
+        self._cache_instance_sizes: dict[int, dict[frozenset[int], Bytes]] = {}
+        self._uses_synthetic_cpu_ids = False
         self._levels: list[MemoryLevelInfo] = []  # pre-built by _parse(); names are stable after construction
         self._parse()
 
@@ -425,47 +429,60 @@ class MemoryTopology:
             self.cpus[cpu_id] = logical_cpu
             self.packages.setdefault(logical_cpu.package_id, []).append(cpu_id)
 
-        # Build cache instance registry (data caches only)
-        seen_sets: dict[int, set[frozenset[int]]] = {}  # level -> set of frozensets
-        level_sizes: dict[int, Bytes] = {}
+        self._finalize()
+
+    def _finalize(self) -> None:
+        """Build cache instances and memory levels from the populated CPU records."""
+        seen_sets: dict[int, set[frozenset[int]]] = {}
+        instance_sizes: dict[int, dict[frozenset[int], Bytes]] = {}
         for cpu in self.cpus.values():
-            for c in cpu.data_caches():
-                seen_sets.setdefault(c.level, set())
-                seen_sets[c.level].add(c.shared_cpus)
-                level_sizes.setdefault(c.level, c.size)
-        self.cache_instances = {lvl: sorted(instances, key=min) for lvl, instances in seen_sets.items()}
+            for cache in cpu.data_caches():
+                seen_sets.setdefault(cache.level, set()).add(cache.shared_cpus)
+                instance_sizes.setdefault(cache.level, {}).setdefault(cache.shared_cpus, cache.size)
+
+        self.cache_instances = {level: sorted(instances, key=min) for level, instances in seen_sets.items()}
+        self._cache_instance_sizes = instance_sizes
+        level_sizes = {
+            level: (min(sizes.values()) if self._uses_synthetic_cpu_ids else next(iter(sizes.values())))
+            for level, sizes in instance_sizes.items()
+            if sizes
+        }
 
         if self.cpus:
             dram_level = (max(self.cache_instances.keys()) + 1) if self.cache_instances else 1
             self.cache_instances[dram_level] = [frozenset(self.cpus.keys())]
-            level_sizes[dram_level] = self._detect_dram_size()
+            level_sizes[dram_level] = self._dram_size()
+            self._cache_instance_sizes[dram_level] = {self.cache_instances[dram_level][0]: level_sizes[dram_level]}
 
         self.level_sizes = level_sizes
-
-        # Pre-build MemoryLevelInfo list with names assigned once.
-        # dram_level is the numerically largest level (inserted as max+1 above).
         if self.cpus:
-            all_levels = sorted(self.cache_instances.keys())
-            dram_lvl = all_levels[-1]
-            for level in all_levels:
-                instances = self.cache_instances[level]
+            dram_level = max(self.cache_instances)
+            for level, instances in sorted(self.cache_instances.items()):
                 if not instances:
                     continue
-                first_instance_cpus = instances[0]
-                num_sharing_threads = len(first_instance_cpus)
-                level_size = self.level_sizes.get(level, Bytes(0))
-                name = "DRAM" if level == dram_lvl else f"L{level}"
                 self._levels.append(
                     MemoryLevelInfo(
-                        size=level_size,
-                        name=name,
-                        num_sharing_threads=num_sharing_threads,
+                        size=self.level_sizes.get(level, Bytes(0)),
+                        name="DRAM" if level == dram_level else f"L{level}",
+                        num_sharing_threads=(
+                            min(len(instance) for instance in instances)
+                            if self._uses_synthetic_cpu_ids
+                            else len(instances[0])
+                        ),
                         instances=len(instances),
                     )
                 )
 
+    def _dram_size(self) -> Bytes:
+        return self._detect_dram_size()
+
     def available_cache_levels(self) -> list[int]:
         return sorted(self.cache_instances.keys())
+
+    @property
+    def cpu_ids_are_synthetic(self) -> bool:
+        """Whether CPU placement values are topology slots, not OS CPU IDs."""
+        return self._uses_synthetic_cpu_ids
 
     def has_data_cache_levels(self) -> bool:
         """Return whether sysfs exposed at least one data-cache level."""
@@ -543,11 +560,17 @@ class MemoryTopology:
 
         selected = sorted(selected)  # sort final list for easier reading
 
-        # Compute cache_bytes_per_level for all hierarchy levels using selected CPUs.
-        # For each level, count the distinct instances touched by selected threads.
         cache_bytes_per_level: dict[int, Bytes] = {}
         hit_instances_at_target = 0
         for lvl in self.available_cache_levels():
+            if self._uses_synthetic_cpu_ids:
+                cache_bytes_per_level[lvl] = min(self._cache_instance_sizes[lvl].values())
+                if lvl == cache_level:
+                    hit_instances_at_target = sum(
+                        any(cpu_id in instance for cpu_id in selected) for instance in self.cache_instances[lvl]
+                    )
+                continue
+
             seen_sets_lvl: set[frozenset[int]] = set()
             lvl_bytes = Bytes(0)
             for cpu_id in selected:
@@ -559,8 +582,8 @@ class MemoryTopology:
             if lvl == cache_level:
                 hit_instances_at_target = len(seen_sets_lvl)
 
-        debug(f"Calculated the following thread affinity for {n_threads} threads targeting L{cache_level} cache:")
-        debug(f"Selected CPUs: {selected}")
+        debug(f"Calculated cache-aware thread placement for {n_threads} threads targeting L{cache_level} cache:")
+        debug(f"Selected CPU IDs: {selected}")
         debug(f"Hit instances: {hit_instances_at_target} out of {n_instances}")
         debug(f"Cache bytes per level: {format_if_container(cache_bytes_per_level)}")
 
@@ -586,3 +609,173 @@ class MemoryTopology:
             f"{len(self.cpus)} logical CPU(s): "
             + ", ".join(f"{lvl.name}=({lvl.size}, {lvl.instances} instances)" for lvl in self._levels)
         )
+
+
+@dataclass(frozen=True)
+class _DarwinPerfLevel:
+    physical_cpus: int
+    logical_cpus: int
+    l1_size: int
+    l2_size: int
+    l2_sharing: int
+    l3_size: int
+    l3_sharing: int | None
+
+
+class DarwinMemoryTopology(MemoryTopology):
+    """Cache topology from Apple performance-level sysctls.
+
+    CPU numbers are synthetic, per-performance-level planning slots, not macOS
+    processor identifiers. The benchmark harness must leave Darwin threads
+    unpinned. Cache sizes are retained per sharing group; the displayed level
+    size is the conservative minimum across heterogeneous performance levels.
+    """
+
+    def __init__(self) -> None:
+        self._root = Path()
+        self.cpus: dict[int, LogicalCPU] = {}
+        self.packages: dict[int, list[int]] = {}
+        self.cache_instances: dict[int, list[frozenset[int]]] = {}
+        self.level_sizes: dict[int, Bytes] = {}
+        self._cache_instance_sizes: dict[int, dict[frozenset[int], Bytes]] = {}
+        self._uses_synthetic_cpu_ids = True
+        self._levels: list[MemoryLevelInfo] = []
+
+        def required(name: str) -> int:
+            value = sysctl_int_or_none(name)
+            if value is None:
+                raise ValueError(f"Required Apple hardware sysctl {name!r} is unavailable")
+            return value
+
+        num_perflevels = required("hw.nperflevels")
+        if num_perflevels < 1:
+            raise ValueError(f"Invalid Apple performance-level count: {num_perflevels}")
+
+        perflevels: list[_DarwinPerfLevel] = []
+        for perflevel in range(num_perflevels):
+            prefix = f"hw.perflevel{perflevel}."
+            physical_cpus = required(prefix + "physicalcpu")
+            logical_cpus = required(prefix + "logicalcpu")
+            l1_size = required(prefix + "l1dcachesize")
+            l2_size = required(prefix + "l2cachesize")
+            l2_sharing = required(prefix + "cpusperl2")
+            l3_size = sysctl_int_or_none(prefix + "l3cachesize") or 0
+            l3_sharing = sysctl_int_or_none(prefix + "cpusperl3") if l3_size else None
+            if min(physical_cpus, logical_cpus, l1_size, l2_size, l2_sharing) <= 0:
+                raise ValueError(f"Invalid Apple performance-level topology reported for {prefix}")
+            if logical_cpus != physical_cpus:
+                raise ValueError(
+                    f"Apple performance level {perflevel} reports {physical_cpus} physical cores and "
+                    f"{logical_cpus} logical CPUs; unsupported SMT topology"
+                )
+            if physical_cpus % l2_sharing != 0:
+                raise ValueError(
+                    f"Apple performance level {perflevel} reports {physical_cpus} cores sharing L2 in groups "
+                    f"of {l2_sharing}; cannot derive complete cache-sharing groups"
+                )
+            perflevels.append(
+                _DarwinPerfLevel(
+                    physical_cpus=physical_cpus,
+                    logical_cpus=logical_cpus,
+                    l1_size=l1_size,
+                    l2_size=l2_size,
+                    l2_sharing=l2_sharing,
+                    l3_size=l3_size,
+                    l3_sharing=l3_sharing,
+                )
+            )
+
+        total_cpus = sum(level.logical_cpus for level in perflevels)
+        reported_cpu_count = required("hw.ncpu")
+        if reported_cpu_count != total_cpus:
+            raise ValueError(
+                f"Apple performance levels describe {total_cpus} logical CPUs, but hw.ncpu reports {reported_cpu_count}"
+            )
+        self._apple_memsize = required("hw.memsize")
+        if self._apple_memsize <= 0:
+            raise ValueError(f"Invalid Apple physical memory size: {self._apple_memsize}")
+
+        l3_present = [level.l3_size > 0 for level in perflevels]
+        include_l3 = all(l3_present)
+        if any(l3_present) and not include_l3:
+            warn("Apple performance levels disagree about L3 availability; omitting L3 from detected topology.")
+        if include_l3:
+            for perflevel, level in enumerate(perflevels):
+                sharing = level.l3_sharing
+                cores = level.physical_cpus
+                if sharing is None or sharing <= 0 or cores % sharing != 0:
+                    warn(
+                        f"Apple performance level {perflevel} does not expose complete L3 sharing groups; "
+                        "omitting L3 from detected topology."
+                    )
+                    include_l3 = False
+                    break
+
+        cpu_ranges: list[list[int]] = []
+        next_cpu_id = 0
+        for level in perflevels:
+            cpu_count = level.logical_cpus
+            cpu_ranges.append(list(range(next_cpu_id, next_cpu_id + cpu_count)))
+            next_cpu_id += cpu_count
+        all_cpu_ids = frozenset(range(total_cpus))
+
+        for level, cpu_ids in zip(perflevels, cpu_ranges):
+            for cpu_id in cpu_ids:
+                cpu = LogicalCPU(
+                    cpu_id=cpu_id,
+                    package_id=0,
+                    core_id=cpu_id,
+                    thread_siblings=frozenset({cpu_id}),
+                    core_siblings=all_cpu_ids,
+                )
+                cpu.caches.append(
+                    CacheDescriptor(
+                        level=1,
+                        cache_type=CacheType.DATA,
+                        size=Bytes(level.l1_size),
+                        ways=0,
+                        sets=0,
+                        line_size=Bytes(0),
+                        shared_cpus=frozenset({cpu_id}),
+                    )
+                )
+                self.cpus[cpu_id] = cpu
+                self.packages.setdefault(0, []).append(cpu_id)
+
+            cache_groups = [(2, level.l2_size, level.l2_sharing)]
+            if include_l3 and level.l3_sharing is not None:
+                cache_groups.append((3, level.l3_size, level.l3_sharing))
+            for cache_level, cache_size, cores_per_cache in cache_groups:
+                for group_start in range(0, len(cpu_ids), cores_per_cache):
+                    shared_cpus = frozenset(cpu_ids[group_start : group_start + cores_per_cache])
+                    descriptor = CacheDescriptor(
+                        level=cache_level,
+                        cache_type=CacheType.UNIFIED,
+                        size=Bytes(cache_size),
+                        ways=0,
+                        sets=0,
+                        line_size=Bytes(0),
+                        shared_cpus=shared_cpus,
+                    )
+                    for cpu_id in shared_cpus:
+                        self.cpus[cpu_id].caches.append(descriptor)
+
+        if any(
+            len({cache.size for cpu in self.cpus.values() for cache in cpu.data_caches(level)}) > 1
+            for level in (1, 2, 3)
+        ):
+            warn(
+                "Apple performance levels have different cache sizes; detected capacities use conservative "
+                "per-instance sizes. Unpinned benchmarks may still run on mixed core types."
+            )
+        self._finalize()
+
+    def _dram_size(self) -> Bytes:
+        return Bytes(self._apple_memsize)
+
+
+def native_memory_topology() -> MemoryTopology:
+    """Return the native topology using Linux sysfs or Apple ARM sysctls."""
+    if platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}:
+        return DarwinMemoryTopology()
+    return MemoryTopology()

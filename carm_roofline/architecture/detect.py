@@ -21,7 +21,8 @@ from carm_roofline.output_utils import debug, detail, warn
 if TYPE_CHECKING:
     from carm_roofline.isa import BaseISA
 
-from .memory import MemoryTopology
+from .darwin import sysctl_int_or_none
+from .memory import MemoryTopology, native_memory_topology
 
 
 @dataclass
@@ -48,7 +49,7 @@ class DetectedArchitecture:
     arch: str | None = None
     model_name: str | None = None
 
-    # Memory topology (sysfs-based, native Linux only; None for cross-execution)
+    # Native topology from Linux sysfs or Apple ARM sysctls; None for cross-execution.
     memory_topology: MemoryTopology | None = None
 
     # Vector configuration
@@ -234,6 +235,25 @@ def detect_features(ctx: TestContext) -> dict[str, Any]:
         Dict with keys: isa (list[str]), arch (str), vendor (str).
         Returns empty dict if test not found.
     """
+    if ctx.family == "arm" and platform.system() == "Darwin":
+        from . import get_execution_interface
+
+        is_native = get_execution_interface().sim_cmd is None
+        if is_native:
+            # Apple ARM64 guarantees Advanced SIMD; sysctlbyname handles OS-visible
+            # extensions without executing privileged ARM system-register reads.
+            neon = sysctl_int_or_none("hw.optional.neon")
+            if neon is None:
+                neon = sysctl_int_or_none("hw.optional.arm.FEAT_AdvSIMD")
+            if neon is None:
+                neon = 1
+            isa = ["arm"]
+            if neon:
+                isa.append("arm_neon")
+            if sysctl_int_or_none("hw.optional.arm.FEAT_SVE"):
+                isa.append("arm_sve")
+            return {"isa": isa, "arch": platform.machine()}
+
     raw = _run_detection_test(ctx, ctx.probe_spec("features"))
     if not raw:
         return {}
@@ -249,16 +269,12 @@ def detect_features(ctx: TestContext) -> dict[str, Any]:
 
 
 def detect_cache(ctx: TestContext) -> dict[str, Any]:
-    """Run or retrieve cache detection and return MemoryTopology.
+    """Detect native cache topology or defer to explicit cross-execution config.
 
-    For native execution: attempts sysfs MemoryTopology first, raises if unavailable.
-    For non-native (cross-compiled): returns empty dict; user must provide --topology-config.
-
-    Returns:
-        Dict with key: memory_topology (MemoryTopology), or empty dict for non-native.
-
-    Raises:
-        ValueError: If native execution and sysfs parsing fails.
+    Native Linux uses sysfs and raises if detection fails. Native Apple ARM
+    uses performance-level sysctls, falling back to explicit configuration if
+    those sysctls are unavailable. Non-native execution leaves topology empty;
+    users must provide it through ``--topology-config``.
     """
     from . import get_execution_interface
 
@@ -266,19 +282,25 @@ def detect_cache(ctx: TestContext) -> dict[str, Any]:
     is_native = exec_iface.sim_cmd is None
 
     if is_native:
-        debug("Attempting to detect cache hierarchy from Linux /sys (native benchmark)")
+        is_apple_arm = platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}
+        debug("Attempting to detect native cache hierarchy")
         try:
-            topology = MemoryTopology()
+            topology = native_memory_topology()
             if topology and topology.cpus:
                 return {"memory_topology": topology}
-            else:
-                raise ValueError("MemoryTopology parsed but contains no CPU data")
-        except Exception as e:
-            raise UserError(
-                f"Failed to parse native system memory topology from /sys: {e}. "
-                "For non-native execution or when sysfs is unavailable, "
-                "please provide cache hierarchy explicitly with --topology-config."
-            ) from e
+            raise ValueError("Memory topology parsed but contains no CPU data")
+        except ValueError as e:
+            if is_apple_arm:
+                warn(
+                    f"Could not derive Apple cache topology: {e}. "
+                    "Provide a cache hierarchy with --topology-config <path>."
+                )
+                return {}
+            raise UserError(f"Failed to detect native system memory topology: {e}") from e
+        except OSError as e:
+            if is_apple_arm:
+                raise
+            raise UserError(f"Failed to detect native system memory topology: {e}") from e
     else:
         # Non-native execution: user must provide cache hierarchy explicitly
         # Comment for future: could synthesize a minimal best-effort topology
@@ -449,6 +471,7 @@ def native_detect(threads: int = 1) -> DetectedArchitecture:
     platform_specific_fn = {
         "x86_64": x86.detect,
         "aarch64": arm.detect,
+        "arm64": arm.detect,
         "riscv": riscv.detect,
     }
 

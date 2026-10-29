@@ -134,13 +134,64 @@ def test_detect_machine_signature(monkeypatch: pytest.MonkeyPatch) -> None:
         "read_cpuinfo",
         lambda: CpuInfo(model_name="AMD Ryzen 7 7735HS with Radeon Graphics", vendor="AuthenticAMD"),
     )
-    monkeypatch.setattr(identity, "MemoryTopology", _FakeTopology)
+    monkeypatch.setattr(identity, "native_memory_topology", _FakeTopology)
 
     sig = detect_machine_signature()
     assert sig.model_name == "AMD Ryzen 7 7735HS with Radeon Graphics"
     assert sig.vendor == "AuthenticAMD"
     assert sig.memory_levels == ()
     assert isinstance(sig.arch, str) and sig.arch
+
+
+@pytest.mark.parametrize("system", ["Linux", "Darwin"])
+def test_detect_machine_signature_falls_back_on_topology_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+    system: str,
+) -> None:
+    monkeypatch.setattr(identity.platform, "system", lambda: system)
+    monkeypatch.setattr(identity.platform, "machine", lambda: "test-arch")
+    monkeypatch.setattr(identity, "read_cpuinfo", lambda: CpuInfo(model_name="Test CPU", vendor="Test vendor"))
+    monkeypatch.setattr(identity, "_get_physical_ram_bytes", lambda: None)
+
+    def unavailable() -> None:
+        raise OSError("topology sysfs/sysctl unavailable")
+
+    monkeypatch.setattr(identity, "native_memory_topology", unavailable)
+
+    signature = detect_machine_signature()
+    assert signature.model_name == "Test CPU"
+    assert signature.vendor == "Test vendor"
+    assert signature.memory_levels == ()
+
+
+def test_detect_machine_signature_propagates_linux_topology_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(identity.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(identity, "read_cpuinfo", lambda: CpuInfo(model_name="Test CPU", vendor="Test vendor"))
+
+    def invalid() -> None:
+        raise ValueError("invalid Linux topology")
+
+    monkeypatch.setattr(identity, "native_memory_topology", invalid)
+
+    with pytest.raises(ValueError, match="invalid Linux topology"):
+        detect_machine_signature()
+
+
+def test_detect_machine_signature_falls_back_on_darwin_topology_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(identity.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(identity.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(identity, "read_cpuinfo", lambda: CpuInfo(model_name="Apple CPU", vendor="Apple"))
+    monkeypatch.setattr(identity, "_get_physical_ram_bytes", lambda: None)
+
+    def invalid() -> None:
+        raise ValueError("unavailable Apple sysctls")
+
+    monkeypatch.setattr(identity, "native_memory_topology", invalid)
+
+    signature = detect_machine_signature()
+    assert signature.model_name == "Apple CPU"
+    assert signature.arch == "arm64"
+    assert signature.memory_levels == ()
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +326,7 @@ def test_unknown_arm_part_uses_architecture_as_signature_model(tmp_path: Path, m
 
     monkeypatch.setattr(identity, "read_cpuinfo", lambda: info)
     monkeypatch.setattr(identity.platform, "machine", lambda: "aarch64")
-    monkeypatch.setattr(identity, "MemoryTopology", _FakeTopology)
+    monkeypatch.setattr(identity, "native_memory_topology", _FakeTopology)
 
     signature = detect_machine_signature()
 

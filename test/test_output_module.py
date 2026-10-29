@@ -1047,6 +1047,7 @@ class TestJsonlOutput:
         assert entry["repetitions"] == 1000
         assert entry["cycles"] == 2_000_000.0  # 0.001 * 2e9
 
+
     def test_jsonl_entry_schema_memory(self, tmp_path):
         """Memory JSONL entry has all expected fields with correct types."""
         import json

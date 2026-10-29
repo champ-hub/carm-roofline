@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -43,6 +44,9 @@ class ArmLoadImm(inst.LoadImm):
 class BaseArm(BaseISA):
     name = "arm"
     family = "arm"
+    # Mac assembler requires L prefix for local labels
+    INNER_LOOP_LABEL = "Linner_loop%="
+    OUTER_LOOP_LABEL = "Louter_loop%="
     max_branch_insts = 2**23 // 4  # signed 24-bit immediate byte offset, 4-byte insts
     max_mem_offset_bytes = 2**12  # unsigned 12-bit immediate (sign in another field perhaps?)
     max_immediate = 2**12 - 1  # unsigned 12-bit
@@ -166,6 +170,10 @@ class ArmNeon(BaseArm, register=True):
                 DataType.i64: CyclicRegisterSet("q{}", [(4, 31)]),
             }
         )
+
+    def clobber_registers(self, registers: Iterable[str]) -> list[str]:
+        "AArch64 vector clobbers use vN even where load/store asm uses qN."
+        return [f"v{register[1:]}" if register.startswith("q") else register for register in registers]
 
     def bytes_per_inst(self, data_type: DataType) -> int:
         return 128 // 8

@@ -19,7 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .memory import MemoryLevelInfo, MemoryTopology, MemoryTopologyLike
+from .darwin import sysctl_string
+from .memory import MemoryLevelInfo, MemoryTopologyLike, native_memory_topology
 
 if TYPE_CHECKING:
     from .architecture import Architecture
@@ -156,18 +157,24 @@ class MachineSignature:
 
 
 def read_cpuinfo() -> CpuInfo:
-    """Read CPU identification fields from /proc/cpuinfo.
+    """Read CPU identity fields from native platform sources.
 
-    Parses the first processor block. Returns ``CpuInfo(None, None)`` if
-    /proc/cpuinfo is unavailable or cannot be parsed.
-
-    Recognized keys:
-        - x86: "model name" (model), "vendor_id" (vendor), "cpu family" (family),
-          "model" (model), "stepping" (stepping)
-        - ARM 32-bit: "Hardware" (fallback model name)
-        - ARM 64-bit: "CPU implementer", "CPU part", "CPU variant", and
-          "CPU revision"
+    Linux and other supported systems use the first processor block in
+    ``/proc/cpuinfo``. Darwin uses the CPU brand sysctl.
     """
+    if platform.system() == "Darwin":
+        darwin_model_name = ""
+        for name in ("machdep.cpu.brand_string", "hw.model"):
+            try:
+                darwin_model_name = sysctl_string(name)
+            except OSError:
+                continue
+            if darwin_model_name:
+                break
+        return CpuInfo(
+            model_name=darwin_model_name or None,
+            vendor="Apple" if darwin_model_name else None,
+        )
     cpuinfo = Path("/proc/cpuinfo")
     if not cpuinfo.exists():
         return CpuInfo(model_name=None, vendor=None)
@@ -267,24 +274,25 @@ def _levels_from_topology(topology: MemoryTopologyLike | None) -> tuple[MemoryLe
 
 
 def detect_machine_signature() -> MachineSignature:
-    """Standalone detection from /proc/cpuinfo + sysfs.
+    """Standalone machine identity detection.
 
-    No C probes and no execution interface are used, so this is safe to call from
-    the ``profile`` subcommand without compiling any detection harness. Falls
-    back gracefully:
-
-        - model_name: read from /proc/cpuinfo, or ``platform.machine()``.
-        - vendor: read from /proc/cpuinfo, or empty string.
-        - memory_levels: built from sysfs via :class:`MemoryTopology` if
-          available, else an empty tuple.
+    Uses platform-native CPU identity and cache topology information without
+    compiling probes, so it is safe to call from ``profile``. If topology
+    access raises ``OSError``, or Darwin topology validation raises
+    ``ValueError``, the signature retains CPU identity with no memory levels.
+    Non-Darwin topology ``ValueError`` exceptions propagate.
     """
     cpu_info = read_cpuinfo()
     model_name = cpu_info.model_name or platform.machine()
     vendor = cpu_info.vendor or ""
 
     try:
-        topology: MemoryTopologyLike | None = MemoryTopology()
+        topology: MemoryTopologyLike | None = native_memory_topology()
     except OSError:
+        topology = None
+    except ValueError:
+        if platform.system() != "Darwin":
+            raise
         topology = None
     memory_levels = _levels_from_topology(topology)
 

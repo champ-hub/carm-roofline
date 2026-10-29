@@ -56,7 +56,7 @@ By default the tool auto-detects all available ISAs on your system. Use `--isa` 
 
 ### Custom cache topology (`--topology-config`, `--emit-config`)
 
-The tool auto-detects your cache hierarchy from sysfs. If that fails or you want to model a different system, use `--emit-config` to dump a template TOML file, edit it with your cache parameters, and pass it via `--topology-config`.
+CARM auto-detects the cache hierarchy from sysfs on Linux, and from sysctl data on Darwin (Mac). If that fails or you want to model a different system, use `--emit-config` to dump a template TOML file, edit it with your cache parameters, and pass it via `--topology-config`.
 
 ### What to measure (`--test`, `--data-type`, `--instruction`, `--mem-target`, `--ld-st-ratio`, `--arith-mem-ratio`, `--ai-range`, `--ai-points`, `--mem-test-sizes`, `--num-ops`)
 
@@ -68,7 +68,7 @@ Each micro-benchmark loops until `--test-time` seconds elapse. The default (25s)
 
 ### Threading and per-thread allocation (`--threads`, `--interleaved`, `--per-thread-buffer-gap`)
 
-Benchmark with multiple threads by passing one or more thread counts, e.g. `--threads 1 4 8`. The tool will run the full suite at each count. `--interleaved` changes thread pinning for NUMA systems where core indices are interleaved across nodes (e.g. node 0 has cores 0, 2, 4…). `--per-thread-buffer-gap` reserves extra space between adjacent threads' memory regions; it accepts byte sizes such as `16KiB` and defaults to `16KiB`. This changes only allocation layout, not the benchmark working-set sizes or reported bytes. Use `--per-thread-buffer-gap 0` to disable the padding. It is necessary on systems with aggressive prefetching.
+Benchmark with multiple threads by passing one or more thread counts, e.g. `--threads 1 4 8`. The tool will run the full suite at each count. `--interleaved` changes thread pinning for NUMA systems where core indices are interleaved across nodes (e.g. node 0 has cores 0, 2, 4…). macOS does not support CPU pinning: it offers advisory affinity hints, but they cannot guarantee processor or core-type placement. `--per-thread-buffer-gap` reserves extra space between adjacent threads' memory regions; it accepts byte sizes such as `16KiB` and defaults to `16KiB`. This changes only allocation layout, not the benchmark working-set sizes or reported bytes. Use `--per-thread-buffer-gap 0` to disable the padding. It is necessary on systems with aggressive prefetching.
 
 ### Output and verbosity (`--verbose`, `--progress-format`, `--name`, `--dry-run`, `--output-dir`, `--output-fmt`, `--keep-artifacts`)
 

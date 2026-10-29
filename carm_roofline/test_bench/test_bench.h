@@ -3,9 +3,11 @@
 
 #include <math.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #define WRAPPER_NAME(ubench_name) wrapper_##ubench_name
 
@@ -69,8 +71,19 @@ typedef struct {
     uint64_t write_array_size_bytes; /* Write (store) buffer size per thread (0 for arithmetic or read-only) */
 } benchmark_metadata_t;
 
-/* Global synchronization primitives - declared here, defined in test_bench.c */
+#if defined(__linux__)
 extern pthread_barrier_t g_barrier;
+#else
+/* Reusable POSIX barrier for platforms without pthread_barrier_t (e.g. Darwin). */
+typedef struct {
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    unsigned int waiting;
+    unsigned int threshold;
+    unsigned int generation;
+} carm_bench_barrier_t;
+extern carm_bench_barrier_t g_barrier;
+#endif
 extern pthread_mutex_t g_mutex;
 extern uint64_t g_max_reps;
 
@@ -217,17 +230,31 @@ static inline uint64_t carm_bench_calculate_cal_reps(uint64_t elapsed_ns, uint64
     return (uint64_t) ceil((double) CARM_BENCH_MIN_CAL_TIME_NS * 1.2 * (double) reps / (double) elapsed_ns);
 }
 
-static inline void sleep0(void)
+/* Native barrier wait is retained on Linux; elsewhere, use a reusable condition barrier. */
+static inline void benchmark_barrier_wait(void)
 {
-    sched_yield();
+#if defined(__linux__)
+    pthread_barrier_wait(&g_barrier);
+#else
+    pthread_mutex_lock(&g_barrier.mutex);
+    unsigned int generation = g_barrier.generation;
+    if (++g_barrier.waiting == g_barrier.threshold) {
+        g_barrier.waiting = 0;
+        ++g_barrier.generation;
+        pthread_cond_broadcast(&g_barrier.cond);
+    } else {
+        while (generation == g_barrier.generation)
+            pthread_cond_wait(&g_barrier.cond, &g_barrier.mutex);
+    }
+    pthread_mutex_unlock(&g_barrier.mutex);
+#endif
 }
 
-/* Synchronization helper: serialize, barrier, yield, serialize */
 static inline void barrier_sync(void)
 {
     serialize();
-    pthread_barrier_wait(&g_barrier);
-    sleep0();
+    benchmark_barrier_wait();
+    sched_yield();
     serialize();
 }
 

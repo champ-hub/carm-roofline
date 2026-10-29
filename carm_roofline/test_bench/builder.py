@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import selectors
 import subprocess
+import sys
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -254,13 +255,14 @@ def compile_test_bench(
         f"-DNUM_RUNS={target_runs}",  # Default, can be made configurable later
     ]
 
-    # Standard flags for benchmark compilation
+    # Clang deprecates -Ofast on Darwin; this is its documented equivalent.
+    optimization_flags = ["-O3", "-ffast-math"] if sys.platform == "darwin" else ["-Ofast"]
     flags = [
-        "-Ofast",
+        *optimization_flags,
         "-g",
-        "-pthread",  # Required for pthread barriers
+        "-pthread",  # Required for pthread synchronization
         "-lm",  # Math library for ceil() in timing calculations
-        "-march=native",  # Use native architecture features
+        *(["-march=native"] if sys.platform != "darwin" else []),
         *(f"-I{include_path}" for include_path in include_paths),
         *defines,
     ]

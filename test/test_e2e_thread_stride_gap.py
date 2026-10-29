@@ -29,6 +29,7 @@ def test_native_harness_allocates_thread_stride_gap(
         '#include "test_bench.h"\n'
         "static void *wrapper_stride_gap(void *arg) {\n"
         "    thread_wrapper_data_t *tdata = (thread_wrapper_data_t *)arg;\n"
+        "    for (int i = 0; i < 8; i++) barrier_sync();\n"
         "    tdata->elapsed_ns[0] = 1;\n"
         "    return NULL;\n"
         "}\n"

@@ -67,7 +67,7 @@ static void *_WRAPPER_EXPAND(UBENCH_NAME)(void *arg)
         }
     }
 
-    pthread_barrier_wait(&g_barrier);
+    benchmark_barrier_wait();
 
     uint64_t number_rep =
             (uint64_t) ceil((double) reps * (double) EXPECTED_TIME_NS / ((double) CARM_BENCH_MIN_CAL_TIME_NS * 1.2));
@@ -79,7 +79,7 @@ static void *_WRAPPER_EXPAND(UBENCH_NAME)(void *arg)
     }
     pthread_mutex_unlock(&g_mutex);
 
-    pthread_barrier_wait(&g_barrier);
+    benchmark_barrier_wait();
 
     /* All threads use the same (maximum) repetition count */
     uint64_t num_reps = g_max_reps;

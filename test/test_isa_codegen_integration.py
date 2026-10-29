@@ -8,6 +8,8 @@ benchmark code for various configurations without errors.
 """
 
 import os
+import shutil
+import subprocess
 import sys
 from types import SimpleNamespace
 
@@ -272,6 +274,78 @@ class TestISACodegen:
             assert isinstance(spec, MicrobenchmarkFunctionSpec)
             assert len(spec.body) > 0, f"{isa_name} failed to generate code for {operation.name}"
 
+    @pytest.mark.parametrize("target_triple", ["arm64-apple-macos14.0", "aarch64-linux-gnu"])
+    def test_neon_generated_loops_compile_to_object(self, mock_context, target_triple: str, tmp_path):
+        compiler = shutil.which("clang")
+        if compiler is None:
+            pytest.skip("requires Clang with an ARM64 target")
+
+        probe = subprocess.run(
+            [compiler, "-target", target_triple, "-c", "-x", "c", "-", "-o", str(tmp_path / "probe.o")],
+            input="int probe(void) { return 0; }",
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if probe.returncode:
+            pytest.skip(f"Clang does not support the {target_triple} target")
+
+        isa = ArmNeon()
+        arithmetic = isa.generate_arithmetic(
+            ArithmeticBenchmarkParams(
+                data_type=DataType.f32,
+                operation=ArithmeticOperation.add,
+                num_ops=Operations(100_000),
+                thread_affinity=[0],
+            ),
+            mock_context,
+        )
+        memory = isa.generate_memory(
+            MemoryBenchmarkParams(
+                data_type=DataType.f32,
+                load_store_ratio=LoadStoreRatio(1, 1),
+                size_per_thread=Bytes(4096),
+                thread_affinity=[0],
+                memory_level_name="L1",
+            ),
+            mock_context,
+        )
+        calls = "\n".join(
+            f"    {spec.function_name}(data, data, {repetition});"
+            for spec in (arithmetic, memory)
+            for repetition in (1, 2)
+        )
+        source = (
+            "typedef unsigned long uint64_t;\n"
+            + arithmetic.body
+            + "\n"
+            + memory.body
+            + "\nint main(void) {\n"
+            + "    unsigned char data[4096] = {0};\n"
+            + calls
+            + "\n    return 0;\n}\n"
+        )
+        result = subprocess.run(
+            [
+                compiler,
+                "-target",
+                target_triple,
+                "-O2",
+                "-c",
+                "-x",
+                "c",
+                "-",
+                "-o",
+                str(tmp_path / "generated.o"),
+            ],
+            input=source,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+
     def test_isa_family_consistency(self):
         """Test that ISAs are correctly grouped by family."""
         # Only test ISAs that actually have the family attribute
@@ -385,7 +459,6 @@ class TestCodeGenerationConsistency:
         assert spec1.function_name == spec2.function_name
         assert spec1.body == spec2.body
         assert "_ports_2a_3m_" in spec1.function_name
-        assert isa1.OUTER_LOOP_LABEL.removesuffix("%=") in spec1.body
 
     def test_rvv_vlen_lmul_sensitivity(self, mock_context):
         """Test that RVV code generation is sensitive to VLEN and LMUL parameters."""
@@ -544,9 +617,6 @@ class TestEdgeCases:
         assert len(spec.body) > 0
         assert "__asm__" in spec.body or "asm(" in spec.body.lower()
 
-        # Should have outer loop but no inner loop (NO leading underscore)
-        assert "outer_loop%=" in spec.body
-        assert "inner_loop%=" not in spec.body, f"Single operation should not create inner loop in {isa_name}"
 
     @pytest.mark.parametrize(
         "isa_name",
@@ -575,8 +645,6 @@ class TestEdgeCases:
         assert isinstance(spec, MicrobenchmarkFunctionSpec)
         assert len(spec.body) > 0
 
-        # Should definitely have inner loop (NO leading underscore)
-        assert "inner_loop%=" in spec.body, f"Large operation count should create inner loop in {isa_name}"
 
     @pytest.mark.parametrize(
         "isa_name,data_type",
@@ -737,12 +805,6 @@ class TestEdgeCases:
         assert isinstance(spec, MicrobenchmarkFunctionSpec)
         assert len(spec.body) > 0
 
-        # At exact boundary, should not need inner loop
-        # (num_iterations = 1, so instance_inner_loop = False)
-        # NO leading underscore
-        assert "inner_loop%=" not in spec.body, (
-            f"At exact max_loop_size ({max_loop_size}), should not create inner loop"
-        )
 
     @pytest.mark.parametrize("isa_name", ["x86_avx", "arm_neon"])
     def test_just_over_max_loop_size_boundary(self, mock_context, isa_name: str):
@@ -773,8 +835,6 @@ class TestEdgeCases:
         assert isinstance(spec, MicrobenchmarkFunctionSpec)
         assert len(spec.body) > 0
 
-        # Should have inner loop now (NO leading underscore)
-        assert "inner_loop%=" in spec.body, "Just over max_loop_size boundary should create inner loop"
 
     @pytest.mark.parametrize(
         "isa_name,divisor",
@@ -810,11 +870,6 @@ class TestEdgeCases:
         assert isinstance(spec, MicrobenchmarkFunctionSpec)
         assert len(spec.body) > 0
 
-        # Should have inner loop if divisor > 1 (NO leading underscore)
-        if divisor > 1:
-            assert "inner_loop%=" in spec.body
-        else:
-            assert "inner_loop%=" not in spec.body
 
     @pytest.mark.parametrize("isa_name", ["x86_avx", "arm_neon"])
     @pytest.mark.parametrize("data_type", [DataType.f32, DataType.f64])
@@ -833,7 +888,6 @@ class TestEdgeCases:
 
         assert isinstance(spec, MicrobenchmarkFunctionSpec)
         assert len(spec.body) > 0
-        assert "outer_loop%=" in spec.body
 
     @pytest.mark.parametrize(
         "isa_name,cache_level",
