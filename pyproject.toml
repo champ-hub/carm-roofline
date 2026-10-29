@@ -73,6 +73,7 @@ include = ["carm_roofline", "carm_roofline.*"]
 "carm_roofline.test_bench" = ["test_bench.c", "test_bench.h", "wrapper.inl"]
 "carm_roofline.gui" = ["assets/*"]
 "carm_roofline.paraver" = ["configs/*.cfg"]
+"carm_roofline" = ["native/dynamorio/*"]
 
 [tool.ruff]
 line-length = 120

@@ -63,6 +63,7 @@ class BackendType(Enum):
 
     PAPI = "papi"
     PERF = "perf"
+    DYNAMORIO = "dynamorio"
 
 
 class MetricType(Enum):

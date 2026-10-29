@@ -58,7 +58,7 @@ Available subcommands:
 
 - `benchmark` - run benchmark suites
 - `gui` - launch the results dashboard
-- `profile` - profile an application with PAPI or perf
+- `profile` - profile an application with PAPI, perf, or DynamoRIO
 
 Show help:
 

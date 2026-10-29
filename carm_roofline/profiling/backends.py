@@ -159,4 +159,12 @@ def create_backend(
             resolution_config=resolution_cfg,
             interval_ms=config.perf_interval,
         )
+    elif config.backend == BackendType.DYNAMORIO:
+        from .dynamorio_backend import DynamoRIOBackend
+
+        return DynamoRIOBackend(
+            resolution_config=resolution_cfg,
+            dynamorio_home=config.dynamorio_home,
+            client_path=config.dynamorio_client,
+        )
     raise UserError(f"Unknown backend: {config.backend}")

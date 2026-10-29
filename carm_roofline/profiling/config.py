@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from enum import Enum
 from pathlib import Path
 
@@ -46,7 +47,7 @@ class ProfileConfig(InsertsArguments):
 
     Attributes:
         command: The application command to profile (everything after --).
-        backend: Profiler backend to use (papi or perf).
+        backend: Profiler backend (papi, perf, or dynamorio).
         aggregation: Aggregation strategy for multi-rank results.
         output_dir: Directory for output files.
         verbose: Verbosity level (0-4).
@@ -59,7 +60,8 @@ class ProfileConfig(InsertsArguments):
         list_metrics: Whether to list available optional metrics and exit.
         merge_runs: Whether to split the required events into multiple runs and merge the results (default: single run).
         isas: ISA(s) the application exercises, as a tuple of BaseISA classes (empty when unspecified).
-        data_type: Data type explicitly requested for metric calculation, or None.
+        dynamorio_home: Optional DynamoRIO installation root.
+        dynamorio_client: Optional path to the built DynamoRIO client library.
     """
 
     def __init__(self, args: argparse.Namespace) -> None:
@@ -77,6 +79,14 @@ class ProfileConfig(InsertsArguments):
         self.keep_artifacts: bool = args.keep_artifacts
         self.use_papi_cache: bool = not args.no_papi_cache
         self.perf_interval: int | None = args.perf_interval
+        self.dynamorio_home: Path | None = (
+            args.dynamorio_home
+            if args.dynamorio_home is not None
+            else Path(os.environ["DYNAMORIO_HOME"])
+            if os.environ.get("DYNAMORIO_HOME")
+            else None
+        )
+        self.dynamorio_client: Path | None = args.dynamorio_client
         self.optional_metrics: tuple[OptionalMetricName, ...] = validate_metric_names(args.metrics)
         self.list_metrics: bool = bool(args.list_metrics)
         self.merge_runs: bool = bool(args.merge_runs)
@@ -101,6 +111,21 @@ class ProfileConfig(InsertsArguments):
             help=f"Profiler backend to use (default: {BackendType.PAPI.value})",
         )
         add_verbose_argument(parser)
+        parser.add_argument(
+            "--dynamorio-home",
+            default=None,
+            type=Path,
+            help="DynamoRIO installation root (default: DYNAMORIO_HOME or drrun from PATH)",
+        )
+        parser.add_argument(
+            "--dynamorio-client",
+            default=None,
+            type=Path,
+            help=(
+                "Client library override (default: build and cache the bundled client on first use; "
+                "alternatively set CARM_DYNAMORIO_CLIENT)"
+            ),
+        )
         parser.add_argument(
             "--aggregation",
             default=AggregationMode.GLOBAL,

@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(carm_dynamorio_client C CXX)
+
+find_package(DynamoRIO REQUIRED)
+add_library(carm_dynamorio_client SHARED carm_dynamorio_client.c)
+configure_DynamoRIO_client(carm_dynamorio_client)
+use_DynamoRIO_extension(carm_dynamorio_client drmgr)
+use_DynamoRIO_extension(carm_dynamorio_client drwrap)

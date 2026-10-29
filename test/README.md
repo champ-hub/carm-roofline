@@ -66,6 +66,7 @@ GUI and Paraver use Dash's HTTP client, not a browser. Tests check layouts, call
 
 - Keep focused tests for behavior E2E does not cover: ISA generation parameters and loop limits; deduplication identity and result propagation.
 - Retain malformed-input, sparse-aggregation, metric-formula, fallback, backend-error, timeout, and optional-dependency tests.
+- `test_dynamorio_client.py` builds and runs the real DynamoRIO client to verify first-instruction region boundaries, nested exclusive instruction/memory attribution, marker exclusion, and FMA3/FMA4 classification. FMA4 bytes are decoded and classified by DynamoRIO without execution, so this portion does not require FMA4 host support; the smoke app itself requires x86-64 AVX/FMA and a C/C++ toolchain.
 - Assert observable behavior, not wording, source layout, or mock-only argument forwarding.
 
 E2E does not collect real PAPI hardware counters or run MPI/OpenMP applications. Paraver's `paramedir` execution is mocked.

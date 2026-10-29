@@ -179,13 +179,43 @@ carm profile --backend papi --aggregation thread -- ./my_app
 
 If you annotated correctly, you should see one line per thread. If only one thread appears for a parallel kernel, your region calls are outside the parallel block.
 
+## DynamoRIO backend
+
+The DynamoRIO backend collects software instruction counts and data-memory reference bytes. It runs the application twice: once under DynamoRIO for counts, then without instrumentation for native region timing. Both runs must execute the same marked regions with stable process and thread identities.
+
+Install DynamoRIO 11 or later. The CARM Tool looks for it in `--dynamorio-home`, then the `DYNAMORIO_HOME` environment variable, then your `PATH`. On first use, the CARM Tool automatically builds and caches the bundled client. This requires the DynamoRIO SDK, CMake, and C/C++ compilers.
+
+Mark each code region in the application with the CARM region API. Include `carm_region.h` and link `carm_region_timing.c` into the application. Set process and thread identities before the region markers. These should be stable across runs so the instrumentation and timing runs can match. Refer to LULESH in `examples/lulesh-papi/` for a working example.
+
+```c
+#include "carm_region.h"
+
+int main(void)
+{
+    carm_region_set_process_identity(0, 1);
+    carm_region_set_thread_identity(0, 1);
+    carm_region_begin("MyKernel");
+    /* Kernel work. */
+    carm_region_end("MyKernel");
+    return 0;
+}
+```
+
+For multiple processes or threads, assign each one a unique index and a stable ID. Call the identity functions from each process or thread before its first region. For OpenMP, place the thread identity call and region markers inside the parallel work, as in the PAPI instrumentation guidance above.
+
+```bash
+carm profile --backend dynamorio -- ./my_app
+```
+
+The backend estimates FLOPs from decoded floating-point instructions. It counts encoded vector width, so masked vectors use their full encoded width. It estimates bytes from executed data-memory references. The backend does not use hardware counters or support optional hardware-counter metrics.
+
 ## Backend Selection Details
 
-| | PAPI | Perf |
-|---|---|---|
-| Dependency | PAPI dev libraries (`libpapi`) | None (kernel built-in) |
-| Sampling | Various aggregation modes | Full-execution or interval (`--perf-interval`) |
-| Insight | Provides per-region metrics if the application is annotated | Characterizes the application across time, but can't distinguish code regions |
+| | PAPI | Perf | DynamoRIO |
+|---|---|---|---|
+| Dependency | PAPI dev libraries (`libpapi`) | None (kernel built-in) | DynamoRIO 11+; automatic client build also requires CMake and a C/C++ toolchain (not needed with a client override) |
+| Sampling | Various aggregation modes | Full-execution or interval (`--perf-interval`) | Instruction counts plus native timing for marked regions |
+| Insight | Provides per-region metrics if the application is annotated | Characterizes the application across time, but can't distinguish code regions | Software-derived FLOP and memory-reference estimates for marked regions |
 
 ## Output
 
