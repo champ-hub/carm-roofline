@@ -366,6 +366,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
     ]
     plot_inputs.append(Input(BenchmarkPanelID.JOB, "data"))
     plot_inputs.append(Input(ProfilePanelID.JOB, "data"))
+    plot_inputs.append(Input(StoreID.FOLDER_IMPORT_COMPLETE, "data"))
     plot_states: list[Any] = []
     plot_inputs.extend(
         [
@@ -392,6 +393,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
         app_ids_vals: list[list[str] | None],
         job_data: dict[str, Any] | None,
         _profile_data: dict[str, Any] | None,
+        _import_data: dict[str, Any] | None,
         selection_data: dict[str, Any] | None = None,
         hover_data: dict[str, Any] | None = None,
         relayout_data: dict[str, Any] | None = None,
@@ -448,14 +450,17 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
         ):
             output_root = Path(str(job_data.get("output_dir") or config.results_dir))
             output_records = load_all_benchmarks(output_root)
-            if output_root.resolve() != config.results_dir.resolve():
-                combined_records = load_all_benchmarks(config.results_dir) + output_records
-                records[:] = list({json.dumps(record, sort_keys=True): record for record in combined_records}.values())
-            else:
-                records[:] = output_records
+            combined_records = (
+                load_all_benchmarks(config.results_dir) + output_records
+                if output_root.resolve() != config.results_dir.resolve()
+                else output_records
+            )
+            combined_records.extend(state.imported_records)
+            records[:] = list({json.dumps(record, sort_keys=True): record for record in combined_records}.values())
             if mode.show_app_dropdown:
                 app_by_id.clear()
                 app_by_id.update(BenchmarkAppsProvider(config.results_dir).load())
+                app_by_id.update(state.imported_apps_by_id)
                 app_dropdown_options[:] = [{"label": item.label, "value": item.id} for item in app_by_id.values()]
             state.options = discover_filter_options(records) if records else None
             last_refreshed_job = job_data.copy()
@@ -518,6 +523,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
         Input({"type": RoofCardID.DROPDOWN_FREQUENCY, "roof_id": ALL}, "value"),
         Input({"type": RoofCardID.DROPDOWN_APPS, "roof_id": ALL}, "value"),
         Input(ProfilePanelID.JOB, "data"),
+        Input(StoreID.FOLDER_IMPORT_COMPLETE, "data"),
     )
     def _update_sidebar(
         store_data: dict[str, Any] | None,
@@ -531,6 +537,7 @@ def register_roofline_callbacks(app: dash.Dash, state: CallbackState) -> None:
         freq_vals: list[str | None],
         app_ids_vals: list[list[str] | None],
         _profile_job_data: dict[str, Any] | None,
+        _import_complete_data: dict[str, Any] | None,
     ) -> list[Any]:
         state.trace("_update_sidebar enter")
         store, resolved_roofs, per_roof_opts = resolve_roofs(

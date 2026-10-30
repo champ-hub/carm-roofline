@@ -8,6 +8,7 @@ from dash import html
 
 from carm_roofline.core.error import UserError
 from carm_roofline.gui.callbacks.benchmark import register_benchmark_callbacks
+from carm_roofline.gui.callbacks.folder_import import register_folder_import_callbacks
 from carm_roofline.gui.callbacks.helpers import filter_app_options_for_roofs
 from carm_roofline.gui.callbacks.navigation import register_navigation_callbacks
 from carm_roofline.gui.callbacks.paraver import register_paraver_callbacks
@@ -74,19 +75,20 @@ def create_app(config: GUIConfig) -> dash.Dash:
         debug(f"Available threads: {options['num_threads']}")
         debug(f"Available load-store ratios: {options['load_store_ratio']}")
     state = CallbackState(config, records, options, apps_by_id, app_options, paraver_data, mode)
-    initial_roof = make_default_roof(options)
 
     def serve_layout() -> html.Div:
         saved = load_gui_settings(gui_settings_path())
-        fresh_store = RoofStore(roof_template=initial_roof)
+        current_options = state.options
+        current_roof = make_default_roof(current_options)
+        fresh_store = RoofStore(roof_template=current_roof)
         fresh_store.roofs = []
         fresh_store.settings = saved
         if initial_window is not None:
             fresh_store.paraver_state.time_window = initial_window
         return build_layout(
             fresh_store,
-            options,
-            filter_app_options_for_roofs([initial_roof], app_options, apps_by_id),
+            current_options,
+            filter_app_options_for_roofs([current_roof], state.app_options, state.apps_by_id),
             mode,
             trace_bounds,
             str(config.results_dir),
@@ -104,6 +106,7 @@ def _register_callbacks(app: dash.Dash, state: CallbackState) -> None:
     register_profile_callbacks(app, state)
     register_roof_callbacks(app, state)
     register_roofline_callbacks(app, state)
+    register_folder_import_callbacks(app, state)
     register_settings_callbacks(app)
     register_welcome_callbacks(app)
     register_paraver_callbacks(app, state)

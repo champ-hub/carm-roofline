@@ -27,6 +27,7 @@ def _refresh_profile_apps(state: CallbackState, snapshot: dict[str, Any]) -> Non
     if output_root.resolve() == state.config.results_dir.resolve():
         state.apps_by_id.clear()
     state.apps_by_id.update(loaded_apps)
+    state.apps_by_id.update(state.imported_apps_by_id)
     state.app_options[:] = [{"label": item.label, "value": item.id} for item in state.apps_by_id.values()]
 
 

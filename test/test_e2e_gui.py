@@ -24,6 +24,7 @@ from carm_roofline.gui.providers import BenchmarkAppsProvider
 from carm_roofline.gui.ids import (
     BenchmarkPanelID,
     CarmViewPanelID,
+    FolderImportID,
     PlotAreaID,
     ProfilePanelID,
     RoofCardID,
@@ -1041,3 +1042,178 @@ def test_remove_roof_targets_clicked_card(results_dir: Path) -> None:
         changed_id=f"{solo_id}.n_clicks", input_id=remove_pattern_id,
     )
     assert final[str(StoreID.ROOF_STORE)]["data"]["roofs"] == []
+
+
+def test_folder_import_refreshes_machine_app_dropdowns_and_plot(results_dir: Path, tmp_path: Path) -> None:
+    app = create_app(_config(results_dir))
+    client = app.server.test_client()
+    layout = client.get("/_dash-layout").get_json()
+
+    def benchmark_files(machine: str) -> str:
+        shared = {"machine": machine, "isa": "x86", "num_threads": 2, "data_type": "f32"}
+        records = (
+            {
+                "type": "arithmetic",
+                "name": f"{machine}-compute",
+                "operation": "fma",
+                "performance_gops": 100.0,
+                **shared,
+            },
+            {
+                "type": "memory",
+                "name": f"{machine}-l1",
+                "cache_level": "L1",
+                "load_store_ratio": "2:1",
+                "bandwidth_gbps": 50.0,
+                **shared,
+            },
+            {
+                "type": "memory",
+                "name": f"{machine}-dram",
+                "cache_level": "DRAM",
+                "load_store_ratio": "2:1",
+                "bandwidth_gbps": 10.0,
+                **shared,
+            },
+        )
+        return "\n".join(json.dumps(record) for record in records) + "\n"
+
+    def application(name: str) -> str:
+        return json.dumps(
+            {
+                "format_version": "2.0",
+                "metadata": {"name": name, "date": "2026-10-29", "command": name},
+                "aggregation": "global",
+                "points": [
+                    {
+                        "label": "main",
+                        "runtime_s": 1.0,
+                        "arithmetic_intensity": 3.0,
+                        "flops_per_second": 2.0,
+                        "bandwidth": 1.0,
+                    }
+                ],
+            }
+        ) + "\n"
+
+    payload = {
+        "files": [
+            {"path": "import-root/node-a/benchmarks.jsonl", "content": benchmark_files("node-a")},
+            {"path": "import-root/node-a/applications.jsonl", "content": application("app-a")},
+            {"path": "import-root/node-b/benchmarks.jsonl", "content": benchmark_files("node-b")},
+            {"path": "import-root/node-b/applications.jsonl", "content": application("app-b")},
+        ]
+    }
+    imported = _dispatch(
+        app,
+        client,
+        layout,
+        str(FolderImportID.STATUS),
+        "children",
+        overrides={str(StoreID.FOLDER_IMPORT_PAYLOAD): payload},
+        changed_id=f"{StoreID.FOLDER_IMPORT_PAYLOAD}.data",
+    )
+    assert "Imported 2 machine folder(s)" in imported[str(FolderImportID.STATUS)]["children"]
+    completion = imported[str(StoreID.FOLDER_IMPORT_COMPLETE)]["data"]
+
+    app_ids: dict[str, str] = {}
+    for machine, other in (("node-a", "node-b"), ("node-b", "node-a")):
+        roof_store = RoofStore(roof_template=RoofConfig(machine=machine))
+        sidebar = _dispatch(
+            app,
+            client,
+            layout,
+            str(SidebarID.SIDEBAR_CONTENT),
+            "children",
+            overrides={
+                str(StoreID.ROOF_STORE): roof_store.to_dict(),
+                str(StoreID.FOLDER_IMPORT_COMPLETE): completion,
+            },
+            changed_id=f"{StoreID.FOLDER_IMPORT_COMPLETE}.data",
+        )[str(SidebarID.SIDEBAR_CONTENT)]["children"]
+        options = [
+            option
+            for component in _walk_components(sidebar)
+            if isinstance((component_id := component.get("props", {}).get("id")), dict)
+            and component_id.get("type") == RoofCardID.DROPDOWN_APPS
+            for option in component.get("props", {}).get("options", [])
+        ]
+        own = [option for option in options if f"app-{machine[-1]}" in option["label"]]
+        assert len(own) == 1, options
+        assert not any(f"app-{other[-1]}" in option["label"] for option in options), options
+        app_ids[machine] = own[0]["value"]
+
+    selected_store = RoofStore(
+        roof_template=RoofConfig(machine="node-a", app_ids=[app_ids["node-a"]])
+    )
+    plot_layout = _layout_with_roof_controls(layout, selected_store)
+    figure_response = _dispatch(
+        app,
+        client,
+        plot_layout,
+        str(PlotAreaID.ROOFLINE_PLOT),
+        "figure",
+        overrides={
+            str(StoreID.FOLDER_IMPORT_COMPLETE): completion,
+            str(StoreID.ROOF_STORE): selected_store.to_dict(),
+        },
+        changed_id=f"{StoreID.FOLDER_IMPORT_COMPLETE}.data",
+    )
+    markers = _marker_traces(_figure_from_response(figure_response))
+    assert any("app-a" in trace.get("name", "") for trace in markers), markers
+
+    repeated = _dispatch(
+        app,
+        client,
+        layout,
+        str(FolderImportID.STATUS),
+        "children",
+        overrides={str(StoreID.FOLDER_IMPORT_PAYLOAD): payload},
+        changed_id=f"{StoreID.FOLDER_IMPORT_PAYLOAD}.data",
+    )
+    assert "6 benchmark record(s)" in repeated[str(FolderImportID.STATUS)]["children"]
+    repeated_sidebar = _dispatch(
+        app,
+        client,
+        layout,
+        str(SidebarID.SIDEBAR_CONTENT),
+        "children",
+        overrides={
+            str(StoreID.ROOF_STORE): RoofStore(roof_template=RoofConfig(machine="node-a")).to_dict(),
+            str(StoreID.FOLDER_IMPORT_COMPLETE): repeated[str(StoreID.FOLDER_IMPORT_COMPLETE)]["data"],
+        },
+        changed_id=f"{StoreID.FOLDER_IMPORT_COMPLETE}.data",
+    )[str(SidebarID.SIDEBAR_CONTENT)]["children"]
+    repeated_app_options = [
+        option
+        for component in _walk_components(repeated_sidebar)
+        if isinstance((component_id := component.get("props", {}).get("id")), dict)
+        and component_id.get("type") == RoofCardID.DROPDOWN_APPS
+        for option in component.get("props", {}).get("options", [])
+    ]
+    assert len(repeated_app_options) == 1
+
+    refresh_root = tmp_path / "benchmark-refresh"
+    refresh_machine = refresh_root / "refresh-node"
+    refresh_machine.mkdir(parents=True)
+    (refresh_machine / "benchmarks.jsonl").write_text(benchmark_files("refresh-node"), encoding="utf-8")
+    refreshed = _dispatch(
+        app,
+        client,
+        plot_layout,
+        str(PlotAreaID.ROOFLINE_PLOT),
+        "figure",
+        overrides={
+            str(StoreID.ROOF_STORE): selected_store.to_dict(),
+            str(StoreID.FOLDER_IMPORT_COMPLETE): completion,
+            str(BenchmarkPanelID.JOB): {
+                "finished": True,
+                "return_code": 0,
+                "dry_run": False,
+                "output_dir": str(refresh_root),
+            },
+        },
+        changed_id=f"{BenchmarkPanelID.JOB}.data",
+    )
+    refreshed_markers = _marker_traces(_figure_from_response(refreshed))
+    assert any("app-a" in trace.get("name", "") for trace in refreshed_markers), refreshed_markers

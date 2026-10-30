@@ -22,6 +22,7 @@ from carm_roofline.gui.ids import (
     BenchmarkPanelID,
     CarmViewPanelID,
     ExportPanelID,
+    FolderImportID,
     NavbarID,
     ParaverID,
     PlotAreaID,
@@ -1437,6 +1438,16 @@ def build_layout(
             build_navbar(store.active_panel, mode),
             build_welcome_panel(store.settings.show_welcome_panel),
             html.Div(
+                id=FolderImportID.OVERLAY,
+                className="folder-import-overlay",
+                children=html.Div("Drop a CARM results folder to import", className="folder-import-message"),
+            ),
+            html.Div(
+                id=FolderImportID.STATUS,
+                className="folder-import-status",
+                role="status",
+            ),
+            html.Div(
                 className="content-row",
                 children=[
                     build_sidebar(store, roof_options, per_roof_app_options, mode),
@@ -1454,6 +1465,8 @@ def build_layout(
             dcc.Store(id=StoreID.ROOF_STORE, data=store.to_dict()),
             dcc.Store(id=StoreID.ACTIVE_PANEL, data=store.active_panel),
             dcc.Store(id=StoreID.SELECTED_POINT, data=None),
+            dcc.Store(id=StoreID.FOLDER_IMPORT_PAYLOAD, data=None),
+            dcc.Store(id=StoreID.FOLDER_IMPORT_COMPLETE, data=None),
             dcc.Store(id=BenchmarkPanelID.JOB, data=None),
             dcc.Store(id=ProfilePanelID.JOB, data=None),
         ],

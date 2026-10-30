@@ -21,6 +21,8 @@ class CallbackState:
     paraver_data: ParaverData | None = None
     mode: GUIMode = GUIMode.CARM
     callback_count: int = 0
+    imported_records: list[BenchmarkRecord] = field(default_factory=list)
+    imported_apps_by_id: dict[str, ApplicationRecord] = field(default_factory=dict)
 
     def trace(self, message: str) -> None:
         """Emit sequence-numbered callback debug output when enabled."""

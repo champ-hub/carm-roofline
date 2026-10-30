@@ -28,6 +28,15 @@ class StoreID(ID):
     ROOF_STORE = "roof-store"
     ACTIVE_PANEL = "active-panel"
     SELECTED_POINT = "roofline-selected-point"
+    FOLDER_IMPORT_PAYLOAD = "folder-import-payload"
+    FOLDER_IMPORT_COMPLETE = "folder-import-complete"
+
+
+class FolderImportID(ID):
+    """IDs for folder import feedback."""
+
+    OVERLAY = "folder-import-overlay"
+    STATUS = "folder-import-status"
 
 
 class NavbarID(ID):

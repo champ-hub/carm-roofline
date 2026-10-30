@@ -578,3 +578,46 @@
 .welcome-panel .form-check {
     min-height: auto;
 }
+
+.folder-import-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.42);
+    pointer-events: none;
+}
+
+.folder-import-overlay--visible {
+    display: flex;
+}
+
+.folder-import-message {
+    padding: 20px 28px;
+    border: 2px dashed #1f77b4;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.78);
+    color: #1f2937;
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.folder-import-status {
+    position: fixed;
+    z-index: 2001;
+    top: 56px;
+    right: 16px;
+    max-width: min(440px, calc(100vw - 32px));
+    padding: 8px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.94);
+    color: #212529;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.folder-import-status:empty {
+    display: none;
+}
