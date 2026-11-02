@@ -148,14 +148,21 @@ class ExecutionInterface(InsertsArguments):
         """Check if using native execution (no simulator)."""
         return self.sim_cmd is None
 
-    def compile(self, source: str, output: str, *extra_flags: str, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+    def compile(
+        self,
+        source: str,
+        output: str,
+        *extra_flags: str,
+        link_flags: tuple[str, ...] = (),
+        **kwargs: Any,
+    ) -> subprocess.CompletedProcess[Any]:
         """Compile a source file using the configured compiler.
 
         Args:
             source: Path to source file
             output: Path to output binary
-            *extra_flags: Additional compiler flags (e.g., '-O2', '-march=rv64gcv')
-            **kwargs: Additional arguments forwarded to subprocess.run
+            *extra_flags: Additional compiler flags placed before the source file.
+            link_flags: Linker flags placed after the source file.
 
         Returns:
             subprocess.CompletedProcess instance
@@ -167,7 +174,7 @@ class ExecutionInterface(InsertsArguments):
             >>> riscv_exec = ExecutionInterface(argparse.Namespace(sim_cmd=None, compiler='riscv64-linux-gnu-gcc'))
             >>> result = riscv_exec.compile('probe.c', 'probe', '-march=rv64gcv', '-mabi=lp64d')
         """
-        cmd = [self.compiler, "-o", output, *extra_flags, source]
+        cmd = [self.compiler, "-o", output, *extra_flags, source, *link_flags]
         check_result = kwargs.pop("check", True)
         debug(f"Compiling with command: {' '.join(cmd)}")
         try:

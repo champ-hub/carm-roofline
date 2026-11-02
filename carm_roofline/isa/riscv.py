@@ -7,7 +7,7 @@ from carm_roofline.benchmark.generation.code_gen import ControlInstructions, Typ
 from carm_roofline.benchmark.generation.code_gen.instruction import _Instruction
 from carm_roofline.benchmark.generation.code_gen.register import CyclicRegisterSet, HelperRegisterSet, TypedRegisterSets
 from carm_roofline.core import ArithmeticOperation, DataType, MemoryOperation, Operation
-from carm_roofline.isa.base import BaseISA, InlineASM
+from carm_roofline.isa.base import BaseISA
 
 if TYPE_CHECKING:
     from carm_roofline.architecture.architecture import Architecture
@@ -39,10 +39,6 @@ class BaseRISCV(BaseISA):
     max_mem_offset_bytes = 2**11
     # Maximum immediate for computational instructions (i.g. addi)
     max_immediate = 2**11
-
-    # RISC-V-specific inline asm input formatting (needs to be %(var) and not %[var])
-    def format_iasm_input(self, var: InlineASM.Input) -> str:
-        return f"%({var.asm_name})"
 
 
 class RISCVScalar(BaseRISCV, register=True):
@@ -94,7 +90,7 @@ def _make_float_instructions_rvv() -> dict[Operation, str | _Instruction]:
         ArithmeticOperation.add: "vfadd.vv {}, {}, {}",
         ArithmeticOperation.mul: "vfmul.vv {}, {}, {}",
         ArithmeticOperation.div: "vfdiv.vv {}, {}, {}",
-        ArithmeticOperation.fma: "vfmadd.vv {}, {}, {}, {}",
+        ArithmeticOperation.fma: "vfmacc.vv {}, {}, {}",
         MemoryOperation.ld: "vle.v {reg}, ({ptr})",
         MemoryOperation.st: "vse.v {reg}, ({ptr})",
     }
@@ -126,7 +122,7 @@ class RISCV_RVV_071(RISCVScalar, register=True):
         if arch.vector_length is None:
             raise ValueError("Vector length not detected/specified. Provide --vector-length for RVV support.")
         lmul = arch.vector_lmul or 1
-        return cls(vlen_bits=arch.vector_length, lmul=lmul)
+        return cls(vlen_bits=arch.vector_length * 8, lmul=lmul)
 
     # Instructions associated with each data type and operation
     bench_instructions = TypedInstructions(
@@ -190,24 +186,6 @@ class RISCV_RVV(RISCV_RVV_071, register=True):
             },
         }
     )
-
-    @classmethod
-    def from_architecture(cls, arch: Architecture) -> RISCV_RVV:
-        """Create RVV instance with vector length and LMUL from architecture.
-
-        Args:
-            arch: Architecture instance with detected vector_length and vector_lmul.
-
-        Returns:
-            RISCV_RVV instance configured with target vector parameters.
-
-        Raises:
-            ValueError: If vector_length or vector_lmul not available in architecture.
-        """
-        if arch.vector_length is None:
-            raise ValueError("Vector length not detected/specified. Provide --vector-length for RVV support.")
-        lmul = arch.vector_lmul or 1
-        return cls(vlen_bits=arch.vector_length, lmul=lmul)
 
     def __init__(self, vlen_bits: int, lmul: int, **kwargs: Any):
         super().__init__(vlen_bits, lmul, **kwargs)

@@ -339,13 +339,15 @@ Returns:
 ```
 
 **RVV Version Detection:**
-- Uses tempfile for compilation tests
-- Tries compiling with `-DRISCV_RVV` (v1.0) first
-- Falls back to `-DRISCV_RVV_0_7_1` (v0.7.1) if v1.0 fails
-- Uses `bench_gen.RISCV_RVV.name` or `bench_gen.RISCV_RVV_071.name` for ISA list
+- Linux `riscv_hwprobe` key `RISCV_HWPROBE_KEY_IMA_EXT_0` and bit `RISCV_HWPROBE_IMA_V` identify the standard RVV 1.0 extension; they do not identify legacy 0.7.1.
+- The target-specific probe is compiled and run (through the configured execution interface) for semantic validation. It checks vector configuration, load/store results, and the exact version marker; compiler acceptance alone is not capability evidence.
+- Native Linux uses `riscv_hwprobe` only on the native target. If unavailable, and for simulators, dialect detection uses only the target-side semantic probe and never host `/proc/cpuinfo`.
+- The semantic probe is a separate process with a timeout, so unsupported or OS-disabled vector use cannot trap the CARM process. Without reliable hardware/kernel support or a successful target probe, detection reports scalar only.
 
-**Helper Function:**
-- `_try_compile_rvv()` - Attempts to compile RVV probe with specific flags
+**References:**
+- Linux RISC-V hwprobe documents `RISCV_HWPROBE_IMA_V` as V 1.0: https://docs.kernel.org/6.5/riscv/hwprobe.html
+- Linux vector extension documentation describes process vector state controls: https://docs.kernel.org/arch/riscv/vector.html
+- Linux v6.6 UAPI key/bit values: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/arch/riscv/include/uapi/asm/hwprobe.h?h=v6.6
 
 **Note:** RISC-V uses wall-clock timing (no TSC), so only returns `frequency` (not `frequency_nominal`).
 

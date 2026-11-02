@@ -12,6 +12,7 @@ Also provides compilation and execution utilities for benchmark binaries.
 from __future__ import annotations
 
 import os
+import platform
 import selectors
 import subprocess
 import sys
@@ -261,15 +262,19 @@ def compile_test_bench(
         *optimization_flags,
         "-g",
         "-pthread",  # Required for pthread synchronization
-        "-lm",  # Math library for ceil() in timing calculations
-        *(["-march=native"] if sys.platform != "darwin" else []),
+        *(["-march=native"] if sys.platform != "darwin" and platform.machine().lower() in {"x86_64", "amd64"} else []),
         *(f"-I{include_path}" for include_path in include_paths),
         *defines,
     ]
 
-    # Compile using the execution interface
     result = context.exec_interface.compile(
-        str(source_path), str(output_path), *flags, capture_output=True, text=True, check=False
+        str(source_path),
+        str(output_path),
+        *flags,
+        link_flags=("-lm",),
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
     if result.returncode != 0:

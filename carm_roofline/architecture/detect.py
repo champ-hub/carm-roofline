@@ -162,6 +162,12 @@ ARM_PROBE_SPECS = (
     ),
     GENERIC_PROBE_SPECS[3],
 )
+RISCV_PROBE_SPECS = (
+    GENERIC_PROBE_SPECS[0],
+    GENERIC_PROBE_SPECS[1],
+    ProbeSpec(name="vlen", required_features=frozenset({"riscv_vector"})),
+    GENERIC_PROBE_SPECS[3],
+)
 
 
 @dataclass
@@ -170,11 +176,14 @@ class TestContext:
 
     family: str
     isa: str | None = None
+    features: frozenset[str] = frozenset()
 
     def probe_specs(self) -> tuple[ProbeSpec, ...]:
         """Return the probe declarations for this architecture family."""
         if self.family == "arm":
             return ARM_PROBE_SPECS
+        if self.family == "riscv":
+            return RISCV_PROBE_SPECS
         return GENERIC_PROBE_SPECS
 
     def probe_spec(self, name: str) -> ProbeSpec:
@@ -418,7 +427,7 @@ def run_generic_tests(ctx: TestContext, threads: int = 1) -> DetectedArchitectur
     features_fields = detect_features(ctx)
     if features_fields:
         builder.merge_fields("detect_features", features_fields)
-    feature_set = frozenset(features_fields.get("isa", []))
+    feature_set = frozenset(features_fields.get("isa", [])) | ctx.features
 
     for spec in specs[1:]:
         if not spec.required_features.issubset(feature_set):
@@ -473,6 +482,7 @@ def native_detect(threads: int = 1) -> DetectedArchitecture:
         "aarch64": arm.detect,
         "arm64": arm.detect,
         "riscv": riscv.detect,
+        "riscv64": riscv.detect,
     }
 
     return platform_specific_fn[machine](threads=threads)
