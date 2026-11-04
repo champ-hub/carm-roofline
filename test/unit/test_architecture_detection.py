@@ -104,6 +104,26 @@ def test_riscv_probe_requires_expected_semantic_result() -> None:
     assert not _can_run_rvv(wrong_version, Path("probe.c"), "RISCV_RVV_0_7_1")
 
 
+
+def test_rvv_candidate_compile_errors_are_not_reported_as_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from carm_roofline import exec_interface
+    from carm_roofline.architecture.riscv import _can_run_rvv
+    from carm_roofline.exec_interface import ExecutionInterface
+
+    warnings: list[str] = []
+    monkeypatch.setattr(exec_interface, "warn", warnings.append)
+    monkeypatch.setattr(
+        exec_interface.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stderr="unsupported RVV dialect"),
+    )
+    interface = ExecutionInterface(SimpleNamespace(sim_cmd=None, compiler="cc"))
+
+    assert not _can_run_rvv(interface, Path("probe.c"), "RISCV_RVV")
+    assert warnings == []
+
 def test_riscv_hwprobe_reports_only_kernel_v_bit(monkeypatch: pytest.MonkeyPatch) -> None:
     from carm_roofline.architecture import riscv
 

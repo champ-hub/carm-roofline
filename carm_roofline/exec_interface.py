@@ -154,6 +154,7 @@ class ExecutionInterface(InsertsArguments):
         output: str,
         *extra_flags: str,
         link_flags: tuple[str, ...] = (),
+        warn_on_stderr: bool = True,
         **kwargs: Any,
     ) -> subprocess.CompletedProcess[Any]:
         """Compile a source file using the configured compiler.
@@ -163,6 +164,7 @@ class ExecutionInterface(InsertsArguments):
             output: Path to output binary
             *extra_flags: Additional compiler flags placed before the source file.
             link_flags: Linker flags placed after the source file.
+            warn_on_stderr: Whether to report compiler stderr as a warning.
 
         Returns:
             subprocess.CompletedProcess instance
@@ -179,7 +181,7 @@ class ExecutionInterface(InsertsArguments):
         debug(f"Compiling with command: {' '.join(cmd)}")
         try:
             result = subprocess.run(cmd, **kwargs, check=check_result)
-            if result.stderr:
+            if warn_on_stderr and result.stderr:
                 warn(f"Compilation produced warnings or errors:\n{result.stderr}")
             debug(f"Compilation completed with return code: {result.returncode}")
             return result

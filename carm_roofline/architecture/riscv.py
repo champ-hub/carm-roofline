@@ -81,9 +81,9 @@ def _linux_hwprobe_has_v() -> bool | None:
 def _can_run_rvv(exec_iface: ExecutionInterface, source_path: Path, define: str) -> bool:
     """Compile and run a semantic RVV probe in the requested target environment.
 
-    The executable is isolated from the caller, so unsupported instructions
-    terminate only the probe process. Successful compilation alone proves
-    nothing about the target CPU or its OS-enabled vector state.
+    Unsupported instruction dialects are expected during compiler probing, so compiler stderr is captured without 
+    warning. The executable is isolated from the caller, so unsupported instructions terminate only the probe process. 
+    Successful compilation alone proves nothing about the target CPU or its OS-enabled vector state.
     """
     with tempfile.TemporaryDirectory() as temp_dir:
         binary_path = Path(temp_dir) / "rvv_version"
@@ -95,6 +95,7 @@ def _can_run_rvv(exec_iface: ExecutionInterface, source_path: Path, define: str)
                 check=False,
                 capture_output=True,
                 timeout=5,
+                warn_on_stderr=False,
             )
             if result.returncode != 0:
                 return False
