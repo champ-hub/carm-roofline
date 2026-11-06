@@ -17,6 +17,11 @@ LULESH is licensed under the BSD 3-Clause License by LLNL; see the source header
 A serial PAPI HL example for the optional cache-line-utilization metric.
 Build it with `make -C examples/cache-line-utilization`.
 
+### blas-papi
+
+A self-contained PAPI-instrumented example of six verified BLAS-style kernels.
+Build it with `make -C examples/blas-papi`; see [blas-papi/README.md](blas-papi/README.md) for running and profiling with `region_merged`.
+
 ### topologies
 
 TOML cache-topology examples for systems that do not expose cache metadata in sysfs.
