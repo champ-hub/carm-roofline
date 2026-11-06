@@ -18,9 +18,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
-from carm_roofline.core import Bytes, UserError
+from carm_roofline.core import (
+    AutoMemoryLayout,
+    Bytes,
+    MemoryLayoutMode,
+    MemoryLayoutSetting,
+    UserError,
+    parse_memory_layout_setting,
+)
 
 from .memory import SimpleMemoryTopology
+
+_MEMORY_LAYOUT_KEY = "layout"
 
 # Handle tomli import for Python < 3.11
 try:
@@ -61,12 +70,12 @@ def load_memory_topology_from_toml(config_path: Path | str) -> SimpleMemoryTopol
     level = 3
     instances = 2
     size = "8MiB"
+    layout = "split"       # Optional: auto, single, or split
 
     [[cache_levels]]
     level = 4
     instances = 1
     size = "64GiB"         # Last level is represented as DRAM
-    ```
 
     Args:
         config_path: Path to .toml configuration file
@@ -100,8 +109,9 @@ def load_memory_topology_from_toml(config_path: Path | str) -> SimpleMemoryTopol
     # Parse and validate each cache level (processed in document order; order determines level numbers)
     level_sizes: list[Bytes] = []
     instances_per_level: list[int] = []
-
+    memory_layouts: list[MemoryLayoutSetting] = []
     for level_dict in cache_levels_data:
+        layout: MemoryLayoutSetting
         if not isinstance(level_dict, dict):
             raise UserError(f"Each [[cache_levels]] entry must be a table, got: {type(level_dict).__name__}")
         try:
@@ -118,6 +128,21 @@ def load_memory_topology_from_toml(config_path: Path | str) -> SimpleMemoryTopol
         size = Bytes.from_string(size_str)
         level_sizes.append(size)
         instances_per_level.append(instances)
+        if _MEMORY_LAYOUT_KEY not in level_dict:
+            layout = AutoMemoryLayout.auto
+        else:
+            layout_value = level_dict[_MEMORY_LAYOUT_KEY]
+            if not isinstance(layout_value, str):
+                raise UserError(f"Cache level {_MEMORY_LAYOUT_KEY} must be a string, got: {layout_value!r}")
+            try:
+                layout = parse_memory_layout_setting(layout_value)
+            except ValueError as e:
+                allowed_layouts = ", ".join([AutoMemoryLayout.auto.value, *(mode.value for mode in MemoryLayoutMode)])
+                raise UserError(
+                    f"Cache level {_MEMORY_LAYOUT_KEY} must be one of {allowed_layouts}, got: {layout_value!r}"
+                ) from e
+
+        memory_layouts.append(layout)
 
     # Create and return SimpleMemoryTopology directly from TOML model.
     # The class constructor performs all semantic validation.
@@ -127,6 +152,7 @@ def load_memory_topology_from_toml(config_path: Path | str) -> SimpleMemoryTopol
         total_cpus=total_cpus,
         smt_degree=smt_degree,
         cpu_offset=cpu_offset,
+        memory_layouts=tuple(memory_layouts),
     )
 
 
@@ -155,8 +181,10 @@ def emit_template_toml(output_path: Path | str) -> None:
         level_config.extend(
             [
                 "[[cache_levels]]",
+                f"level = {level}",
                 f"instances = {default_instances[index]}",
                 f'size = "{default_sizes[index]}"',
+                f'{_MEMORY_LAYOUT_KEY} = "{AutoMemoryLayout.auto.value}"',
                 "",
             ]
         )
@@ -179,6 +207,11 @@ def emit_template_toml(output_path: Path | str) -> None:
 #                (e.g., 8 cores = 8 L1 instances if L1 is per-core)
 #   - size: Size of each instance using binary prefixes (KiB, MiB, GiB, TiB)
 #           Examples: "32KiB", "256KiB", "8MiB", "1GiB"
+#   - layout: Optional benchmark array layout: "auto" preserves each test's
+#             default allocation policy; "single" shares read/write storage,
+#             while "split" allocates separate read/write arrays.
+#   - The CLI --mem-layouts option overrides these per-level settings and
+#     requires one space-separated value per configured topology entry.
 # IMPORTANT: The last [[cache_levels]] entry is interpreted as DRAM.
 
 # Total number of CPUs (threads) in the system.

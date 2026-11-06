@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from itertools import product
 from typing import TYPE_CHECKING
 
-from carm_roofline.core import Bytes, MemoryOperation, UserError
+from carm_roofline.core import AutoMemoryLayout, Bytes, MemoryOperation, UserError
 from carm_roofline.output_utils import debug, warn
 
 from ..benchmark import MemoryBenchmark
+from ..benchmarking import MEM_LAYOUTS_OPTION
 from ..generation import MemoryBenchmarkParams, MemoryLayoutMode
 from .base import ISABenchmarkSuite
 
@@ -23,11 +24,40 @@ if TYPE_CHECKING:
 _CACHE_COVERAGE = 0.75
 
 
+def validate_memory_layout_overrides(context: CARMContext) -> None:
+    """Ensure CLI layouts provide exactly one mode for every topology level."""
+    cli_layouts = context.benchmarking.mem_layouts
+    topology_levels = list(context.architecture.memory_topology)
+    if cli_layouts is not None and len(cli_layouts) != len(topology_levels):
+        raise UserError(
+            f"{MEM_LAYOUTS_OPTION} specifies {len(cli_layouts)} levels, but the topology has {len(topology_levels)}; "
+            "provide one value per topology level"
+        )
+
+
+def resolve_memory_layout(context: CARMContext, level_index: int, automatic: MemoryLayoutMode) -> MemoryLayoutMode:
+    """Resolve CLI, topology-config, and automatic per-level layout settings."""
+    cli_layouts = context.benchmarking.mem_layouts
+    configured = (
+        cli_layouts[level_index]
+        if cli_layouts is not None
+        else context.architecture.memory_topology.memory_layouts[level_index]
+    )
+    return automatic if isinstance(configured, AutoMemoryLayout) else configured
+
+
 def iter_memory_benchmark_params(context: CARMContext, isa: BaseISA) -> Iterator[MemoryBenchmarkParams]:
     """Yield memory benchmark parameters with the shared memory sizing policy."""
     benchmark = context.benchmarking
     architecture = context.architecture
-    mem_level_indices = architecture.memory_topology.available_cache_levels()
+    topology = architecture.memory_topology
+    mem_level_indices = topology.available_cache_levels()
+    topology_levels = list(topology)
+    validate_memory_layout_overrides(context)
+    selected_positions = [
+        position for position, level in enumerate(topology_levels) if level.name in benchmark.mem_target
+    ]
+    final_selected_position = selected_positions[-1] if selected_positions else None
 
     for data_type in benchmark.data_type:
         available_operations = isa.bench_instructions.available_operations(data_type)
@@ -59,15 +89,15 @@ def iter_memory_benchmark_params(context: CARMContext, isa: BaseISA) -> Iterator
             user_sizes: Iterator[Bytes | None] | None = (
                 iter(benchmark.mem_test_sizes) if benchmark.mem_test_sizes else None
             )
-            for mem_level_idx, mem_level_info in zip(mem_level_indices, architecture.memory_topology):
+            for level_position, (mem_level_idx, mem_level_info) in enumerate(zip(mem_level_indices, topology_levels)):
                 if mem_level_info.name not in benchmark.mem_target:
                     continue
-                thread_affinity = architecture.memory_topology.plan_thread_affinity(thread_count, mem_level_idx)
+                thread_affinity = topology.plan_thread_affinity(thread_count, mem_level_idx)
                 avail_size_per_thread: Bytes = thread_affinity.total_cache_bytes // thread_affinity.num_threads
-                is_final_target = mem_level_idx == mem_level_indices[-1]
+                is_final_topology_level = mem_level_idx == mem_level_indices[-1]
                 target_size_per_thread = (
                     previous_size_per_thread * 16
-                    if is_final_target and previous_size_per_thread is not None
+                    if is_final_topology_level and previous_size_per_thread is not None
                     else avail_size_per_thread * _CACHE_COVERAGE
                 )
                 if user_sizes is not None:
@@ -90,7 +120,13 @@ def iter_memory_benchmark_params(context: CARMContext, isa: BaseISA) -> Iterator
                     load_store_ratio=ratio,
                     size_per_thread=target_size_per_thread,
                     memory_level_name=mem_level_info.name,
-                    layout_mode=MemoryLayoutMode.split if is_final_target else MemoryLayoutMode.single,
+                    layout_mode=resolve_memory_layout(
+                        context,
+                        level_position,
+                        MemoryLayoutMode.split
+                        if level_position == final_selected_position
+                        else MemoryLayoutMode.single,
+                    ),
                 )
                 previous_size_per_thread = avail_size_per_thread
 

@@ -10,8 +10,20 @@ from enum import Enum
 from typing import TypeVar
 
 from carm_roofline.arguments import InsertsArguments, enum_action, positive_float, positive_int
-from carm_roofline.core import ArithmeticIntensity, ArithmeticOperation, Bytes, DataType, Operations
+from carm_roofline.core import (
+    ArithmeticIntensity,
+    ArithmeticOperation,
+    AutoMemoryLayout,
+    Bytes,
+    DataType,
+    MemoryLayoutMode,
+    MemoryLayoutSetting,
+    Operations,
+    parse_memory_layout_setting,
+)
 from carm_roofline.output_utils import warn
+
+MEM_LAYOUTS_OPTION = "--mem-layouts"
 
 
 class TestType(Enum):
@@ -167,6 +179,10 @@ class Benchmarking(InsertsArguments):
         if self.ai_points == 1 and self.ai_range[0] != self.ai_range[1]:
             raise ValueError("--ai-range endpoints must be equal when --ai-points is 1")
         self.mem_test_sizes: list[Bytes | None] | None = args.mem_test_sizes
+        parsed_layouts: list[MemoryLayoutSetting] | None = args.mem_layouts
+        self.mem_layouts: tuple[MemoryLayoutSetting, ...] | None = (
+            None if parsed_layouts is None else tuple(parsed_layouts)
+        )
         self.thread_stride_gap: Bytes = args.thread_stride_gap
         self.verbose: int = args.verbose
         self.test_time: float = args.test_time
@@ -196,6 +212,17 @@ class Benchmarking(InsertsArguments):
             default=["all"],
             choices=["L1", "L2", "L3", "DRAM", "all"],
             help="Target memory level(s) or 'all' (Default: all)",
+        )
+        parser.add_argument(
+            MEM_LAYOUTS_OPTION,
+            nargs="+",
+            type=parse_memory_layout_setting,
+            choices=(AutoMemoryLayout.auto, *MemoryLayoutMode),
+            metavar="MODE",
+            help=(
+                "Array layout per topology level in order (auto, single, split); provide one mode per level. "
+                "CLI values override topology config; auto uses the test's default layout."
+            ),
         )
         parser.add_argument(
             "-o",

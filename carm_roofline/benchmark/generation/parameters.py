@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING
 
-from carm_roofline.core import ArithmeticIntensity, ArithmeticOperation, Bytes, Operations
+from carm_roofline.core import (
+    ArithmeticIntensity,
+    ArithmeticOperation,
+    Bytes,
+    MemoryLayoutMode as MemoryLayoutMode,
+    Operations,
+)
 
 if TYPE_CHECKING:
     from carm_roofline.benchmark.benchmarking import LoadStoreRatio
@@ -14,11 +19,6 @@ from carm_roofline.core import DataType
 
 class BenchParamError(Exception):
     pass
-
-
-class MemoryLayoutMode(Enum):
-    single = "single"
-    split = "split"
 
 
 @dataclass

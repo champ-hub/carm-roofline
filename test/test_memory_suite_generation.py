@@ -6,14 +6,23 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 
 import pytest
-from carm_roofline.architecture.memory import CacheAwareThreadAffinity, MemoryLevelInfo
+from carm_roofline.architecture.memory import CacheAwareThreadAffinity, DarwinMemoryTopology, MemoryLevelInfo
 from carm_roofline.benchmark.benchmarking import LoadStoreRatio
 from carm_roofline.benchmark.generation import MemoryLayoutMode
 from carm_roofline.benchmark.generation.code_gen import TypedInstructions
-from carm_roofline.core import DataType, ArithmeticOperation, MemoryOperation
+from carm_roofline.core import (
+    ArithmeticOperation,
+    AutoMemoryLayout,
+    Bytes,
+    DataType,
+    Frequency,
+    MemoryLayoutSetting,
+    MemoryOperation,
+    UserError,
+)
 from carm_roofline.benchmark.suites.memory import MemoryBenchmarkSuite
+from carm_roofline.benchmark.suites.memory_sweep import MemorySweepBenchmarkSuite
 from carm_roofline.test_bench.builder import MicrobenchmarkFunctionSpec
-from carm_roofline.core import Bytes, Frequency
 
 
 pytestmark = pytest.mark.unit
@@ -24,8 +33,9 @@ class _DummyBenchmarking:
     data_type: list[DataType] = field(default_factory=lambda: [DataType.f64])
     threads: list[int] = field(default_factory=lambda: [4])
     ld_st_ratio: list[LoadStoreRatio] = field(default_factory=lambda: [LoadStoreRatio(loads=2, stores=1)])
-    mem_test_sizes: list[Bytes | None] | None = None
     mem_target: list[str] = field(default_factory=lambda: ["L1", "L2", "L3", "DRAM"])
+    mem_test_sizes: list[Bytes | None] | None = None
+    mem_layouts: tuple[MemoryLayoutSetting, ...] | None = None
 
 
 class _TopologyWithDRAMFinal:
@@ -35,6 +45,7 @@ class _TopologyWithDRAMFinal:
         yield MemoryLevelInfo(size=Bytes.from_string("32KiB"), name="L1", num_sharing_threads=1, instances=4)
         yield MemoryLevelInfo(size=Bytes.from_string("256KiB"), name="L2", num_sharing_threads=2, instances=2)
         yield MemoryLevelInfo(size=Bytes.from_string("8MiB"), name="DRAM", num_sharing_threads=4, instances=1)
+    memory_layouts = (AutoMemoryLayout.auto, AutoMemoryLayout.auto, AutoMemoryLayout.auto)
 
     def available_cache_levels(self) -> list[int]:
         return [1, 2, 3]
@@ -143,6 +154,7 @@ def test_memory_suite_warns_if_dataset_fits_in_lower_cache(monkeypatch):
             yield MemoryLevelInfo(size=Bytes.from_string("8GiB"), name="L2", num_sharing_threads=1, instances=1)
             yield MemoryLevelInfo(size=Bytes.from_string("32GiB"), name="DRAM", num_sharing_threads=1, instances=1)
 
+        memory_layouts = (AutoMemoryLayout.auto, AutoMemoryLayout.auto, AutoMemoryLayout.auto)
         def available_cache_levels(self) -> list[int]:
             return [1, 2, 3]
 
@@ -191,3 +203,137 @@ def test_memory_suite_uses_single_then_split_for_last_level():
     assert generated[0].params.layout_mode == MemoryLayoutMode.single
     assert generated[1].params.layout_mode == MemoryLayoutMode.single
     assert generated[2].params.layout_mode == MemoryLayoutMode.split
+
+
+def test_memory_suite_auto_splits_the_final_selected_level():
+    context = _make_context()
+    context.benchmarking.mem_target = ["L1"]
+
+    generated = list(MemoryBenchmarkSuite.generate(context, "dummy_isa").get_memory_benchmarks().values())
+
+    assert len(generated) == 1
+    assert generated[0].params.layout_mode == MemoryLayoutMode.split
+    assert generated[0].params.size_per_thread == Bytes(int((Bytes.from_string("128KiB") // 4).value * 0.75))
+
+
+def test_memory_suite_cli_layouts_override_topology_config_including_auto():
+    context = _make_context()
+    context.architecture.memory_topology.memory_layouts = (
+        MemoryLayoutMode.split,
+        MemoryLayoutMode.split,
+        MemoryLayoutMode.single,
+    )
+    context.benchmarking.mem_layouts = (
+        AutoMemoryLayout.auto,
+        MemoryLayoutMode.single,
+        AutoMemoryLayout.auto,
+    )
+
+    generated = list(MemoryBenchmarkSuite.generate(context, "dummy_isa").get_memory_benchmarks().values())
+
+    assert [bench.params.layout_mode for bench in generated] == [
+        MemoryLayoutMode.single,
+        MemoryLayoutMode.single,
+        MemoryLayoutMode.split,
+    ]
+
+
+def test_memory_suite_rejects_partial_cli_layout_list():
+    context = _make_context()
+    context.benchmarking.mem_layouts = (MemoryLayoutMode.single, MemoryLayoutMode.split)
+
+    with pytest.raises(UserError, match="one value per topology level"):
+        MemoryBenchmarkSuite.generate(context, "dummy_isa")
+
+
+def test_memory_sweep_layout_applies_to_fallback_level(monkeypatch):
+    context = _make_context()
+    context.architecture.memory_topology.memory_layouts = (
+        AutoMemoryLayout.auto,
+        AutoMemoryLayout.auto,
+        MemoryLayoutMode.single,
+    )
+    monkeypatch.setattr(
+        "carm_roofline.benchmark.suites.memory_sweep.NUM_SWEEP_POINTS",
+        2,
+    )
+
+    generated = list(MemorySweepBenchmarkSuite.generate(context, "dummy_isa").get_memory_benchmarks().values())
+    fallback = generated[-1]
+
+    assert fallback.cache_level == "DRAM"
+    assert fallback.params.layout_mode == MemoryLayoutMode.single
+
+
+def test_memory_sweep_uses_configured_cache_level_layout(monkeypatch):
+    context = _make_context()
+    context.architecture.memory_topology.memory_layouts = (
+        MemoryLayoutMode.split,
+        AutoMemoryLayout.auto,
+        AutoMemoryLayout.auto,
+    )
+    monkeypatch.setattr("carm_roofline.benchmark.suites.memory_sweep.NUM_SWEEP_POINTS", 2)
+
+    generated = list(MemorySweepBenchmarkSuite.generate(context, "dummy_isa").get_memory_benchmarks().values())
+    first = generated[0]
+
+    assert first.cache_level == "L1"
+    assert first.params.layout_mode == MemoryLayoutMode.split
+
+
+def test_memory_sweep_cli_auto_overrides_cache_level_config(monkeypatch):
+    context = _make_context()
+    context.architecture.memory_topology.memory_layouts = (
+        MemoryLayoutMode.split,
+        AutoMemoryLayout.auto,
+        AutoMemoryLayout.auto,
+    )
+    context.benchmarking.mem_layouts = (
+        AutoMemoryLayout.auto,
+        AutoMemoryLayout.auto,
+        AutoMemoryLayout.auto,
+    )
+    monkeypatch.setattr("carm_roofline.benchmark.suites.memory_sweep.NUM_SWEEP_POINTS", 2)
+
+    generated = list(MemorySweepBenchmarkSuite.generate(context, "dummy_isa").get_memory_benchmarks().values())
+    first = generated[0]
+
+    assert first.cache_level == "L1"
+    assert first.params.layout_mode == MemoryLayoutMode.single
+
+
+def test_memory_sweep_auto_fallback_keeps_split_heuristic(monkeypatch):
+    context = _make_context()
+    monkeypatch.setattr("carm_roofline.benchmark.suites.memory_sweep.NUM_SWEEP_POINTS", 2)
+
+    generated = list(MemorySweepBenchmarkSuite.generate(context, "dummy_isa").get_memory_benchmarks().values())
+    fallback = generated[-1]
+
+    assert fallback.cache_level == "DRAM"
+    assert fallback.params.layout_mode == MemoryLayoutMode.split
+
+def test_memory_suite_generates_with_darwin_topology(monkeypatch: pytest.MonkeyPatch) -> None:
+    sysctls = {
+        "hw.nperflevels": 1,
+        "hw.ncpu": 2,
+        "hw.memsize": 16 * 1024**3,
+        "hw.perflevel0.physicalcpu": 2,
+        "hw.perflevel0.logicalcpu": 2,
+        "hw.perflevel0.l1dcachesize": 32 * 1024,
+        "hw.perflevel0.l2cachesize": 256 * 1024,
+        "hw.perflevel0.cpusperl2": 2,
+    }
+    monkeypatch.setattr("carm_roofline.architecture.memory.sysctl_int_or_none", sysctls.get)
+    context = _make_context()
+    topology = DarwinMemoryTopology()
+    context.architecture.memory_topology = topology
+    context.benchmarking.threads = [1]
+    context.benchmarking.mem_target = [level.name for level in topology]
+
+    generated = list(MemoryBenchmarkSuite.generate(context, "dummy_isa").get_memory_benchmarks().values())
+
+    assert [bench.params.layout_mode for bench in generated] == [
+        MemoryLayoutMode.single,
+        MemoryLayoutMode.single,
+        MemoryLayoutMode.split,
+    ]

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from carm_roofline.architecture.darwin import sysctl_int_or_none
-from carm_roofline.core import Bytes, UserError
+from carm_roofline.core import AutoMemoryLayout, Bytes, MemoryLayoutSetting, UserError
 from carm_roofline.output_utils import debug, format_if_container, warn
 
 _CPU_ROOT = Path("/sys/devices/system/cpu")
@@ -110,6 +110,9 @@ class MemoryTopologyLike(Protocol):
     implement this protocol, enabling unified handling throughout the codebase.
     """
 
+    memory_layouts: tuple[MemoryLayoutSetting, ...]
+    """Per-level benchmark allocation settings, in topology order."""
+
     def __iter__(self) -> Iterator[MemoryLevelInfo]:
         """Iterate over MemoryLevelInfo objects (all levels in hierarchy order)."""
         ...
@@ -154,6 +157,7 @@ class SimpleMemoryTopology:
         total_cpus: int | None = None,
         smt_degree: int = 1,
         cpu_offset: int = 0,
+        memory_layouts: tuple[MemoryLayoutSetting, ...] | None = None,
     ) -> None:
         """Initialize memory hierarchy from sizes and cache instance counts.
 
@@ -165,7 +169,7 @@ class SimpleMemoryTopology:
             instances_per_level: Number of cache instances for each level.
             total_cpus: Total logical CPUs available (optional, for better synthetic affinity).
             smt_degree: Logical CPUs per physical core (>=1).
-            cpu_offset: Base CPU index for generated synthetic CPU IDs.
+            memory_layouts: Optional per-level allocation modes (auto/single/split).
         """
 
         if len(level_sizes) != len(instances_per_level):
@@ -210,6 +214,12 @@ class SimpleMemoryTopology:
                     instances=instances,
                 )
             )
+
+        if memory_layouts is not None and len(memory_layouts) != len(level_sizes):
+            raise UserError(
+                f"Memory layouts and level sizes must have same length: {len(memory_layouts)} vs {len(level_sizes)}"
+            )
+        self.memory_layouts = (AutoMemoryLayout.auto,) * len(level_sizes) if memory_layouts is None else memory_layouts
 
     def __iter__(self) -> Iterator[MemoryLevelInfo]:
         """Iterate over MemoryLevelInfo objects in ascending level-number order."""
@@ -331,6 +341,7 @@ class MemoryTopology:
         self._uses_synthetic_cpu_ids = False
         self._levels: list[MemoryLevelInfo] = []  # pre-built by _parse(); names are stable after construction
         self._parse()
+        self.memory_layouts: tuple[MemoryLayoutSetting, ...] = (AutoMemoryLayout.auto,) * len(self._levels)
 
     @staticmethod
     def _detect_dram_size() -> Bytes:
@@ -769,6 +780,7 @@ class DarwinMemoryTopology(MemoryTopology):
                 "per-instance sizes. Unpinned benchmarks may still run on mixed core types."
             )
         self._finalize()
+        self.memory_layouts = (AutoMemoryLayout.auto,) * len(self._levels)
 
     def _dram_size(self) -> Bytes:
         return Bytes(self._apple_memsize)

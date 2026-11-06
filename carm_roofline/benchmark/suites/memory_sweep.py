@@ -18,6 +18,7 @@ from carm_roofline.output_utils import debug
 from ..benchmark import MemoryBenchmark
 from ..generation import MemoryBenchmarkParams, MemoryLayoutMode
 from .base import ISABenchmarkSuite
+from .memory import resolve_memory_layout, validate_memory_layout_overrides
 
 if TYPE_CHECKING:
     from carm_roofline.architecture.memory import CacheAwareThreadAffinity
@@ -67,6 +68,7 @@ class MemorySweepBenchmarkSuite(ISABenchmarkSuite):
 
         isa: BaseISA = isa_class.from_architecture(architecture)
         suite = cls(isa_name=isa.name)
+        validate_memory_layout_overrides(context)
 
         for thread_count in benchmark.threads:
             topology = architecture.memory_topology
@@ -79,6 +81,7 @@ class MemorySweepBenchmarkSuite(ISABenchmarkSuite):
                     iter(topology),
                 )
             ]
+            level_position_by_num = {level_num: position for position, (level_num, _) in enumerate(all_targets)}
 
             if not all_targets:
                 raise ValueError("Memory topology has no levels; cannot generate sweep.")
@@ -137,12 +140,18 @@ class MemorySweepBenchmarkSuite(ISABenchmarkSuite):
 
                     assigned_level_name: str = dram_level_name
                     assigned_affinity: CacheAwareThreadAffinity = dram_affinity
-                    for _lvl_num, lvl_name, avail, aff in cache_levels_for_classification:
+                    assigned_level_num = level_table[-1][0]
+                    for level_num, lvl_name, avail, aff in cache_levels_for_classification:
                         if size_per_thread <= avail:
                             assigned_level_name = lvl_name
                             assigned_affinity = aff
-                            mem_layout = MemoryLayoutMode.single if _lvl_num == 1 else MemoryLayoutMode.split
+                            assigned_level_num = level_num
                             break
+
+                    automatic_layout = MemoryLayoutMode.single if assigned_level_num == 1 else MemoryLayoutMode.split
+                    mem_layout = resolve_memory_layout(
+                        context, level_position_by_num[assigned_level_num], automatic_layout
+                    )
 
                     sweep_label = f"sweep{i:02d}"
 

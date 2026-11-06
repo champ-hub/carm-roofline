@@ -162,8 +162,8 @@ def test_cli_memory_benchmark_uses_topology_and_computes_bandwidth(
     topology_config = tmp_path / "topology.toml"
     topology_config.write_text(
         'total_cpus = 2\nsmt_degree = 1\ncpu_offset = 0\n'
-        '[[cache_levels]]\nlevel = 1\ninstances = 2\nsize = "32KiB"\n'
-        '[[cache_levels]]\nlevel = 2\ninstances = 1\nsize = "8MiB"\n',
+        '[[cache_levels]]\nlevel = 1\ninstances = 2\nsize = "32KiB"\nlayout = "single"\n'
+        '[[cache_levels]]\nlevel = 2\ninstances = 1\nsize = "8MiB"\nlayout = "auto"\n',
         encoding="utf-8",
     )
     output_dir = tmp_path / "results"
@@ -179,6 +179,9 @@ def test_cli_memory_benchmark_uses_topology_and_computes_bandwidth(
             "L1",
             "--mem-test-sizes",
             "16KiB",
+            "--mem-layouts",
+            "split",
+            "auto",
             "--ld-st-ratio",
             "1:0",
             "--topology-config",
@@ -201,6 +204,7 @@ def test_cli_memory_benchmark_uses_topology_and_computes_bandwidth(
     assert record["memory_level_name"] == "L1"
     assert record["load_store_ratio"] == "1:0"
     assert record["size_per_thread_bytes"] == 16 * 1024
+    assert record["layout_mode"] == "split"
     assert record["repetitions"] == 100
     expected_bandwidth_gbps = 16 * 1024 * 100 / 0.0025 / 1e9
     assert record["bandwidth_gbps"] == pytest.approx(expected_bandwidth_gbps)

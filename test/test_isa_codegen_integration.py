@@ -1206,6 +1206,7 @@ class TestIntegerCodegen:
             ld_st_ratio=[LoadStoreRatio(1, 0)],
             mem_target=["L1"],
             mem_test_sizes=None,
+            mem_layouts=None,
         )
 
         suite = MemoryBenchmarkSuite.generate(mock_context, "x86_avx")

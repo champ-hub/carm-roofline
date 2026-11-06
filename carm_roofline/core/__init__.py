@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from carm_roofline.core.data_type import DataType
 from carm_roofline.core.error import UserError
+from carm_roofline.core.memory import (
+    AutoMemoryLayout,
+    MemoryLayoutMode,
+    MemoryLayoutSetting,
+    parse_memory_layout_setting,
+)
 from carm_roofline.core.operation import ArithmeticOperation, MemoryOperation, Operation
 from carm_roofline.core.units import (
     ArithmeticIntensity,
@@ -18,11 +24,14 @@ from carm_roofline.core.units import (
 __all__ = [
     "ArithmeticIntensity",
     "ArithmeticOperation",
+    "AutoMemoryLayout",
     "Bandwidth",
     "Bytes",
     "Cycles",
     "DataType",
     "Frequency",
+    "MemoryLayoutMode",
+    "MemoryLayoutSetting",
     "MemoryOperation",
     "Operation",
     "Operations",
@@ -30,4 +39,5 @@ __all__ = [
     "Seconds",
     "Unit",
     "UserError",
+    "parse_memory_layout_setting",
 ]
