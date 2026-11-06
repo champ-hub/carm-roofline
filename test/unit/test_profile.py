@@ -39,7 +39,7 @@ from carm_roofline.profiling.optional_metrics import (
     resolve_optional_metrics,
     validate_metric_names,
 )
-from carm_roofline.profiling.papi_lib import collectable_events
+from carm_roofline.profiling.papi_lib import _find_papi_library_path, collectable_events
 from carm_roofline.profiling.papi_loader import (
     RankMetrics,
     discover_rank_files,
@@ -74,6 +74,16 @@ pytestmark = pytest.mark.unit
 
 # Default MetricContext: omitted type uses f32 for estimates, while mixed precision is retained for PAPI FLOPS.
 DEFAULT_CTX = MetricContext(MetricResolutionConfig())
+
+
+def test_papi_library_discovery_prefers_active_module(monkeypatch, tmp_path):
+    module_lib = tmp_path / "module"
+    module_lib.mkdir()
+    library = module_lib / "libpapi.so"
+    library.touch()
+    monkeypatch.setenv("LD_LIBRARY_PATH", f"{tmp_path / 'missing'}:{module_lib}")
+    assert _find_papi_library_path() == library
+
 
 # ---------------------------------------------------------------------------
 # PAPI HL sample data (matches the actual format from rank_000003.json)

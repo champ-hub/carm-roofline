@@ -9,6 +9,7 @@ resolution only sees events that can actually be counted.
 from __future__ import annotations
 
 import ctypes
+import os
 import re
 import shutil
 import subprocess
@@ -22,12 +23,21 @@ def _find_papi_library_path() -> Path | None:
     """Locate ``libpapi.so`` via multiple discovery strategies.
 
     Tries in order:
-      1. ``ldconfig -p`` (dynamic linker cache, standard installs)
-      2. ``pkg-config`` (respects ``PKG_CONFIG_PATH``, custom prefixes)
+      1. ``LD_LIBRARY_PATH`` (active environment modules)
+      2. ``ldconfig -p`` (dynamic linker cache, standard installs)
+      3. ``pkg-config`` (respects ``PKG_CONFIG_PATH``, custom prefixes)
 
     Returns:
         Path to ``libpapi.so``, or *None* if not found by any strategy.
     """
+    # Honor the active module before system libraries, as the dynamic linker does.
+    for directory in os.environ.get("LD_LIBRARY_PATH", "").split(os.pathsep):
+        if directory:
+            candidates = sorted(Path(directory).glob("libpapi.so*"))
+            for candidate in candidates:
+                if candidate.is_file():
+                    return candidate
+
     # Strategy 1: ldconfig -p
     try:
         result = subprocess.run(
