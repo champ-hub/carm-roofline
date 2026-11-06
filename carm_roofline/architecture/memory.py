@@ -327,7 +327,7 @@ def _parse_size_kb(s: str) -> int:
 class MemoryTopology:
     "Parses /sys/devices/system/cpu/ and exposes the full topology."
 
-    def __init__(self, sysfs_root: Path = _CPU_ROOT):
+    def __init__(self, sysfs_root: Path = _CPU_ROOT) -> None:
         self._root = sysfs_root
         self.cpus: dict[int, LogicalCPU] = {}
         "cpu_id -> LogicalCPU"
@@ -337,9 +337,8 @@ class MemoryTopology:
         "hierarchy_level -> list of instances (each instance is a set of cpu_ids sharing that level)"
         self.level_sizes: dict[int, Bytes] = {}
         "hierarchy_level -> conservative minimum size per instance"
-        self._cache_instance_sizes: dict[int, dict[frozenset[int], Bytes]] = {}
         self._uses_synthetic_cpu_ids = False
-        self._levels: list[MemoryLevelInfo] = []  # pre-built by _parse(); names are stable after construction
+        self._levels: list[MemoryLevelInfo] = []
         self._parse()
         self.memory_layouts: tuple[MemoryLayoutSetting, ...] = (AutoMemoryLayout.auto,) * len(self._levels)
 

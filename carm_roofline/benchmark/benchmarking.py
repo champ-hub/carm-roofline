@@ -304,8 +304,8 @@ class Benchmarking(InsertsArguments):
         )
         parser.add_argument(
             "--test-time",
-            default=25.0,
+            default=10.0,
             type=positive_float,
-            help="Target runtime for each individual microbenchmark, in seconds. Low runtime may lead to inaccurate "
-            "results. (Default: 25.0)",
+            help="Approximate time target per benchmark, in seconds. Benchmarks with a slow single pass (e.g. DRAM) "
+            "may exceed this target. Lower values may reduce accuracy. (Default: 10.0)",
         )

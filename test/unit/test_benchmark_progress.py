@@ -86,7 +86,7 @@ def test_streaming_runner_timeout_reports_partial_output_and_kills_child(tmp_pat
     monkeypatch.setattr(builder, "TIMEOUT_MIN", Seconds(0.05))
     monkeypatch.setattr(builder, "TIMEOUT_SAFETY_FACTOR", 0.1)
     monkeypatch.setattr(builder, "ARITHMETIC_FALLBACK_PER_RUN", Seconds(0.001))
-    monkeypatch.setattr(builder, "CALIBRATION_START_REPS", 0)
+    monkeypatch.setattr(builder, "CALIBRATION_RESERVE_RUNS", 0)
     completed: list[int] = []
 
     with pytest.raises(subprocess.TimeoutExpired) as caught:

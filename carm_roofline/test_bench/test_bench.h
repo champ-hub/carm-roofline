@@ -85,7 +85,7 @@ typedef struct {
 extern carm_bench_barrier_t g_barrier;
 #endif
 extern pthread_mutex_t g_mutex;
-extern uint64_t g_max_reps;
+extern uint64_t g_num_reps;
 
 /* ============================================================================
  * Architecture-Specific Helper Functions
@@ -100,7 +100,7 @@ extern uint64_t g_max_reps;
 #endif
 
 #ifndef CARM_BENCH_START_REPS
-#define CARM_BENCH_START_REPS 10
+#define CARM_BENCH_START_REPS 1
 #endif
 
 void *aligned_malloc(size_t align, size_t size)
@@ -219,7 +219,13 @@ static inline int carm_bench_elapsed_sufficient(uint64_t elapsed_ns)
 /* Calculate repetitions needed for main measurement (nanoseconds). */
 static inline uint64_t carm_bench_calculate_reps(uint64_t elapsed_ns, uint64_t reps)
 {
-    return (uint64_t) ceil((double) EXPECTED_TIME_NS * (double) reps / (double) elapsed_ns);
+    if (elapsed_ns == 0)
+        return UINT64_MAX;
+
+    double calculated = ceil((double) EXPECTED_TIME_NS * (double) reps / (double) elapsed_ns);
+    if (calculated >= (double) UINT64_MAX)
+        return UINT64_MAX;
+    return calculated < 1.0 ? 1 : (uint64_t) calculated;
 }
 
 /* Calculate repetitions needed to reach calibration target time (nanoseconds). */
@@ -275,7 +281,7 @@ static inline void barrier_sync(void)
  * - Repetition calibration to target runtime (implemented below)
  * - Working-set allocation sized by NUM_REP/OPS/LD/ST (+ VLEN/VLMUL)
  * - Per-run aggregation (min start/max end vs max wall-time)
- * - Output format parity (median, num_rep_max, freq_real, freq_nominal)
+ * - Output format parity (median, common num_reps, freq_real, freq_nominal)
  */
 
 /* Benchmark function type: both FP and memory benchmarks use this signature.

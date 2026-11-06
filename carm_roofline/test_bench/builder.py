@@ -44,12 +44,9 @@ MIN_BANDWIDTH: Bandwidth = Bandwidth(1e9)  # 1 GB/s — conservative DRAM floor
 TIMEOUT_SAFETY_FACTOR: float = 10.0  # applied to summed per-benchmark estimates
 TIMEOUT_MIN: Seconds = Seconds(60.0)  # absolute minimum regardless of estimates
 ARITHMETIC_FALLBACK_PER_RUN: Seconds = Seconds(0.1)  # 100 ms/run — matches calibration target
-# The C wrapper always begins calibration with CARM_BENCH_START_REPS (= 100) repetitions in the
-# very first function call.  For large DRAM working sets this single call can transfer
-# START_REPS x working_set bytes, completely dominating the measurement budget when num_runs is
-# small (e.g. test_time=1 → num_runs=10).  Mirror the C constant here so the timeout formula
-# explicitly reserves time for that first calibration iteration.
-CALIBRATION_START_REPS: int = 10  # must match CARM_BENCH_START_REPS in test_bench.h
+# Reserve extra equivalent runs conservatively for calibration overhead; this is
+# independent of the C wrapper's one-pass startup count.
+CALIBRATION_RESERVE_RUNS: int = 10
 
 
 @dataclass
@@ -299,12 +296,9 @@ def _compute_timeout(
     sizes) a flat 100 ms/run fallback is used (matches the C calibration
     target).
 
-    Critically, the C calibration loop begins every benchmark with
-    CARM_BENCH_START_REPS (= 100) repetitions in one function call before
-    any proportional scaling occurs.  For a 512 MiB DRAM benchmark those
-    100 reps transfer 100 x 512 MiB regardless of num_runs, so
-    CALIBRATION_START_REPS extra equivalent runs are added to the per-
-    benchmark budget to cover that first calibration iteration.
+    The wrapper calibration adds runtime beyond the measurement runs. Reserve
+    ten equivalent runs per benchmark, then apply the safety factor; the C
+    wrapper starts calibration with one pass and scales from observed elapsed time.
 
     A 10x safety factor is applied to the summed per-benchmark estimate
     before clamping to the absolute minimum.
@@ -316,8 +310,8 @@ def _compute_timeout(
     Returns:
         Timeout (≥ TIMEOUT_MIN).
     """
-    # effective_runs = measurement runs + worst-case first calibration iteration
-    effective_runs: int = num_runs + CALIBRATION_START_REPS
+    # Include a conservative reserve for calibration work.
+    effective_runs: int = num_runs + CALIBRATION_RESERVE_RUNS
     total: Seconds = Seconds(0.0)
     for spec in specs:
         working_set: Bytes = (spec.read_array_size + spec.write_array_size) * spec.num_threads

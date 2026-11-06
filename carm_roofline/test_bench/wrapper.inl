@@ -69,20 +69,20 @@ static void *_WRAPPER_EXPAND(UBENCH_NAME)(void *arg)
 
     benchmark_barrier_wait();
 
-    uint64_t number_rep =
-            (uint64_t) ceil((double) reps * (double) EXPECTED_TIME_NS / ((double) CARM_BENCH_MIN_CAL_TIME_NS * 1.2));
+    /* Scale by the measured elapsed time, including any initial-pass overshoot. */
+    uint64_t number_rep = carm_bench_calculate_reps(elapsed_ns, reps);
 
-    /* Update global maximum reps across all threads */
+    /* For max-thread-time results, the slowest calibrated thread sets repetitions. */
     pthread_mutex_lock(&g_mutex);
-    if (g_max_reps < number_rep) {
-        g_max_reps = number_rep;
+    if (g_num_reps == 0 || number_rep < g_num_reps) {
+        g_num_reps = number_rep;
     }
     pthread_mutex_unlock(&g_mutex);
 
     benchmark_barrier_wait();
 
-    /* All threads use the same (maximum) repetition count */
-    uint64_t num_reps = g_max_reps;
+    /* All threads use the smallest target count across threads. */
+    uint64_t num_reps = g_num_reps;
 
     barrier_sync();
 

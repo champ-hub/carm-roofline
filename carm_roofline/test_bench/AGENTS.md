@@ -8,20 +8,19 @@ This document describes the architecture and implementation of the CARM microben
 of each benchmark, not from a fixed 100 ms/benchmark assumption:
 
 - **Memory benchmarks** (non-zero `read_array_size` + `write_array_size`): estimated as
-  `(bytes_per_thread × num_threads × effective_runs) / 1 GB/s` where
-  `effective_runs = NUM_RUNS + CALIBRATION_START_REPS`.  The 1 GB/s floor is intentionally
-  conservative to cover NUMA cold-fault storms (caused by `MADV_DONTNEED` before each benchmark),
+  `(bytes_per_thread × num_threads × effective_runs) / 1 GB/s`, where
+  `effective_runs = NUM_RUNS + CALIBRATION_RESERVE_RUNS`. The 1 GB/s floor is intentionally
+  conservative to cover NUMA cold-fault storms (including MADV_DONTNEED page faults),
   QEMU simulation slowdown, and cross-NUMA accesses.
 - **Arithmetic benchmarks** (zero-byte arrays): fallback of 100 ms × effective_runs (matches the
   C calibration target).
 - A **10× safety factor** is applied to the summed estimate, then clamped to a 60-second minimum.
 
-**Why `CALIBRATION_START_REPS`?** The C wrapper begins every benchmark with `CARM_BENCH_START_REPS = 100`
-repetitions in the very first calibration function call before any proportional scaling occurs.
-For a 512 MiB DRAM benchmark, those 100 initial reps transfer 100 × 512 MiB regardless of
-`NUM_RUNS`.  With `test_time=1` → `NUM_RUNS=10`, the first calibration iteration alone can exceed
-the entire measurement budget, causing a timeout.  Adding `CALIBRATION_START_REPS` extra equivalent
-runs to the per-benchmark estimate reserves time for this worst-case first iteration.
+**Why `CALIBRATION_RESERVE_RUNS`?** The C wrapper starts calibration with one repetition,
+then scales up until a call exceeds 50 ms. It derives measurement repetitions from that
+call's observed elapsed time, so an initially slow DRAM pass scales down rather than
+retaining a large startup count. The timeout adds a conservative ten equivalent runs
+for calibration overhead, in addition to measurement runs.
 
 **Why not `test_time × N × 5` (original)?** That formula assumed each benchmark took ~`test_time` seconds
 and ignored calibration entirely.  For DRAM benchmarks with 512 MiB+ working sets and a small
@@ -103,14 +102,14 @@ The new test_bench (v2) uses a **wrapper-based inline measurement approach** to 
 - No internal frequency probing or clock tests
 
 ### Repetition Calibration
-- **Algorithm**: Matches legacy behavior
-  1. Start with `reps = 1`
-  2. Multiply by 10 until elapsed time > 100ms (sufficient time)
-  3. Compute optimal reps: `ceil(EXPECTED_TIME * freq * test_reps / measured_time)`
-  4. All threads synchronize and use the maximum reps across threads
-- **Target runtime**: 100ms (100,000,000 ns)
-- **Configurable**: Can be adjusted via `EXPECTED_TIME_NS` macro
-- **Calibration margin**: Uses 120% overshoot (1.2x `CARM_BENCH_MIN_CAL_TIME_NS`) to avoid oscillation near threshold
+- **Algorithm**:
+  1. Start with `reps = CARM_BENCH_START_REPS` (1 by default).
+  2. Scale repetitions until a calibration call exceeds 50ms.
+  3. Derive measurement repetitions from the observed elapsed time and 100ms sample target.
+  4. Threads select the minimum target count, so the slowest calibrated thread sets the sample duration.
+- **Target sample duration**: Approximately 100ms, but a complete generated pass is indivisible; if one pass exceeds the target, the sample cannot be shortened.
+- **Configurable**: The target can be adjusted via `EXPECTED_TIME_NS`.
+- **Calibration margin**: Calibration scales toward 120% of `CARM_BENCH_MIN_CAL_TIME_NS` to avoid oscillation near threshold.
 - **Anomaly detection**: Retries measurements if elapsed time drops >20% unexpectedly (context switch detection)
 - **Minimum reliable time**: Below 1ms, uses conservative 10x scaling instead of proportional scaling
 

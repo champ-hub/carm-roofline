@@ -964,10 +964,10 @@ def build_benchmark_panel(results_dir: str, visible: bool = True) -> html.Div:
         ),
         _benchmark_field(
             "Run time (s)",
-            dcc.Input(id=BenchmarkPanelID.TEST_TIME, type="number", value=25.0, min=0.1, step=0.1),
+            dcc.Input(id=BenchmarkPanelID.TEST_TIME, type="number", value=10.0, min=1, step=0.1),
             (
-                "Target runtime for each individual microbenchmark. The total run time grows with the number "
-                "of measurements. Values below 10 seconds can reduce accuracy."
+                "Approximate time target per benchmark, in seconds. Benchmarks with a slow single pass (e.g. DRAM) "
+                "may exceed this target. Low values may reduce accuracy. (Default: 10.0)"
             ),
         ),
         _benchmark_field(

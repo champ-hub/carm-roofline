@@ -134,7 +134,7 @@ carm_bench_barrier_t g_barrier;
 pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Global calibration state - definition (declared in test_bench.h)
-uint64_t g_max_reps = 0;
+uint64_t g_num_reps = 0;
 
 /**
  * measure_benchmark: Execute a single benchmark with multi-threaded measurement
@@ -146,8 +146,7 @@ uint64_t g_max_reps = 0;
  * 4. Result aggregation and median calculation across threads
  * 5. CSV output (median_cycles/ms, num_reps, freq_real, freq_nominal)
  *
- * Each thread executes a wrapper function (defined in wrapper.inl) that:
- * - Performs repetition calibration (multiply by 10 until >100ms, then compute optimal reps)
+ * - Performs repetition calibration (scales until >50ms, then targets the sample duration)
  * - Synchronizes with other threads via barriers
  * - Runs NUM_RUNS timed iterations
  * - Directly calls the inline benchmark function (zero function pointer overhead)
@@ -198,7 +197,7 @@ measure_benchmark(const benchmark_metadata_t *metadata, wrapper_fn_t wrapper_fn,
     }
     size_t per_thread_stride = aligned_read + aligned_write + stride_gap;
 
-    g_max_reps = 0;
+    g_num_reps = 0;
 #if defined(__linux__)
     if (pthread_barrier_init(&g_barrier, NULL, (unsigned int) num_threads) != 0) {
         fprintf(stderr, "ERROR: failed to initialize benchmark barrier\n");
@@ -307,7 +306,7 @@ measure_benchmark(const benchmark_metadata_t *metadata, wrapper_fn_t wrapper_fn,
 
     uint64_t median_ns = median(NUM_RUNS, max_elapsed_ns);
     double median_ms = (double) median_ns / 1000000.0;
-    printf("%s, %f, %llu\n", test_id, median_ms, (unsigned long long) g_max_reps);
+    printf("%s, %f, %llu\n", test_id, median_ms, (unsigned long long) g_num_reps);
 #if VERBOSITY >= 3
     fflush(stdout);
 #endif
