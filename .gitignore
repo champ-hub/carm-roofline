@@ -5,3 +5,4 @@ build/
 *.egg-info/
 dist/
 test/.cache/
+WATCHDOG.y*ml
