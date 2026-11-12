@@ -1,6 +1,7 @@
 """End-to-end Paraver tests; Any is limited to Dash's dynamically shaped JSON protocol."""
 from __future__ import annotations
 
+import io
 import json
 import math
 import shutil
@@ -198,6 +199,7 @@ def test_paraver_trace_to_gui_and_all_exports(
     shutil.copyfile(paraver_fixture / "window.legend.csv", legend)
     assert trace.is_file() and window.is_file() and legend.is_file()
     assert counter_outputs.is_dir()
+    monkeypatch.setattr("sys.stdin", io.StringIO("PARAVER_PROTOCOL succeed\n" * 9))
     monkeypatch.setattr("carm_roofline.gui.providers.shutil.which", lambda _name: "/usr/bin/paramedir")
     monkeypatch.setattr(
         "carm_roofline.gui.providers.run_paramedir",

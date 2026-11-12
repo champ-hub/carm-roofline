@@ -35,6 +35,7 @@ from carm_roofline.paraver.loading import (
     time_unit_to_seconds,
 )
 from carm_roofline.paraver.progress import ProgressBar
+from carm_roofline.paraver.protocol import ParaverCommand, request
 
 COUNTER_CSV_COLUMNS = ("thread_id", "time_s", "duration_s", "value")
 
@@ -113,12 +114,12 @@ def run_paramedir(
     """Run paramedir, or request equivalent CSVs from the Paraver protocol host.
     Writes one '<name>.cfg' per registered counter into output_dir. In normal
     mode, invokes paramedir and writes '<name>.csv' files there. In protocol
-    mode, emits one ``PARAVER_PROTOCOL generate_csv`` command per config and
-    waits for its requested output file to appear.
+    mode, emits one ``PARAVER_PROTOCOL generate_csv`` command per config, waits
+    for the host's success response, then polls for the CSV before continuing.
 
     Raises FileNotFoundError when the trace is missing or paramedir is not on
-    PATH in normal mode; RuntimeError when paramedir exits non-zero, with
-    stderr included in the message. Returns None.
+    PATH in normal mode; RuntimeError when paramedir or a protocol request fails.
+    A non-zero paramedir exit includes stderr in the message.
     """
     trace = Path(trace_path)
     if not trace.is_file():
@@ -132,7 +133,7 @@ def run_paramedir(
     if protocol_mode:
         for cfg in cfgs:
             output = cfg.with_suffix(".csv")
-            print(f"PARAVER_PROTOCOL generate_csv {cfg} {output}", flush=True)  # noqa: T201 ; protocol stdout
+            request(ParaverCommand.GENERATE_CSV, cfg, output)
             while not output.is_file():
                 time.sleep(0.1)
         return

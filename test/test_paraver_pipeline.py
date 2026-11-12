@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import io
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 
 import pandas as pd
 import pytest
 
-from carm_roofline.paraver import pipeline
+from carm_roofline.paraver import pipeline, protocol
 from carm_roofline.paraver.counters import (
     INTEL_COUNTERS,
     CounterSpec,
@@ -618,39 +621,90 @@ def test_run_paramedir_writes_cfgs_and_invokes(tmp_path: Path, monkeypatch: pyte
         assert "window_units Nanoseconds" in path.read_text(encoding="utf-8")
 
 
-def test_run_paramedir_protocol_requests_and_waits_for_each_output(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_paramedir_protocol_waits_for_each_response_and_csv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     trace = _write(tmp_path, "trace.prv", "#Paraver trace\n")
     out = tmp_path / "out"
     commands: list[str] = []
+    reading = Event()
+    respond = Event()
+    polling = Event()
+    resume_poll = Event()
 
-    requested_outputs: list[Path] = []
+    class HostResponses(io.StringIO):
+        def readline(self, size: int = -1) -> str:
+            _, _, cfg_path, output_path = commands[-1].split()
+            assert Path(cfg_path).is_file()
+            output = Path(output_path)
+            if len(commands) == 1:
+                reading.set()
+                assert respond.wait(5)
+                assert len(commands) == 1
+            else:
+                output.write_text("complete\n", encoding="utf-8")
+            return "PARAVER_PROTOCOL succeed\n"
 
     def emit(command: str, *, flush: bool) -> None:
         assert flush is True
         commands.append(command)
-        _, _, cfg_path, output_path = command.split()
-        assert Path(cfg_path).is_file()
-        requested_outputs.append(Path(output_path))
+        if len(commands) == 1:
+            Path(command.split()[-1]).write_text("partial\n", encoding="utf-8")
 
-    def atomically_create_output(delay: float) -> None:
-        assert delay == 0.1
-        output = requested_outputs[-1]
-        temporary = Path(f"{output}.tmp")
-        temporary.write_text("complete\n", encoding="utf-8")
-        temporary.replace(output)
+    def sleep(seconds: float) -> None:
+        assert seconds == 0.1
+        assert len(commands) == 1
+        polling.set()
+        assert resume_poll.wait(5)
 
     monkeypatch.setattr(pipeline.shutil, "which", lambda _: None)
-    monkeypatch.setattr(pipeline, "print", emit, raising=False)
-    monkeypatch.setattr(pipeline.time, "sleep", atomically_create_output)
-    run_paramedir(trace, out, "Microseconds", protocol_mode=True)
+    monkeypatch.setattr(pipeline.time, "sleep", sleep)
+    monkeypatch.setattr(protocol, "print", emit, raising=False)
+    monkeypatch.setattr(protocol.sys, "stdin", HostResponses())
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(run_paramedir, trace, out, "Microseconds", True)
+        try:
+            assert reading.wait(5)
+            assert len(commands) == 1
+            first_output = Path(commands[0].split()[-1])
+            assert first_output.is_file()
+            assert not future.done()
+            first_output.unlink()
+            respond.set()
+            assert polling.wait(5)
+            assert len(commands) == 1
+            assert not future.done()
+            first_output.write_text("complete\n", encoding="utf-8")
+        finally:
+            respond.set()
+            resume_poll.set()
+        future.result(timeout=5)
 
-    assert commands == [
-        f"PARAVER_PROTOCOL generate_csv {out.resolve() / f'{name}.cfg'} {out.resolve() / f'{name}.csv'}"
-        for name in EXPECTED_NAMES
-    ]
-    assert all(output.read_text(encoding="utf-8") == "complete\n" for output in requested_outputs)
+    requested_names = [Path(command.split()[2]).stem for command in commands]
+    assert len(requested_names) == len(EXPECTED_NAMES)
+    assert set(requested_names) == set(EXPECTED_NAMES)
+    assert all((out / f"{name}.csv").read_text(encoding="utf-8") == "complete\n" for name in EXPECTED_NAMES)
+
+
+@pytest.mark.parametrize(
+    ("response", "message"),
+    [
+        ("PARAVER_PROTOCOL error\n", "failed to generate_csv"),
+        ("", "ended before a response"),
+        ("PARAVER_PROTOCOL succeed", "Malformed Paraver protocol response"),
+        ("PARAVER_PROTOCOL unknown\n", "Malformed Paraver protocol response"),
+        ("unexpected\n", "Malformed Paraver protocol response"),
+        ("PARAVER_PROTOCOL succeed extra\n", "Malformed Paraver protocol response"),
+    ],
+)
+def test_run_paramedir_protocol_rejects_failed_responses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], response: str, message: str
+) -> None:
+    trace = _write(tmp_path, "trace.prv", "#Paraver trace\n")
+    monkeypatch.setattr(protocol.sys, "stdin", io.StringIO(response))
+
+    with pytest.raises(RuntimeError, match=message):
+        run_paramedir(trace, tmp_path / "out", "Microseconds", protocol_mode=True)
+
+    assert capsys.readouterr().out.count("PARAVER_PROTOCOL generate_csv") == 1
 
 
 

@@ -23,6 +23,7 @@ from carm_roofline.gui.export import (
     write_export_files,
 )
 from carm_roofline.gui.ids import ExportPanelID, ParaverID, StoreID
+from carm_roofline.paraver.protocol import ParaverCommand, command_line, request
 from carm_roofline.roofline_assembly import AssembledRoofline, assemble_roofline
 
 
@@ -172,6 +173,13 @@ def register_paraver_callbacks(app: dash.Dash, state: CallbackState) -> None:
                     # Paraver loads the window CSV and finds the .legend.csv file next to it automatically.
                     if path.name.endswith(".legend.csv"):
                         continue
-                    print(f"PARAVER_PROTOCOL open_csv {path}", flush=True)  # noqa: T201 ; print for Paraver to capture
-                    print(path, flush=True)  # noqa: T201 ; print for Paraver to capture
+                    try:
+                        if config.paraver_protocol:
+                            request(ParaverCommand.OPEN_CSV, path)
+                        else:
+                            print(command_line(ParaverCommand.OPEN_CSV, path), flush=True)  # noqa: T201 ; legacy output
+                    except RuntimeError as exc:
+                        return f"Failed to open export in Paraver: {exc}"
+                    finally:
+                        print(path, flush=True)  # noqa: T201 ; legacy output
                 return ""
