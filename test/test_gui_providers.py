@@ -218,8 +218,9 @@ def test_trace_time_range_empty_returns_none() -> None:
     assert trace_time_range(_trace_frame().iloc[0:0]) is None
 
 
+@pytest.mark.parametrize("protocol_mode", [False, True])
 def test_paraver_provider_loads_code_mode_trace_with_legend(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], protocol_mode: bool
 ) -> None:
     """ParaverProvider maps code-mode rows to legend entries on a trace table."""
     # Dummy .prv file — only needs to exist on disk for the provider check.
@@ -235,12 +236,13 @@ def test_paraver_provider_loads_code_mode_trace_with_legend(
     )
     (tmp_path / "window.legend.csv").write_text('1.000000 "Running" 0,0,255\n', encoding="utf-8")
 
-    # Capture the args run_paramedir receives so we can assert the provider
-    # forwards the trace path and the window header's time unit.
-    captured: list[tuple[str | Path, str | Path, str]] = []
+    # Capture the arguments forwarded to run_paramedir.
+    captured: list[tuple[str | Path, str | Path, str, bool]] = []
 
-    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
-        captured.append((trace_path, output_dir, time_unit))
+    def _fake_run_paramedir(
+        trace_path: str | Path, output_dir: str | Path, time_unit: str, protocol_mode: bool = False
+    ) -> None:
+        captured.append((trace_path, output_dir, time_unit, protocol_mode))
         out = Path(output_dir)
         # One FP counter row: thread 1.1.1, 0-1 s, value=4 instructions
         (out / "fp-avx2-dp.csv").write_text(
@@ -257,17 +259,18 @@ def test_paraver_provider_loads_code_mode_trace_with_legend(
         "carm_roofline.gui.providers.run_paramedir",
         _fake_run_paramedir,
     )
-    # Also skip the which("paramedir") check in the provider.
-    monkeypatch.setattr("shutil.which", lambda _x: "/usr/bin/paramedir")
+    # Protocol mode must not require paramedir on PATH.
+    monkeypatch.setattr("shutil.which", lambda _x: None if protocol_mode else "/usr/bin/paramedir")
 
-    provider = ParaverProvider(trace, window_csv)
+    provider = ParaverProvider(trace, window_csv, protocol_mode=protocol_mode)
     data = provider.load()
 
-    # The trace path (resolved) and the window header's time unit reach run_paramedir.
+    # The resolved trace path, window time unit, and protocol mode are forwarded.
     assert len(captured) == 1
-    called_trace, _out_dir, called_unit = captured[0]
+    called_trace, _out_dir, called_unit, called_protocol_mode = captured[0]
     assert Path(called_trace) == trace.resolve()
     assert called_unit == "nanoseconds"
+    assert called_protocol_mode is protocol_mode
 
     # The loaded window CSV interval (min start, max end) is exposed in seconds.
     assert provider.window_extent == (0.0, 1.0)
@@ -314,7 +317,9 @@ def test_paraver_provider_trace_only_mode(tmp_path: Path, monkeypatch: pytest.Mo
     trace.write_text("#Paraver dummy\n")
     captured: list[str] = []
 
-    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+    def _fake_run_paramedir(
+        trace_path: str | Path, output_dir: str | Path, time_unit: str, protocol_mode: bool = False
+    ) -> None:
         captured.append(time_unit)
         out = Path(output_dir)
         # One FP counter row: thread 1.1.1, 0-1 s, value=4 instructions
@@ -360,7 +365,7 @@ def test_paraver_provider_code_mode_missing_legend_raises_user_error(
     trace.write_text("#dummy\n")
 
     captured: list[object] = []
-    monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", lambda *args: captured.append(args))
+    monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", lambda *args, **kwargs: captured.append(args))
 
     with pytest.raises(UserError, match="legend CSV not found"):
         ParaverProvider(trace, window_csv).load()
@@ -390,7 +395,9 @@ def test_paraver_provider_legend_labels_align_to_state_not_position(
         '1.000000 "Running" 0,0,255\n8.000000 "Wait/WaitAll" 235,0,0\n', encoding="utf-8"
     )
 
-    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+    def _fake_run_paramedir(
+        trace_path: str | Path, output_dir: str | Path, time_unit: str, protocol_mode: bool = False
+    ) -> None:
         out = Path(output_dir)
         for name in ("fp-avx2-dp.csv", "mem-loads.csv"):
             (out / name).write_text(
@@ -419,7 +426,9 @@ def test_paraver_provider_gradient_mode_loads_without_legend(tmp_path: Path, mon
     trace = tmp_path / "t.prv"
     trace.write_text("#dummy\n")
 
-    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+    def _fake_run_paramedir(
+        trace_path: str | Path, output_dir: str | Path, time_unit: str, protocol_mode: bool = False
+    ) -> None:
         out = Path(output_dir)
         (out / "fp-avx2-dp.csv").write_text(
             f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_null_gradient_mode\n1.1.1\t0.0\t1000000.0\t4\n",
@@ -452,7 +461,9 @@ def test_paraver_provider_gradient_label_strips_app_suffix(tmp_path: Path, monke
         encoding="utf-8",
     )
 
-    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+    def _fake_run_paramedir(
+        trace_path: str | Path, output_dir: str | Path, time_unit: str, protocol_mode: bool = False
+    ) -> None:
         out = Path(output_dir)
         (out / "fp-avx2-dp.csv").write_text(
             f"#ts:CSV:RUNAPP:/p/t.prv:{time_unit}:window_in_null_gradient_mode\n1.1.1\t0.0\t1000000.0\t4\n",
@@ -504,7 +515,7 @@ def test_paraver_provider_no_counter_csvs_raises_user_error(
     trace.write_text("#dummy\n")
 
     # paramedir "succeeds" but writes no counter CSVs into its output dir.
-    monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", lambda *args: None)
+    monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", lambda *args, **kwargs: None)
     monkeypatch.setattr("shutil.which", lambda _x: "/usr/bin/paramedir")
 
     with pytest.raises(UserError, match="counter CSVs"):
@@ -528,7 +539,9 @@ def test_paraver_provider_paramedir_failure_raises_user_error(
     trace = tmp_path / "t.prv"
     trace.write_text("#dummy\n")
 
-    def _failing_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+    def _failing_paramedir(
+        trace_path: str | Path, output_dir: str | Path, time_unit: str, protocol_mode: bool = False
+    ) -> None:
         raise RuntimeError("paramedir failed (exit 1): corrupt trace")
 
     monkeypatch.setattr("carm_roofline.gui.providers.run_paramedir", _failing_paramedir)
@@ -798,7 +811,9 @@ def test_paraver_provider_legend_keeps_nan_state_code_rows(
     )
     (tmp_path / "window.legend.csv").write_text('1.000000 "Running" 0,0,255\n', encoding="utf-8")
 
-    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+    def _fake_run_paramedir(
+        trace_path: str | Path, output_dir: str | Path, time_unit: str, protocol_mode: bool = False
+    ) -> None:
         out = Path(output_dir)
         for name in ("fp-avx2-dp.csv", "mem-loads.csv"):
             (out / name).write_text(
@@ -842,7 +857,9 @@ def test_paraver_provider_precomputes_tooltips_that_survive_filters(
         '1.000000 "Running" 0,0,255\n8.000000 "Wait/WaitAll" 235,0,0\n', encoding="utf-8"
     )
 
-    def _fake_run_paramedir(trace_path: str | Path, output_dir: str | Path, time_unit: str) -> None:
+    def _fake_run_paramedir(
+        trace_path: str | Path, output_dir: str | Path, time_unit: str, protocol_mode: bool = False
+    ) -> None:
         out = Path(output_dir)
         # Two bursts with different FP counts (so ai differs) for the AI filter split.
         (out / "fp-avx2-dp.csv").write_text(
