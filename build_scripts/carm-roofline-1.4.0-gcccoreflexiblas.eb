@@ -56,7 +56,6 @@ exts_list = [
         'source_tmpl': 'v%(version)s.tar.gz',
         'source_urls': ['https://github.com/champ-hub/carm-roofline/archive/refs/tags'],
         'checksums': ['f3908a87da5f2d1b2c18eae8897f2f0fda0a30ca7ce0d4e4a51982f730b1be95'],
-        'preinstallopts': local_preinstallopts,
         'use_pip_extras': 'gui',
     }),
 ]
