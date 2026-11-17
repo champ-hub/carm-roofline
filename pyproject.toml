@@ -35,7 +35,7 @@ dependencies = [
 gui = [
     "dash>=4.4.1",
     "dash-bootstrap-components>=2.0.4",
-    "plotly>=6.7.0",
+    "plotly>=6.3.1",
 ]
 
 # Development tools
