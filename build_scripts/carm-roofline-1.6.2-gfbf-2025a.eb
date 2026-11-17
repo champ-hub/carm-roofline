@@ -4,7 +4,7 @@ name = 'carm-roofline'
 version = '1.6.2'
 
 homepage = 'https://github.com/champ-hub/carm-roofline'
-description = 'Cache-Aware Roofline Model benchmarking and visualization toolkit'
+description = 'Cache-Aware Roofline Model benchmarking, profiling and visualization toolkit'
 
 toolchain = {'name': 'gfbf', 'version': '2025a'}
 
