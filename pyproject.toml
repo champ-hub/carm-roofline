@@ -21,10 +21,10 @@ classifiers = [
 ]
 
 dependencies = [
-    "rich>=14.0.0",
+    "rich>=13.7.1",
     "rich-argparse>=1.7.0",
     "matplotlib>=3.7.2",
-    "pandas>=2.3.0",
+    "pandas>=2.2.2",
     "tomli>=2.0.0",
     "platformdirs>=4.0.0",
     "argcomplete>=3.0.0",
